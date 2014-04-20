@@ -42,14 +42,18 @@
 #include "llappviewer.h"
 #include "llviewerbuild.h"
 #include "llviewercontrol.h"
-#include "llxmlrpctransaction.h"
+#include "llxmlrpcresponder.h"
 #include "llsdutil.h"
+#include "llhttpclient.h"
 #include "stringize.h"
 
 // NOTE: MUST include these after otherincludes since queue gets redefined!?!!
-#include <curl/curl.h>
 #include <xmlrpc-epi/xmlrpc.h>
 
+#include <curl/curl.h>
+#ifdef DEBUG_CURLIO
+#include "debug_libcurl.h"
+#endif
 
 // Don't define PLATFORM_STRING for unknown platforms - they need
 // to get added to the login cgi script, so we want this to cause an
@@ -70,7 +74,6 @@ static const char* PLATFORM_STRING = "Sol";
 
 
 LLUserAuth::LLUserAuth() :
-	mTransaction(NULL),
 	mLastTransferRateBPS(0),
 	mResult(LLSD())
 {
@@ -84,12 +87,10 @@ LLUserAuth::~LLUserAuth()
 
 void LLUserAuth::reset()
 {
-	delete mTransaction;
-	mTransaction = NULL;
+	mResponder = NULL;
 	mResponses.clear();
 	mResult.clear();
 }
-
 
 void LLUserAuth::authenticate(
 	const std::string& auth_uri,
@@ -165,13 +166,11 @@ void LLUserAuth::authenticate(
 	// put the parameters on the request
 	XMLRPC_RequestSetData(request, params);
 
-	mTransaction = new LLXMLRPCTransaction(auth_uri, request);
-	
-	XMLRPC_RequestFree(request, 1);
+	mResponder = new XMLRPCResponder;
+	LLHTTPClient::postXMLRPC(auth_uri, request, mResponder);
 
 	LL_INFOS2("AppInit", "Authentication") << "LLUserAuth::authenticate: uri=" << auth_uri << LL_ENDL;
 }
-
 
 
 // Legacy version of constructor
@@ -218,8 +217,21 @@ void LLUserAuth::authenticate(
 	XMLRPC_VectorAppendString(params, "last", lastname.c_str(), 0);
 	XMLRPC_VectorAppendString(params, "passwd", dpasswd.c_str(), 0);
 	XMLRPC_VectorAppendString(params, "start", start.c_str(), 0);
-	XMLRPC_VectorAppendString(params, "version", gCurrentVersion.c_str(), 0); // Includes channel name
-	XMLRPC_VectorAppendString(params, "channel", gVersionChannel, 0);
+	XMLRPC_VectorAppendString(params, "version", llformat("%d.%d.%d.%d", gVersionMajor, gVersionMinor, gVersionPatch, gVersionBuild).c_str(), 0);
+	// Singu Note: At the request of Linden Lab we change channel sent to the login server in the following way:
+	// * If channel is "Singularity" we change it to "Singularity Release", due to their statistics system
+	//   not being able to distinguish just the release version
+	// * We append "64" to channel name on 64-bit for systems for the LL stats system to be able to produce independent
+	//   crash statistics depending on the architecture
+	std::string chan(gVersionChannel);
+	if (chan == "Singularity")
+	{
+		chan += " Release";
+	}
+#if defined(_WIN64) || defined(__x86_64__)
+	chan += " 64";
+#endif
+	XMLRPC_VectorAppendString(params, "channel", chan.c_str(), 0);
 	XMLRPC_VectorAppendString(params, "platform", PLATFORM_STRING, 0);
 
 	XMLRPC_VectorAppendString(params, "mac", hashed_mac.c_str(), 0);
@@ -255,25 +267,25 @@ void LLUserAuth::authenticate(
 	// put the parameters on the request
 	XMLRPC_RequestSetData(request, params);
 
-	mTransaction = new LLXMLRPCTransaction(auth_uri, request);
+	// Post the XML RPC.
+	mResponder = new XMLRPCResponder;
+	LLHTTPClient::postXMLRPC(auth_uri, request, mResponder);
 	
-	XMLRPC_RequestFree(request, 1);
-
 	LL_INFOS2("AppInit", "Authentication") << "LLUserAuth::authenticate: uri=" << auth_uri << LL_ENDL;
 }
 
 
 LLUserAuth::UserAuthcode LLUserAuth::authResponse()
 {
-	if (!mTransaction)
+	if (!mResponder)
 	{
 		return mAuthResponse;
 	}
 	
-	bool done = mTransaction->process();
+	bool done = mResponder->is_finished();
 
 	if (!done) {
-		if (LLXMLRPCTransaction::StatusDownloading == mTransaction->status(0))
+		if (mResponder->is_downloading())
 		{
 			mAuthResponse = E_DOWNLOADING;
 		}
@@ -281,14 +293,16 @@ LLUserAuth::UserAuthcode LLUserAuth::authResponse()
 		return mAuthResponse;
 	}
 	
-	
-	mLastTransferRateBPS = mTransaction->transferRate();
+	mLastTransferRateBPS = mResponder->transferRate();
+	mErrorMessage = mResponder->reason();
 
-	int result;
-	mTransaction->status(&result);
-	mErrorMessage = mTransaction->statusMessage();
-	
 	// if curl was ok, parse the download area.
+	CURLcode result = mResponder->result_code();
+	if (is_internal_http_error(mResponder->http_status()))
+	{
+		// result can be a meaningless CURLE_OK in the case of an internal error.
+		result = CURLE_FAILED_INIT;		// Just some random error to get the default case below.
+	}
 	switch (result)
 	{
 	case CURLE_OK:
@@ -310,12 +324,12 @@ LLUserAuth::UserAuthcode LLUserAuth::authResponse()
 		mAuthResponse = E_UNHANDLED_ERROR;
 		break;
 	}
-	
+
 	LL_INFOS2("AppInit", "Authentication") << "Processed response: " << result << LL_ENDL;
 
-	delete mTransaction;
-	mTransaction = NULL;
-	
+	// We're done with this data.
+	mResponder = NULL;
+
 	return mAuthResponse;
 }
 
@@ -326,8 +340,17 @@ LLUserAuth::UserAuthcode LLUserAuth::parseResponse()
 	// mOptions. For now, we will only be looking at mResponses, which
 	// will all be string => string pairs.
 	UserAuthcode rv = E_UNHANDLED_ERROR;
-	XMLRPC_REQUEST response = mTransaction->response();
-	if(!response) return rv;
+	XMLRPC_REQUEST response = mResponder->response();
+	if(!response)
+	{
+		U32 status = mResponder->http_status();
+		// Is it an HTTP error?
+		if (!(200 <= status && status < 400))
+		{
+			rv = E_HTTP_SERVER_ERROR;
+		}
+		return rv;
+	}
 
 	// clear out any old parsing
 	mResponses.clear();

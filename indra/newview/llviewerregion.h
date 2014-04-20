@@ -36,6 +36,7 @@
 // A ViewerRegion is a class that contains a bunch of objects and surfaces
 // that are in to a particular region.
 #include <string>
+#include <boost/signals2.hpp>
 
 #include "lldarray.h"
 #include "llwind.h"
@@ -55,6 +56,8 @@
 #define WATER 2
 const U32	MAX_OBJECT_CACHE_ENTRIES = 50000;
 
+// Region handshake flags
+const U32 REGION_HANDSHAKE_SUPPORTS_SELF_APPEARANCE = 1U << 2;
 
 class LLEventPoll;
 class LLVLComposition;
@@ -67,6 +70,7 @@ class LLVOCache;
 class LLVOCacheEntry;
 class LLSpatialPartition;
 class LLEventPump;
+class LLCapabilityListener;
 class LLDataPacker;
 class LLDataPackerBinaryBuffer;
 class LLHost;
@@ -98,6 +102,7 @@ public:
 	} eObjectPartitions;
 
 	typedef boost::signals2::signal<void(const LLUUID& region_id)> caps_received_signal_t;
+	typedef boost::signals2::signal<void(const LLUUID& region_id)> features_received_signal_t;
 
 	LLViewerRegion(const U64 &handle,
 				   const LLHost &host,
@@ -117,13 +122,13 @@ public:
 	//void setAgentOffset(const LLVector3d &offset);
 	void updateRenderMatrix();
 
-	void setAllowDamage(BOOL b) { setFlags(b, REGION_FLAGS_ALLOW_DAMAGE); }
-	void setAllowLandmark(BOOL b) { setFlags(b, REGION_FLAGS_ALLOW_LANDMARK); }
-	void setAllowSetHome(BOOL b) { setFlags(b, REGION_FLAGS_ALLOW_SET_HOME); }
-	void setResetHomeOnTeleport(BOOL b) { setFlags(b, REGION_FLAGS_RESET_HOME_ON_TELEPORT); }
-	void setSunFixed(BOOL b) { setFlags(b, REGION_FLAGS_SUN_FIXED); }
-	void setBlockFly(BOOL b) { setFlags(b, REGION_FLAGS_BLOCK_FLY); }
-	void setAllowDirectTeleport(BOOL b) { setFlags(b, REGION_FLAGS_ALLOW_DIRECT_TELEPORT); }
+	void setAllowDamage(BOOL b) { setRegionFlag(REGION_FLAGS_ALLOW_DAMAGE, b); }
+	void setAllowLandmark(BOOL b) { setRegionFlag(REGION_FLAGS_ALLOW_LANDMARK, b); }
+	void setAllowSetHome(BOOL b) { setRegionFlag(REGION_FLAGS_ALLOW_SET_HOME, b); }
+	void setResetHomeOnTeleport(BOOL b) { setRegionFlag(REGION_FLAGS_RESET_HOME_ON_TELEPORT, b); }
+	void setSunFixed(BOOL b) { setRegionFlag(REGION_FLAGS_SUN_FIXED, b); }
+	void setBlockFly(BOOL b) { setRegionFlag(REGION_FLAGS_BLOCK_FLY, b); }
+	void setAllowDirectTeleport(BOOL b) { setRegionFlag(REGION_FLAGS_ALLOW_DIRECT_TELEPORT, b); }
 
 
 	inline BOOL getAllowDamage()			const;
@@ -164,8 +169,15 @@ public:
 	LLViewerParcelOverlay *getParcelOverlay() const
 			{ return mParcelOverlay; }
 
-	void setRegionFlags(U32 flags);
-	U32 getRegionFlags() const					{ return mRegionFlags; }
+	inline void setRegionFlag(U64 flag, BOOL on);
+	inline BOOL getRegionFlag(U64 flag) const;
+	void setRegionFlags(U64 flags);
+	U64 getRegionFlags() const					{ return mRegionFlags; }
+
+	inline void setRegionProtocol(U64 protocol, BOOL on);
+	BOOL getRegionProtocol(U64 protocol) const;
+	void setRegionProtocols(U64 protocols)			{ mRegionProtocols = protocols; }
+	U64 getRegionProtocols() const					{ return mRegionProtocols; }
 
 	void setTimeDilation(F32 time_dilation);
 	F32  getTimeDilation() const				{ return mTimeDilation; }
@@ -192,8 +204,8 @@ public:
 
 	void setSimAccess(U8 sim_access)			{ mSimAccess = sim_access; }
 	U8 getSimAccess() const						{ return mSimAccess; }
-	const std::string getSimAccessString() const;
-	
+	std::string const& getSimAccessString();	// Singu note: return reference to mSimAccessString.
+
 	// Homestead-related getters; there are no setters as nobody should be
 	// setting them other than the individual message handler which is a member
 	S32 getSimClassID()                    const { return mClassID; }
@@ -203,13 +215,14 @@ public:
 	std::string getLocalizedSimProductName() const;
 
 	// Returns "Sandbox", "Expensive", etc.
-	static std::string regionFlagsToString(U32 flags);
+	static std::string regionFlagsToString(U64 flags);
 
 	// Returns translated version of "Mature", "PG", "Adult", etc.
 	static std::string accessToString(U8 sim_access);
 
 	// Returns "M", "PG", "A" etc.
 	static std::string accessToShortString(U8 sim_access);
+	static U8          shortStringToAccess(const std::string &sim_access);
 
 	// Return access icon name
 	static std::string getAccessIcon(U8 sim_access);
@@ -252,6 +265,9 @@ public:
 	static bool isSpecialCapabilityName(const std::string &name);
 	void logActiveCapabilities() const;
 
+	boost::signals2::connection setFeaturesReceivedCallback(const features_received_signal_t::slot_type& cb);
+	bool getFeaturesReceived() const { return mFeaturesReceived; }
+
     /// Get LLEventPump on which we listen for capability requests
     /// (https://wiki.lindenlab.com/wiki/Viewer:Messaging/Messaging_Notes#Capabilities)
     LLEventPump& getCapAPI() const;
@@ -285,6 +301,8 @@ public:
 
 	F32 getLandHeightRegion(const LLVector3& region_pos);
 
+	U8 getCentralBakeVersion() { return mCentralBakeVersion; }
+
 	void getInfo(LLSD& info);
 	
 	bool meshRezEnabled() const;
@@ -292,6 +310,9 @@ public:
 
 	void getSimulatorFeatures(LLSD& info);	
 	void setSimulatorFeatures(const LLSD& info);
+
+	
+	bool dynamicPathfindingEnabled() const;
 
 	typedef enum
 	{
@@ -322,10 +343,6 @@ public:
 	void calculateCameraDistance();
 
 	friend std::ostream& operator<<(std::ostream &s, const LLViewerRegion &region);
-
-	// used by LCD to get details for debug screen
-	U32 getNetDetailsForLCD();
-	
     /// implements LLCapabilityProvider
     virtual std::string getDescription() const;
 	std::string getHttpUrl() const { return mHttpUrl ;}
@@ -337,7 +354,16 @@ public:
 	bool objectsCrossParcel(const std::vector<LLBBox>& boxes) const;
 
 	void getNeighboringRegions( std::vector<LLViewerRegion*>& uniqueRegions );
-
+	void getNeighboringRegionsStatus( std::vector<S32>& regions );
+	
+	void setGamingData(const LLSD& info);
+	const U32 getGamingFlags() const { return mGamingFlags; }
+	
+	// implements the materials capability throttle
+	bool materialsCapThrottled() const { return !mMaterialsCapThrottleTimer.hasExpired(); }
+	void resetMaterialsCapThrottle();
+	
+	U32 getMaxMaterialsPerTransaction() const;
 public:
 	struct CompareDistance
 	{
@@ -348,11 +374,12 @@ public:
 	};
 
 	void showReleaseNotes();
+	void reInitPartitions();
 
 protected:
 	void disconnectAllNeighbors();
 	void initStats();
-	void setFlags(BOOL b, U32 flags);
+	void initPartitions();
 
 public:
 	LLWind  mWind;
@@ -400,11 +427,15 @@ private:
 	U32		mPingDelay;
 	F32		mDeltaTime;				// Time since last measurement of lastPackets, Bits, etc
 
-	U32		mRegionFlags;			// includes damage flags
+	U64		mRegionFlags;			// includes damage flags
+	U64		mRegionProtocols;		// protocols supported by this region
 	U8		mSimAccess;
+	U8		mLastSimAccess;			// Singularity extension.
+	std::string mSimAccessString;	// Singularity extension.
 	F32 	mBillableFactor;
 	U32		mMaxTasks;				// max prim count
 	F32		mCameraDistanceSquared;	// updated once per frame
+	U8		mCentralBakeVersion;
 	
 	// Information for Homestead / CR-53
 	S32 mClassID;
@@ -426,12 +457,52 @@ private:
 
 	bool	mAlive;					// can become false if circuit disconnects
 	bool	mCapabilitiesReceived;
+	bool	mFeaturesReceived;
 	caps_received_signal_t mCapabilitiesReceivedSignal;
+	features_received_signal_t mFeaturesReceivedSignal;
 
 	BOOL mReleaseNotesRequested;
 	
 	LLSD mSimulatorFeatures;
+	U32 mGamingFlags;
+	// the materials capability throttle
+	LLFrameTimer mMaterialsCapThrottleTimer;
+LLFrameTimer	mRenderInfoRequestTimer;
 };
+
+inline BOOL LLViewerRegion::getRegionProtocol(U64 protocol) const
+{
+	return ((mRegionProtocols & protocol) != 0);
+}
+
+inline void LLViewerRegion::setRegionProtocol(U64 protocol, BOOL on)
+{
+	if (on)
+	{
+		mRegionProtocols |= protocol;
+	}
+	else
+	{
+		mRegionProtocols &= ~protocol;
+	}
+}
+
+inline BOOL LLViewerRegion::getRegionFlag(U64 flag) const
+{
+	return ((mRegionFlags & flag) != 0);
+}
+
+inline void LLViewerRegion::setRegionFlag(U64 flag, BOOL on)
+{
+	if (on)
+	{
+		mRegionFlags |= flag;
+	}
+	else
+	{
+		mRegionFlags &= ~flag;
+	}
+}
 
 inline BOOL LLViewerRegion::getAllowDamage() const
 {

@@ -38,18 +38,19 @@
 #include "llparcelselection.h"
 
 class LLButton;
-class LLTextBox;
-class LLTool;
 class LLCheckBoxCtrl;
-class LLTabContainer;
+class LLComboBox;
 class LLPanelPermissions;
 class LLPanelObject;
 class LLPanelVolume;
 class LLPanelContents;
 class LLPanelFace;
 class LLPanelLandInfo;
-class LLComboBox;
 class LLSlider;
+class LLTabContainer;
+class LLTextBox;
+class LLMediaCtrl;
+class LLTool;
 class LLParcelSelection;
 class LLObjectSelection;
 
@@ -71,9 +72,11 @@ public:
 	LLFloaterTools();
 	virtual ~LLFloaterTools();
 
-	virtual void onOpen();
-	virtual void onClose(bool app_quitting);
-	virtual BOOL canClose();
+	/*virtual*/ void onOpen();
+	/*virtual*/ BOOL canClose();
+	/*virtual*/ void onClose(bool app_quitting);
+	/*virtual*/ void draw();
+	/*virtual*/ void onFocusReceived();
 
 	// call this once per frame to handle visibility, rect location,
 	// button highlights, etc.
@@ -93,24 +96,34 @@ public:
 		PANEL_COUNT
 	};
 
-	/*virtual*/  void draw();
-
 	void dirty();
 	void showPanel(EInfoPanel panel);
 
 	void setStatusText(const std::string& text);
-	virtual void onFocusReceived();
 	static void setEditTool(void* data);
+	void setTool(const LLSD& user_data);
 	void saveLastTool();
+	void onClickBtnDeleteMedia();
+	void onClickBtnAddMedia();
+	void onClickBtnEditMedia();
+	void clearMediaSettings();
+	void updateMediaTitle();
+	void navigateToTitleMedia( const std::string url );
+	bool selectedMediaEditable();
+
+	LLPanelFace* getPanelFace() { return mPanelFace; }
+
 private:
-
 	void refresh();
-
+	void refreshMedia();
+	void getMediaState();
+	void updateMediaSettings();
+	static bool deleteMediaConfirm(const LLSD& notification, const LLSD& response);
+	static bool multipleFacesSelectedConfirm(const LLSD& notification, const LLSD& response);
 	static void setObjectType( LLPCode pcode );
-	static void onClickGridOptions(void* data);
+	void onClickGridOptions();
 
 public:
-
 	LLButton		*mBtnFocus;
 	LLButton		*mBtnMove;
 	LLButton		*mBtnEdit;
@@ -145,6 +158,9 @@ public:
 	LLCheckBoxCtrl*	mCheckStretchUniform;
 	LLCheckBoxCtrl*	mCheckStretchTexture;
 	LLCheckBoxCtrl*	mCheckLimitDrag;
+	LLCheckBoxCtrl*	mCheckShowHighlight;
+	LLCheckBoxCtrl*	mCheckActualRoot;
+
 
 	LLButton	*mBtnRotateLeft;
 	LLButton	*mBtnRotateReset;
@@ -186,11 +202,11 @@ public:
 	LLPanelFace				*mPanelFace;
 	LLPanelLandInfo			*mPanelLandInfo;
 
-	LLTabContainer*			mTabLand;
-
 	LLParcelSelectionHandle	mParcelSelection;
 	LLObjectSelectionHandle	mObjectSelection;
 
+	LLMediaCtrl				*mTitleMedia;
+	bool					mNeedMediaTitle;
 private:
 	BOOL					mDirty;
 
@@ -198,6 +214,8 @@ private:
 
 	void updateTreeGrassCombo(bool visible);
 	static void onSelectTreesGrass(LLUICtrl*, void*);
+protected:
+	LLSD				mMediaSettings;
 };
 
 extern LLFloaterTools *gFloaterTools;

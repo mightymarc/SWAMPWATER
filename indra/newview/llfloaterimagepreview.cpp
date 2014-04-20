@@ -3,10 +3,9 @@
  * @brief LLFloaterImagePreview class implementation
  *
  * $LicenseInfo:firstyear=2004&license=viewergpl$
- * 
+ * Second Life Viewer Source Code
  * Copyright (c) 2004-2009, Linden Research, Inc.
  * 
- * Second Life Viewer Source Code
  * The source code in this file ("Source Code") is provided by Linden Lab
  * to you under the terms of the GNU General Public License, version 2.0
  * ("GPL"), unless you have obtained a separate licensing agreement
@@ -38,6 +37,7 @@
 #include "llimagetga.h"
 #include "llimagejpeg.h"
 #include "llimagepng.h"
+#include "llimagej2c.h"
 
 #include "llagent.h"
 #include "llbutton.h"
@@ -59,14 +59,8 @@
 #include "llviewershadermgr.h"
 #include "llviewertexturelist.h"
 #include "llstring.h"
-// <edit>
-#include "llviewercontrol.h"
-// </edit>
 
 #include "hippogridmanager.h"
-
-//static
-S32 LLFloaterImagePreview::sUploadAmount = 10;
 
 const S32 PREVIEW_BORDER_WIDTH = 2;
 const S32 PREVIEW_RESIZE_HANDLE_SIZE = S32(RESIZE_HANDLE_WIDTH * OO_SQRT2) + PREVIEW_BORDER_WIDTH;
@@ -78,27 +72,19 @@ const S32 PREVIEW_TEXTURE_HEIGHT = 300;
 //-----------------------------------------------------------------------------
 // LLFloaterImagePreview()
 //-----------------------------------------------------------------------------
-LLFloaterImagePreview::LLFloaterImagePreview(const std::string& filename) : 
-	LLFloaterNameDesc(filename),
-	mAvatarPreview(NULL),
-	mSculptedPreview(NULL)
-{
-	mLastMouseX = 0;
-	mLastMouseY = 0;
-	mImagep = NULL ;
-	loadImage(mFilenameAndPath);
-}
-
 // <edit>
 LLFloaterImagePreview::LLFloaterImagePreview(const std::string& filename, void* item) : 
-	LLFloaterNameDesc(filename, item)
+	LLFloaterNameDesc(filename, item),
+// </edit>
+
+	mAvatarPreview(NULL),
+	mSculptedPreview(NULL),
+	mLastMouseX(0),
+	mLastMouseY(0),
+	mImagep(NULL)
 {
-	mLastMouseX = 0;
-	mLastMouseY = 0;
-	mImagep = NULL ;
 	loadImage(mFilenameAndPath);
 }
-// </edit>
 
 //-----------------------------------------------------------------------------
 // postBuild()
@@ -125,7 +111,7 @@ BOOL LLFloaterImagePreview::postBuild()
 		PREVIEW_HPAD + PREF_BUTTON_HEIGHT + PREVIEW_HPAD);
 	mPreviewImageRect.set(0.f, 1.f, 1.f, 0.f);
 
-	childHide("bad_image_text");
+	getChildView("bad_image_text")->setVisible(FALSE);
 
 	if (mRawImagep.notNull() && gAgent.getRegion() != NULL)
 	{
@@ -136,7 +122,7 @@ BOOL LLFloaterImagePreview::postBuild()
 		mSculptedPreview->setPreviewTarget(mRawImagep, 2.0f);
 
 		if (mRawImagep->getWidth() * mRawImagep->getHeight () <= LL_IMAGE_REZ_LOSSLESS_CUTOFF * LL_IMAGE_REZ_LOSSLESS_CUTOFF)
-			childEnable("lossless_check");
+			getChildView("lossless_check")->setEnabled(TRUE);
 
 		// <edit>
 		gSavedSettings.setBOOL("TemporaryUpload",FALSE);
@@ -147,10 +133,12 @@ BOOL LLFloaterImagePreview::postBuild()
 	{
 		mAvatarPreview = NULL;
 		mSculptedPreview = NULL;
-		childShow("bad_image_text");
-		childDisable("clothing_type_combo");
-		childDisable("ok_btn");
+		getChildView("bad_image_text")->setVisible(TRUE);
+		getChildView("clothing_type_combo")->setEnabled(FALSE);
+		getChildView("ok_btn")->setEnabled(FALSE);
 	}
+
+	getChild<LLUICtrl>("ok_btn")->setCommitCallback(boost::bind(&LLFloaterNameDesc::onBtnOK, this));
 
 	return TRUE;
 }
@@ -165,7 +153,6 @@ LLFloaterImagePreview::~LLFloaterImagePreview()
 	mRawImagep = NULL;
 	mAvatarPreview = NULL;
 	mSculptedPreview = NULL;
-	
 	mImagep = NULL ;
 }
 
@@ -348,7 +335,6 @@ void LLFloaterImagePreview::draw()
 bool LLFloaterImagePreview::loadImage(const std::string& src_filename)
 {
 	std::string exten = gDirUtilp->getExtension(src_filename);
-	
 	U32 codec = LLImageBase::getCodecFromExtension(exten);
 
 	LLPointer<LLImageRaw> raw_image = new LLImageRaw;
@@ -417,6 +403,21 @@ bool LLFloaterImagePreview::loadImage(const std::string& src_filename)
 			}
 			
 			if (!png_image->decode(raw_image, 0.0f))
+			{
+				return false;
+			}
+		}
+		break;
+	case IMG_CODEC_J2C:
+		{
+			LLPointer<LLImageJ2C> j2c_image = new LLImageJ2C;
+
+			if (!j2c_image->load(src_filename))
+			{
+				return false;
+			}
+			
+			if (!j2c_image->decode(raw_image, 0.0f))
 			{
 				return false;
 			}
@@ -647,7 +648,7 @@ S8 LLImagePreviewAvatar::getType() const
 
 void LLImagePreviewAvatar::setPreviewTarget(const std::string& joint_name, const std::string& mesh_name, LLImageRaw* imagep, F32 distance, BOOL male) 
 { 
-	mTargetJoint = mDummyAvatar->mRoot.findJoint(joint_name);
+	mTargetJoint = mDummyAvatar->mRoot->findJoint(joint_name);
 	// clear out existing test mesh
 	if (mTargetMesh)
 	{
@@ -666,9 +667,9 @@ void LLImagePreviewAvatar::setPreviewTarget(const std::string& joint_name, const
 		mDummyAvatar->updateVisualParams();
 		mDummyAvatar->updateGeometry(mDummyAvatar->mDrawable);
 	}
-	mDummyAvatar->mRoot.setVisible(FALSE, TRUE);
+	mDummyAvatar->mRoot->setVisible(FALSE, TRUE);
 
-	mTargetMesh = (LLViewerJointMesh*)mDummyAvatar->mRoot.findJoint(mesh_name);
+	mTargetMesh = dynamic_cast<LLViewerJointMesh*>(mDummyAvatar->mRoot->findJoint(mesh_name));
 	mTargetMesh->setTestTexture(mTextureName);
 	mTargetMesh->setVisible(TRUE, FALSE);
 	mCameraDistance = distance;
@@ -685,7 +686,7 @@ void LLImagePreviewAvatar::clearPreviewTexture(const std::string& mesh_name)
 {
 	if (mDummyAvatar)
 	{
-		LLViewerJointMesh *mesh = (LLViewerJointMesh*)mDummyAvatar->mRoot.findJoint(mesh_name);
+		LLViewerJointMesh *mesh = dynamic_cast<LLViewerJointMesh*>(mDummyAvatar->mRoot->findJoint(mesh_name));
 		// clear out existing test mesh
 		if (mesh)
 		{
@@ -702,6 +703,8 @@ BOOL LLImagePreviewAvatar::render()
 	mNeedsUpdate = FALSE;
 	LLVOAvatar* avatarp = mDummyAvatar;
 
+	gGL.pushUIMatrix();
+	gGL.loadUIIdentity();
 
 	gGL.matrixMode(LLRender::MM_PROJECTION);
 	gGL.pushMatrix();
@@ -750,18 +753,22 @@ BOOL LLImagePreviewAvatar::render()
 	LLVertexBuffer::unbind();
 	avatarp->updateLOD();
 	
-
 	if (avatarp->mDrawable.notNull())
 	{
 		LLGLDepthTest gls_depth(GL_TRUE, GL_TRUE);
 		// make sure alpha=0 shows avatar material color
 		LLGLDisable no_blend(GL_BLEND);
 
-		LLDrawPoolAvatar *avatarPoolp = (LLDrawPoolAvatar *)avatarp->mDrawable->getFace(0)->getPool();
-		gPipeline.enableLightsPreview();
-		avatarPoolp->renderAvatars(avatarp);  // renders only one avatar
+		LLFace* face = avatarp->mDrawable->getFace(0);
+		if (face)
+		{
+			LLDrawPoolAvatar *avatarPoolp = (LLDrawPoolAvatar *)face->getPool();
+			gPipeline.enableLightsPreview();
+			avatarPoolp->renderAvatars(avatarp);  // renders only one avatar
+		}
 	}
 
+	gGL.popUIMatrix();
 	gGL.color4f(1,1,1,1);
 	return TRUE;
 }
@@ -892,7 +899,6 @@ void LLImagePreviewSculpted::setPreviewTarget(LLImageRaw* imagep, F32 distance)
 BOOL LLImagePreviewSculpted::render()
 {
 	mNeedsUpdate = FALSE;
-
 	LLGLSUIDefault def;
 	LLGLDisable no_blend(GL_BLEND);
 	LLGLEnable cull(GL_CULL_FACE);
@@ -950,11 +956,13 @@ BOOL LLImagePreviewSculpted::render()
 	{
 		gObjectPreviewProgram.bind();
 	}
+	gPipeline.enableLightsPreview();
+
 	gGL.pushMatrix();
 	const F32 SCALE = 1.25f;
 	gGL.scalef(SCALE, SCALE, SCALE);
 	const F32 BRIGHTNESS = 0.9f;
-	gGL.color3f(BRIGHTNESS, BRIGHTNESS, BRIGHTNESS);
+	gGL.diffuseColor3f(BRIGHTNESS, BRIGHTNESS, BRIGHTNESS);
 
 	mVertexBuffer->setBuffer(LLVertexBuffer::MAP_VERTEX | LLVertexBuffer::MAP_NORMAL | LLVertexBuffer::MAP_TEXCOORD0);
 	mVertexBuffer->draw(LLRender::TRIANGLES, num_indices, 0);

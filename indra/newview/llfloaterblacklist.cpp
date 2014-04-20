@@ -1,19 +1,22 @@
 // <edit>
 #include "llviewerprecompiledheaders.h"
+
 #include "llfloaterblacklist.h"
+
 #include "llaudioengine.h"
-#include "llvfs.h"
-#include "lluictrlfactory.h"
-#include "llsdserialize.h"
-#include "llscrolllistctrl.h"
-#include "llcheckboxctrl.h"
-#include "statemachine/aifilepicker.h"
-#include "llviewerwindow.h"
-#include "llwindow.h"
-#include "llviewercontrol.h"
-#include "llviewerobjectlist.h"
+#include "llcombobox.h"
 #include "lldate.h"
+#include "llscrolllistctrl.h"
+#include "llscrolllistitem.h"
+#include "llsdserialize.h"
+#include "lluictrlfactory.h"
+#include "llvfs.h"
+#include "llwindow.h"
+
 #include "llagent.h"
+#include "llviewerobjectlist.h"
+#include "llviewerwindow.h"
+#include "statemachine/aifilepicker.h"
 
 LLFloaterBlacklist* LLFloaterBlacklist::sInstance;
 
@@ -43,6 +46,25 @@ void LLFloaterBlacklist::show()
 		sInstance->open();
 	}
 }
+// static
+void LLFloaterBlacklist::toggle()
+{
+	if (sInstance && sInstance->getVisible())
+	{
+		delete sInstance;
+	}
+	else
+	{
+		show();
+	}
+}
+// static
+BOOL LLFloaterBlacklist::visible()
+{
+	if (sInstance && sInstance->getVisible())
+		return TRUE;
+	return FALSE;
+}
 BOOL LLFloaterBlacklist::postBuild()
 {
 	childSetAction("add_btn", onClickAdd, this);
@@ -51,7 +73,7 @@ BOOL LLFloaterBlacklist::postBuild()
 	childSetAction("remove_btn", onClickRemove, this);
 	childSetAction("save_btn", onClickSave, this);
 	childSetAction("load_btn", onClickLoad, this);
-	childSetAction("rerender_btn", onClickRerender, this);
+	//childSetAction("rerender_btn", onClickRerender, this);
 	childSetVisible("copy_uuid_btn",false);
 	LLComboBox* box = getChild<LLComboBox>("asset_combo");
 	box->add("Texture",LLSD(0));
@@ -152,7 +174,8 @@ void LLFloaterBlacklist::addEntry(LLUUID key, LLSD data)
 				std::string wav_path= gDirUtilp->getExpandedFilename(LL_PATH_CACHE,sound_id.asString()) + ".dsf";
 				if(LLAPRFile::isExist(wav_path, LL_APR_RPB))
 					LLAPRFile::remove(wav_path);
-				gAudiop->removeAudioData(sound_id);
+				if(gAudiop)
+					gAudiop->removeAudioData(sound_id);
 			}
 			blacklist_entries.insert(std::pair<LLUUID,LLSD>(key,data));
 			updateBlacklists();
@@ -175,7 +198,7 @@ void LLFloaterBlacklist::onClickCopyUUID(void* user_data)
 {
 	LLFloaterBlacklist* floaterp = (LLFloaterBlacklist*)user_data;
 	LLScrollListCtrl* list = floaterp->getChild<LLScrollListCtrl>("file_list");
-	gViewerWindow->mWindow->copyTextToClipboard(utf8str_to_wstring(list->getFirstSelected()->getColumn(0)->getValue().asString()));
+	gViewerWindow->getWindow()->copyTextToClipboard(utf8str_to_wstring(list->getFirstSelected()->getColumn(0)->getValue().asString()));
 }
 // static
 void LLFloaterBlacklist::onClickRemove(void* user_data)

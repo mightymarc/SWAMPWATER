@@ -2,31 +2,25 @@
  * @file llinventory.cpp
  * @brief Implementation of the inventory system.
  *
- * $LicenseInfo:firstyear=2001&license=viewergpl$
- * 
- * Copyright (c) 2001-2009, Linden Research, Inc.
- * 
+ * $LicenseInfo:firstyear=2001&license=viewerlgpl$
  * Second Life Viewer Source Code
- * The source code in this file ("Source Code") is provided by Linden Lab
- * to you under the terms of the GNU General Public License, version 2.0
- * ("GPL"), unless you have obtained a separate licensing agreement
- * ("Other License"), formally executed by you and Linden Lab.  Terms of
- * the GPL can be found in doc/GPL-license.txt in this distribution, or
- * online at http://secondlifegrid.net/programs/open_source/licensing/gplv2
+ * Copyright (C) 2010, Linden Research, Inc.
  * 
- * There are special exceptions to the terms and conditions of the GPL as
- * it is applied to this Source Code. View the full text of the exception
- * in the file doc/FLOSS-exception.txt in this software distribution, or
- * online at
- * http://secondlifegrid.net/programs/open_source/licensing/flossexception
+ * This library is free software; you can redistribute it and/or
+ * modify it under the terms of the GNU Lesser General Public
+ * License as published by the Free Software Foundation;
+ * version 2.1 of the License only.
  * 
- * By copying, modifying or distributing this software, you acknowledge
- * that you have read and understood your obligations described above,
- * and agree to abide by those obligations.
+ * This library is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+ * Lesser General Public License for more details.
  * 
- * ALL LINDEN LAB SOURCE CODE IS PROVIDED "AS IS." LINDEN LAB MAKES NO
- * WARRANTIES, EXPRESS, IMPLIED OR OTHERWISE, REGARDING ITS ACCURACY,
- * COMPLETENESS OR PERFORMANCE.
+ * You should have received a copy of the GNU Lesser General Public
+ * License along with this library; if not, write to the Free Software
+ * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301  USA
+ * 
+ * Linden Research, Inc., 945 Battery Street, San Francisco, CA  94111  USA
  * $/LicenseInfo$
  */
 
@@ -348,15 +342,6 @@ void LLInventoryItem::copyItem(const LLInventoryItem* other)
 	mCreationDate = other->mCreationDate;
 }
 
-// As a constructor alternative, the clone() method works like a
-// copy constructor, but gens a new UUID.
-void LLInventoryItem::cloneItem(LLPointer<LLInventoryItem>& newitem) const
-{
-	newitem = new LLInventoryItem;
-	newitem->copyItem(this);
-	newitem->mUUID.generate();
-}
-
 // If this is a linked item, then the UUID of the base object is
 // this item's assetID.
 // virtual
@@ -392,6 +377,11 @@ void LLInventoryItem::setAssetUUID(const LLUUID& asset_id)
 
 
 const std::string& LLInventoryItem::getDescription() const
+{
+	return mDescription;
+}
+
+const std::string& LLInventoryItem::getActualDescription() const
 {
 	return mDescription;
 }
@@ -845,7 +835,7 @@ BOOL LLInventoryItem::importLegacyStream(std::istream& input_stream)
 		}
 		else if(0 == strcmp("permissions", keyword))
 		{
-			success = mPermissions.importLegacyStream(input_stream);
+			success = mPermissions.importStream(input_stream);
 		}
 		else if(0 == strcmp("sale_info", keyword))
 		{
@@ -855,7 +845,7 @@ BOOL LLInventoryItem::importLegacyStream(std::istream& input_stream)
 			// should pick up the vast majority of the tasks.
 			BOOL has_perm_mask = FALSE;
 			U32 perm_mask = 0;
-			success = mSaleInfo.importLegacyStream(input_stream, has_perm_mask, perm_mask);
+			success = mSaleInfo.importStream(input_stream, has_perm_mask, perm_mask);
 			if(has_perm_mask)
 			{
 				if(perm_mask == PERM_NONE)
@@ -971,7 +961,7 @@ BOOL LLInventoryItem::exportLegacyStream(std::ostream& output_stream, BOOL inclu
 	output_stream << "\t\titem_id\t" << uuid_str << "\n";
 	mParentUUID.toString(uuid_str);
 	output_stream << "\t\tparent_id\t" << uuid_str << "\n";
-	mPermissions.exportLegacyStream(output_stream);
+	mPermissions.exportStream(output_stream);
 
 	// Check for permissions to see the asset id, and if so write it
 	// out as an asset id. Otherwise, apply our cheesy encryption.
@@ -1005,7 +995,7 @@ BOOL LLInventoryItem::exportLegacyStream(std::ostream& output_stream, BOOL inclu
 	std::string buffer;
 	buffer = llformat( "\t\tflags\t%08x\n", mFlags);
 	output_stream << buffer;
-	mSaleInfo.exportLegacyStream(output_stream);
+	mSaleInfo.exportStream(output_stream);
 	output_stream << "\t\tname\t" << mName.c_str() << "|\n";
 	output_stream << "\t\tdesc\t" << mDescription.c_str() << "|\n";
 	output_stream << "\t\tcreation_date\t" << mCreationDate << "\n";
@@ -1123,7 +1113,7 @@ bool LLInventoryItem::fromLLSD(const LLSD& sd)
 	{
 		if (sd[w].isString())
 		{
-			mType = LLAssetType::lookup(sd[w].asString());
+			mType = LLAssetType::lookup(sd[w].asString().c_str());
 		}
 		else if (sd[w].isInteger())
 		{
@@ -1160,6 +1150,40 @@ bool LLInventoryItem::fromLLSD(const LLSD& sd)
 		{
 			mFlags = sd[w].asInteger();
 		}
+
+		//<singu>
+		// Define a few magic constants that are not accessible otherwise, from here.
+		// mInventoryType:
+		static U32 IT_WEARABLE = 18;	// LLInventoryType::IT_WEARABLE
+		// mType, these are the two asset types that are IT_WEARABLE:
+		static U32 AT_BODYPART = 13;	// LLAssetType::AT_BODYPART
+		// Viewer local values:
+		static U32 WT_UNKNOWN = 16;		// LLWearableType::WT_UNKNOWN
+		static U32 WT_COUNT = 17;		// LLWearableType::WT_COUNT
+		// The last 8 bits of mFlags contain the wearable type.
+		static U32 II_FLAGS_WEARABLES_MASK = 0xff;	// LLInventoryItemFlags::II_FLAGS_WEARABLES_MASK
+
+		// The wearable type is stored in the lower 8 bits of mFlags.
+		U32 wt = mFlags & II_FLAGS_WEARABLES_MASK;
+
+		// Because WT_UNKNOWN now has locally a special meaning, make sure we don't receive it from the server.
+		if (wt == WT_UNKNOWN)
+		{
+			llwarns << "Received inventory item with wearable type WT_UNKNOWN from server! You should upgrade your viewer." << llendl;
+			// Change this new wearable type to WT_COUNT, as if when we had not inserted WT_UNKNOWN locally.
+			mFlags += 1;
+			wt = WT_COUNT;
+		}
+
+		// Detect possible problematic items.
+		if (wt == 0 && mInventoryType == IT_WEARABLE && mType != AT_BODYPART)
+		{
+			// This is not possible, and therefore is probably an item creatd by a pre-multiwear viewer (or Second Inventory, etc).
+			// The wearable type is NOT a shape (0) in that case of course, but we don't know what it is without downloading the
+			// asset.
+			mFlags |= WT_UNKNOWN;
+		}
+		//</singu>
 	}
 	w = INV_NAME_LABEL;
 	if (sd.has(w))
@@ -1638,36 +1662,6 @@ LLSD ll_create_sd_from_inventory_item(LLPointer<LLInventoryItem> item)
 	return rv;
 }
 
-LLPointer<LLInventoryItem> ll_create_item_from_sd(const LLSD& sd_item)
-{
-	LLPointer<LLInventoryItem> rv = new LLInventoryItem;
-	rv->setUUID(sd_item[INV_ITEM_ID_LABEL].asUUID());
-	rv->setParent(sd_item[INV_PARENT_ID_LABEL].asUUID());
-	rv->rename(sd_item[INV_NAME_LABEL].asString());
-	rv->setType(
-		LLAssetType::lookup(sd_item[INV_ASSET_TYPE_LABEL].asString()));
-	if (sd_item.has("shadow_id"))
-	{
-		LLUUID asset_id = sd_item["shadow_id"];
-		LLXORCipher cipher(MAGIC_ID.mData, UUID_BYTES);
-		cipher.decrypt(asset_id.mData, UUID_BYTES);
-		rv->setAssetUUID(asset_id);
-	}
-	if (sd_item.has(INV_ASSET_ID_LABEL))
-	{
-		rv->setAssetUUID(sd_item[INV_ASSET_ID_LABEL].asUUID());
-	}
-	rv->setDescription(sd_item[INV_DESC_LABEL].asString());
-	rv->setSaleInfo(ll_sale_info_from_sd(sd_item[INV_SALE_INFO_LABEL]));
-	rv->setPermissions(ll_permissions_from_sd(sd_item[INV_PERMISSIONS_LABEL]));
-	rv->setInventoryType(
-		LLInventoryType::lookup(
-			sd_item[INV_INVENTORY_TYPE_LABEL].asString()));
-	rv->setFlags((U32)(sd_item[INV_FLAGS_LABEL].asInteger()));
-	rv->setCreationDate(sd_item[INV_CREATION_DATE_LABEL].asInteger());
-	return rv;
-}
-
 LLSD ll_create_sd_from_inventory_category(LLPointer<LLInventoryCategory> cat)
 {
 	LLSD rv;
@@ -1700,6 +1694,6 @@ LLPointer<LLInventoryCategory> ll_create_category_from_sd(const LLSD& sd_cat)
 		LLAssetType::lookup(sd_cat[INV_ASSET_TYPE_LABEL].asString()));
 	rv->setPreferredType(
 			LLFolderType::lookup(
-			sd_cat[INV_PREFERRED_TYPE_LABEL].asString()));
+				sd_cat[INV_PREFERRED_TYPE_LABEL].asString()));
 	return rv;
 }

@@ -55,6 +55,8 @@ BOOL LLFocusableElement::handleUnicodeChar(llwchar uni_char, BOOL called_from_pa
 // virtual
 LLFocusableElement::~LLFocusableElement()
 {
+	// Make sure nothing is pointing to us anymore!
+	gFocusMgr.removeKeyboardFocusWithoutCallback(this);
 	delete mFocusLostCallback;
 	delete mFocusReceivedCallback;
 	delete mFocusChangedCallback;
@@ -131,6 +133,7 @@ LLFocusMgr::LLFocusMgr()
 	mKeyboardFocus( NULL ),
 	mLastKeyboardFocus( NULL ),
 	mDefaultKeyboardFocus( NULL ),
+	mLastDefaultKeyboardFocus( NULL ),
 	mKeystrokesOnly(FALSE),
 	mTopCtrl( NULL ),
 	mAppHasFocus(TRUE),   // Macs don't seem to notify us that we've gotten focus, so default to true
@@ -171,6 +174,23 @@ void LLFocusMgr::releaseFocusIfNeeded( const LLView* view )
 	}
 }
 
+void LLFocusMgr::restoreDefaultKeyboardFocus(LLFocusableElement* current_default_focus)
+{
+	if (current_default_focus && mDefaultKeyboardFocus == current_default_focus)
+	{
+		setDefaultKeyboardFocus(mLastDefaultKeyboardFocus);
+		mLastDefaultKeyboardFocus = NULL;
+	}
+}
+
+void LLFocusMgr::restoreKeyboardFocus(LLFocusableElement* current_focus)
+{
+	if (current_focus && mKeyboardFocus == current_focus)
+	{
+		setKeyboardFocus(mLastKeyboardFocus);
+		mLastKeyboardFocus = NULL;
+	}
+}
 
 void LLFocusMgr::setKeyboardFocus(LLFocusableElement* new_focus, BOOL lock, BOOL keystrokes_only)
 {
@@ -328,13 +348,38 @@ void LLFocusMgr::removeKeyboardFocusWithoutCallback( const LLFocusableElement* f
 	{
 		mLockedView = NULL;
 	}
-
-	if( mKeyboardFocus == focus )
+	if (mKeyboardFocus == focus)
 	{
 		mKeyboardFocus = NULL;
 	}
+	if (mLastKeyboardFocus == focus)
+	{
+		mLastKeyboardFocus = NULL;
+	}
+	if (mDefaultKeyboardFocus == focus)
+	{
+		mDefaultKeyboardFocus = NULL;
+	}
+	if (mLastDefaultKeyboardFocus == focus)
+	{
+		mLastDefaultKeyboardFocus = NULL;
+	}
 }
 
+bool LLFocusMgr::keyboardFocusHasAccelerators() const
+{
+	LLView* focus_view = dynamic_cast<LLView*>(mKeyboardFocus);
+	while(focus_view)
+	{
+		if (focus_view->hasAccelerators())
+		{
+			return true;
+		}
+
+		focus_view = focus_view->getParent();
+	}
+	return false;
+}
 
 void LLFocusMgr::setMouseCapture( LLMouseHandler* new_captor )
 {

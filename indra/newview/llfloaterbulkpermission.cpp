@@ -35,40 +35,42 @@
 #include "llviewerprecompiledheaders.h"
 #include "llfloaterbulkpermission.h"
 #include "llfloaterperms.h" // for utilities
-#include "llinventorydefines.h"
 #include "llagent.h"
 #include "llchat.h"
+#include "llinventorydefines.h"
 #include "llviewerwindow.h"
 #include "llviewerobject.h"
 #include "llviewerobjectlist.h"
 #include "llviewerregion.h"
-#include "lscript_rt_interface.h"
+//#include "lscript_rt_interface.h"
 #include "llviewercontrol.h"
 #include "llviewerobject.h"
 #include "llviewerregion.h"
 #include "llresmgr.h"
 #include "llbutton.h"
 #include "lldir.h"
-#include "llfloaterchat.h"
 #include "llviewerstats.h"
 #include "lluictrlfactory.h"
 #include "llselectmgr.h"
+#include "llcheckboxctrl.h"
 #include "llnotificationsutil.h"
 
 #include "roles_constants.h" // for GP_OBJECT_MANIPULATE
 
 
-LLFloaterBulkPermission::LLFloaterBulkPermission(const LLSD& seed) : mDone(FALSE)
+LLFloaterBulkPermission::LLFloaterBulkPermission(const LLSD& seed)
+:	LLFloater(),
+	mDone(FALSE)
 {
 	mID.generate();
+	mCommitCallbackRegistrar.add("BulkPermission.Help",	boost::bind(LLFloaterBulkPermission::onHelpBtn));
+	mCommitCallbackRegistrar.add("BulkPermission.Apply",	boost::bind(&LLFloaterBulkPermission::onApplyBtn, this));
+	mCommitCallbackRegistrar.add("BulkPermission.Close",	boost::bind(&LLFloaterBulkPermission::onCloseBtn, this));
+	mCommitCallbackRegistrar.add("BulkPermission.CheckAll",	boost::bind(&LLFloaterBulkPermission::onCheckAll, this));
+	mCommitCallbackRegistrar.add("BulkPermission.UncheckAll",	boost::bind(&LLFloaterBulkPermission::onUncheckAll, this));
+	mCommitCallbackRegistrar.add("BulkPermission.CommitCopy",	boost::bind(&LLFloaterBulkPermission::onCommitCopy, this));
 	LLUICtrlFactory::getInstance()->buildFloater(this,"floater_bulk_perms.xml");
 	childSetEnabled("next_owner_transfer", gSavedSettings.getBOOL("BulkChangeNextOwnerCopy"));
-	childSetAction("help", onHelpBtn, this);
-	childSetAction("apply", onApplyBtn, this);
-	childSetAction("close", onCloseBtn, this);
-	childSetAction("check_all", onCheckAll, this);
-	childSetAction("check_none", onUncheckAll, this);
-	childSetCommitCallback("next_owner_copy", &onCommitCopy, this);
 }
 
 void LLFloaterBulkPermission::doApply()
@@ -95,7 +97,7 @@ void LLFloaterBulkPermission::doApply()
 	LLSelectMgr::getInstance()->getSelection()->applyToNodes(&gatherer);
 	if(mObjectIDs.empty())
 	{
-		list->addCommentText(getString("nothing_to_modify_text"));
+		list->setCommentText(getString("nothing_to_modify_text"));
 	}
 	else
 	{
@@ -112,7 +114,7 @@ void LLFloaterBulkPermission::doApply()
 // worked on.
 // NOT static, virtual!
 void LLFloaterBulkPermission::inventoryChanged(LLViewerObject* viewer_object,
-											  LLInventoryObject::object_list_t* inv,
+											 LLInventoryObject::object_list_t* inv,
 											 S32,
 											 void* q_id)
 {
@@ -146,41 +148,38 @@ void LLFloaterBulkPermission::inventoryChanged(LLViewerObject* viewer_object,
 	}
 }
 
-void LLFloaterBulkPermission::onApplyBtn(void* user_data)
+void LLFloaterBulkPermission::onApplyBtn()
 {
-	LLFloaterBulkPermission* self = static_cast<LLFloaterBulkPermission*>(user_data);
-	self->doApply();
+	doApply();
 }
 
-void LLFloaterBulkPermission::onHelpBtn(void* user_data)
+void LLFloaterBulkPermission::onHelpBtn()
 {
 	LLNotificationsUtil::add("HelpBulkPermission");
 }
 
-void LLFloaterBulkPermission::onCloseBtn(void* user_data)
+void LLFloaterBulkPermission::onCloseBtn()
 {
-	LLFloaterBulkPermission* self = static_cast<LLFloaterBulkPermission*>(user_data);
-	self->onClose(false);
+	onClose(false);
 }
 
 //static 
-void LLFloaterBulkPermission::onCommitCopy(LLUICtrl* ctrl, void* data)
+void LLFloaterBulkPermission::onCommitCopy()
 {
-	LLFloaterBulkPermission* self = static_cast<LLFloaterBulkPermission*>(data);
 	// Implements fair use
 	BOOL copyable = gSavedSettings.getBOOL("BulkChangeNextOwnerCopy");
 	if(!copyable)
 	{
 		gSavedSettings.setBOOL("BulkChangeNextOwnerTransfer", TRUE);
 	}
-	LLCheckBoxCtrl* xfer = self->getChild<LLCheckBoxCtrl>("next_owner_transfer");
+	LLCheckBoxCtrl* xfer = getChild<LLCheckBoxCtrl>("next_owner_transfer");
 	xfer->setEnabled(copyable);
 }
 
 BOOL LLFloaterBulkPermission::start()
 {
 	// note: number of top-level objects to modify is mObjectIDs.count().
-	getChild<LLScrollListCtrl>("queue output")->addCommentText(getString("start_text"));
+	getChild<LLScrollListCtrl>("queue output")->addSimpleElement(getString("start_text"));
 	return nextObject();
 }
 
@@ -203,7 +202,7 @@ BOOL LLFloaterBulkPermission::nextObject()
 
 	if(isDone() && !mDone)
 	{
-		getChild<LLScrollListCtrl>("queue output")->addCommentText(getString("done_text"));
+		getChild<LLScrollListCtrl>("queue output")->addSimpleElement(getString("done_text"));
 		mDone = TRUE;
 	}
 	return successful_start;
@@ -255,7 +254,7 @@ void LLFloaterBulkPermission::doCheckUncheckAll(BOOL check)
 }
 
 
-void LLFloaterBulkPermission::handleInventory(LLViewerObject* viewer_obj,  LLInventoryObject::object_list_t* inv)
+void LLFloaterBulkPermission::handleInventory(LLViewerObject* viewer_obj, LLInventoryObject::object_list_t* inv)
 {
 	LLScrollListCtrl* list = getChild<LLScrollListCtrl>("queue output");
 
@@ -349,7 +348,7 @@ void LLFloaterBulkPermission::handleInventory(LLViewerObject* viewer_obj,  LLInv
 					status_text.setArg("[STATUS]", "");
 				}
 				
-				list->addCommentText(status_text.getString());
+				list->addSimpleElement(status_text.getString());
 
 				//TODO if we are an object inside an object we should check a recuse flag and if set
 				//open the inventory of the object and recurse - Michelle2 Zenovka
@@ -378,8 +377,6 @@ void LLFloaterBulkPermission::handleInventory(LLViewerObject* viewer_obj,  LLInv
 
 void LLFloaterBulkPermission::updateInventory(LLViewerObject* object, LLViewerInventoryItem* item, U8 key, bool is_new)
 {
-	LLMemType mt(LLMemType::MTYPE_OBJECT);
-	
 	// This slices the object into what we're concerned about on the viewer. 
 	// The simulator will take the permissions and transfer ownership.
 	LLPointer<LLViewerInventoryItem> task_item =

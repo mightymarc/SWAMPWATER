@@ -77,7 +77,6 @@
 #include "llviewerregion.h"
 #include "llassetuploadresponders.h"
 
-#include "curl/curl.h"
 #include "llstreamtools.h"
 
 // [RLVa:KB] - Checked: 2011-09-04 (RLVa-1.4.1a) | Added: RLVa-1.4.1a
@@ -374,8 +373,8 @@ void LLWLParamManager::updateShaderUniforms(LLGLSLShader * shader)
 
 	if (shader->mShaderGroup == LLGLSLShader::SG_DEFAULT)
 	{
-		shader->uniform4fv(LLViewerShaderMgr::LIGHTNORM, 1, mRotatedLightDir.mV);
-		shader->uniform3fv("camPosLocal", 1, LLViewerCamera::getInstance()->getOrigin().mV);
+		shader->uniform4fv(LLShaderMgr::LIGHTNORM, 1, mRotatedLightDir.mV);
+		shader->uniform3fv(LLShaderMgr::WL_CAMPOSLOCAL, 1, LLViewerCamera::getInstance()->getOrigin().mV);
 	} 
 
 	else if (shader->mShaderGroup == LLGLSLShader::SG_SKY)
@@ -383,7 +382,7 @@ void LLWLParamManager::updateShaderUniforms(LLGLSLShader * shader)
 		shader->uniform4fv(LLViewerShaderMgr::LIGHTNORM, 1, mClampedLightDir.mV);
 	}
 
-	shader->uniform1f("scene_light_strength", mSceneLightStrength);
+	shader->uniform1f(LLShaderMgr::SCENE_LIGHT_STRENGTH, mSceneLightStrength);
 	
 }
 
@@ -476,7 +475,7 @@ void LLWLParamManager::propagateParameters(void)
 void LLWLParamManager::update(LLViewerCamera * cam)
 {
 	LLFastTimer ftm(FTM_UPDATE_WLPARAM);
-	
+
 	// update clouds, sun, and general
 	mCurParams.updateCloudScrolling();
 	
@@ -776,14 +775,19 @@ boost::signals2::connection LLWLParamManager::setPresetListChangeCallback(const 
 }
 
 
-
-// static
 void LLWLParamManager::initSingleton()
 {
 	LL_DEBUGS("Windlight") << "Initializing sky" << LL_ENDL;
 
 	loadAllPresets();
 
+	// Here it used to call LLWLParamManager::initHack(), but we can't do that since it calls
+	// LLWLParamManager::initSingleton() recursively. Instead, call it from LLAppViewer::init().
+}
+
+// This is really really horrible, but can't be fixed without a rewrite.
+void LLWLParamManager::initHack()
+{
 	// load the day
 	std::string preferred_day = LLEnvManagerNew::instance().getDayCycleName();
 	if (!LLDayCycleManager::instance().getPreset(preferred_day, mDay))
@@ -811,7 +815,10 @@ void LLWLParamManager::initSingleton()
 	// but use linden time sets it to what the estate is
 	mAnimator.setTimeType(LLWLAnimator::TIME_LINDEN);
 
-	LLEnvManagerNew::instance().usePrefs();
+	// This shouldn't be called here. It has nothing to do with the initialization of this singleton.
+	// Instead, call it one-time when the viewer starts. Calling it here causes a recursive entry
+	// of LLWLParamManager::initSingleton().
+	//LLEnvManagerNew::instance().usePrefs();
 }
 
 // static

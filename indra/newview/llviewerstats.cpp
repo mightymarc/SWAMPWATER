@@ -62,10 +62,14 @@
 #include "llviewernetwork.h"
 #include "llmeshrepository.h" //for LLMeshRepository::sBytesReceived
 #include "sgmemstat.h"
-#if LL_LCD_COMPILE
-#include "lllcd.h"
-#endif
+#include "llviewertexlayer.h"
 
+class AIHTTPTimeoutPolicy;
+extern AIHTTPTimeoutPolicy viewerStatsResponder_timeout;
+
+namespace AICurlInterface {
+size_t getHTTPBandwidth(void);
+}
 
 class StatAttributes
 {
@@ -201,10 +205,7 @@ const StatAttributes STAT_INFO[LLViewerStats::ST_COUNT] =
 	// ST_TEX_BAKES
 	StatAttributes("Texture Bakes", FALSE, FALSE),
 	// ST_TEX_REBAKES
-	StatAttributes("Texture Rebakes", FALSE, FALSE),
-
-	// ST_LOGITECH_KEYBOARD
-	StatAttributes("Logitech LCD", FALSE, FALSE)
+	StatAttributes("Texture Rebakes", FALSE, FALSE)
 
 };
 
@@ -213,7 +214,8 @@ LLViewerStats::LLViewerStats() :
 	mLayersKBitStat("layerskbitstat"),
 	mObjectKBitStat("objectkbitstat"),
 	mAssetKBitStat("assetkbitstat"),
-	mTextureKBitStat("texturekbitstat"),
+	mHTTPTextureKBitStat("httptexturekbitstat"),
+	mUDPTextureKBitStat("udptexturekbitstat"),
 	mMallocStat("mallocstat"),
 	mVFSPendingOperations("vfspendingoperations"),
 	mObjectsDrawnStat("objectsdrawnstat"),
@@ -242,6 +244,9 @@ LLViewerStats::LLViewerStats() :
 	mSimSimPhysicsStepMsec("simsimphysicsstepmsec"),
 	mSimSimPhysicsShapeUpdateMsec("simsimphysicsshapeupdatemsec"),
 	mSimSimPhysicsOtherMsec("simsimphysicsothermsec"),
+	mSimSimAIStepMsec("simsimaistepmsec"),
+	mSimSimSkippedSilhouetteSteps("simsimskippedsilhouettesteps"),
+	mSimSimPctSteppedCharacters("simsimpctsteppedcharacters"),
 	mSimAgentMsec("simagentmsec"),
 	mSimImagesMsec("simimagesmsec"),
 	mSimScriptMsec("simscriptmsec"),
@@ -253,6 +258,7 @@ LLViewerStats::LLViewerStats() :
 	mSimObjects("simobjects"),
 	mSimActiveObjects("simactiveobjects"),
 	mSimActiveScripts("simactivescripts"),
+	mSimPctScriptsRun("simpctscriptsrun"),
 	mSimInPPS("siminpps"),
 	mSimOutPPS("simoutpps"),
 	mSimPendingDownloads("simpendingdownloads"),
@@ -295,19 +301,20 @@ LLViewerStats::~LLViewerStats()
 
 void LLViewerStats::resetStats()
 {
-	LLViewerStats::getInstance()->mKBitStat.reset();
-	LLViewerStats::getInstance()->mLayersKBitStat.reset();
-	LLViewerStats::getInstance()->mObjectKBitStat.reset();
-	LLViewerStats::getInstance()->mTextureKBitStat.reset();
-	LLViewerStats::getInstance()->mVFSPendingOperations.reset();
-	LLViewerStats::getInstance()->mAssetKBitStat.reset();
-	LLViewerStats::getInstance()->mPacketsInStat.reset();
-	LLViewerStats::getInstance()->mPacketsLostStat.reset();
-	LLViewerStats::getInstance()->mPacketsOutStat.reset();
-	LLViewerStats::getInstance()->mFPSStat.reset();
-	LLViewerStats::getInstance()->mTexturePacketsStat.reset();
-	
-	LLViewerStats::getInstance()->mAgentPositionSnaps.reset();
+	LLViewerStats& stats = LLViewerStats::instance();
+	stats.mKBitStat.reset();
+	stats.mLayersKBitStat.reset();
+	stats.mObjectKBitStat.reset();
+	stats.mHTTPTextureKBitStat.reset();
+	stats.mUDPTextureKBitStat.reset();
+	stats.mVFSPendingOperations.reset();
+	stats.mAssetKBitStat.reset();
+	stats.mPacketsInStat.reset();
+	stats.mPacketsLostStat.reset();
+	stats.mPacketsOutStat.reset();
+	stats.mFPSStat.reset();
+	stats.mTexturePacketsStat.reset();
+	stats.mAgentPositionSnaps.reset();
 }
 
 
@@ -332,55 +339,55 @@ void LLViewerStats::updateFrameStats(const F64 time_diff)
 {
 	if (mPacketsLostPercentStat.getCurrent() > 5.0)
 	{
-		incStat(LLViewerStats::ST_LOSS_05_SECONDS, time_diff);
+		incStat(ST_LOSS_05_SECONDS, time_diff);
 	}
 	
 	if (mSimFPS.getCurrent() < 20.f && mSimFPS.getCurrent() > 0.f)
 	{
-		incStat(LLViewerStats::ST_SIM_FPS_20_SECONDS, time_diff);
+		incStat(ST_SIM_FPS_20_SECONDS, time_diff);
 	}
 	
 	if (mSimPhysicsFPS.getCurrent() < 20.f && mSimPhysicsFPS.getCurrent() > 0.f)
 	{
-		incStat(LLViewerStats::ST_PHYS_FPS_20_SECONDS, time_diff);
+		incStat(ST_PHYS_FPS_20_SECONDS, time_diff);
 	}
 		
 	if (time_diff >= 0.5)
 	{
-		incStat(LLViewerStats::ST_FPS_2_SECONDS, time_diff);
+		incStat(ST_FPS_2_SECONDS, time_diff);
 	}
 	if (time_diff >= 0.125)
 	{
-		incStat(LLViewerStats::ST_FPS_8_SECONDS, time_diff);
+		incStat(ST_FPS_8_SECONDS, time_diff);
 	}
 	if (time_diff >= 0.1)
 	{
-		incStat(LLViewerStats::ST_FPS_10_SECONDS, time_diff);
+		incStat(ST_FPS_10_SECONDS, time_diff);
 	}
 
 	if (gFrameCount && mLastTimeDiff > 0.0)
 	{
 		// new "stutter" meter
-		setStat(LLViewerStats::ST_FPS_DROP_50_RATIO,
-				(getStat(LLViewerStats::ST_FPS_DROP_50_RATIO) * (F64)(gFrameCount - 1) + 
+		setStat(ST_FPS_DROP_50_RATIO,
+				(getStat(ST_FPS_DROP_50_RATIO) * (F64)(gFrameCount - 1) + 
 				 (time_diff >= 2.0 * mLastTimeDiff ? 1.0 : 0.0)) / gFrameCount);
 			
 
 		// old stats that were never really used
-		setStat(LLViewerStats::ST_FRAMETIME_JITTER,
-				(getStat(LLViewerStats::ST_FRAMETIME_JITTER) * (gFrameCount - 1) + 
+		setStat(ST_FRAMETIME_JITTER,
+				(getStat(ST_FRAMETIME_JITTER) * (gFrameCount - 1) + 
 				 fabs(mLastTimeDiff - time_diff) / mLastTimeDiff) / gFrameCount);
 			
 		F32 average_frametime = gRenderStartTime.getElapsedTimeF32() / (F32)gFrameCount;
-		setStat(LLViewerStats::ST_FRAMETIME_SLEW,
-				(getStat(LLViewerStats::ST_FRAMETIME_SLEW) * (gFrameCount - 1) + 
+		setStat(ST_FRAMETIME_SLEW,
+				(getStat(ST_FRAMETIME_SLEW) * (gFrameCount - 1) + 
 				 fabs(average_frametime - time_diff) / average_frametime) / gFrameCount);
 
 		F32 max_bandwidth = gViewerThrottle.getMaxBandwidth();
 		F32 delta_bandwidth = gViewerThrottle.getCurrentBandwidth() - max_bandwidth;
-		setStat(LLViewerStats::ST_DELTA_BANDWIDTH, delta_bandwidth / 1024.f);
+		setStat(ST_DELTA_BANDWIDTH, delta_bandwidth / 1024.f);
 
-		setStat(LLViewerStats::ST_MAX_BANDWIDTH, max_bandwidth / 1024.f);
+		setStat(ST_MAX_BANDWIDTH, max_bandwidth / 1024.f);
 		
 	}
 	
@@ -529,7 +536,7 @@ void output_statistics(void*)
 	llinfos << "Avatar Memory (partly overlaps with above stats):" << llendl;
 	LLTexLayerStaticImageList::getInstance()->dumpByteCount();
 	LLVOAvatarSelf::dumpScratchTextureByteCount();
-	LLTexLayerSetBuffer::dumpTotalByteCount();
+	LLViewerTexLayerSetBuffer::dumpTotalByteCount();
 	LLVOAvatarSelf::dumpTotalLocalTextureByteCount();
 	LLTexLayerParamAlpha::dumpCacheByteCount();
 	LLVOAvatar::dumpBakedStatus();
@@ -574,24 +581,19 @@ F32		gWorstLandCompression = 0.f, gWorstWaterCompression = 0.f;
 U32		gTotalWorldBytes = 0, gTotalObjectBytes = 0, gTotalTextureBytes = 0, gSimPingCount = 0;
 U32		gObjectBits = 0;
 F32		gAvgSimPing = 0.f;
-U32     gTotalTextureBytesPerBoostLevel[LLViewerTexture::MAX_GL_IMAGE_CATEGORY] = {0};
+U32     gTotalTextureBytesPerBoostLevel[LLGLTexture::MAX_GL_IMAGE_CATEGORY] = {0};
 
 extern U32  gVisCompared;
 extern U32  gVisTested;
 
-std::map<S32,LLFrameTimer> gDebugTimers;
-std::map<S32,std::string> gDebugTimerLabel;
+LLFrameTimer gTextureTimer;
 
-void init_statistics()
-{
-	// Label debug timers
-	gDebugTimerLabel[0] = "Texture";
-}
-
-void update_statistics(U32 frame_count)
+void update_statistics()
 {
 	gTotalWorldBytes += gVLManager.getTotalBytes();
 	gTotalObjectBytes += gObjectBits / 8;
+
+	LLViewerStats& stats = LLViewerStats::instance();
 
 	// make sure we have a valid time delta for this frame
 	if (gFrameIntervalSeconds > 0.f)
@@ -609,51 +611,51 @@ void update_statistics(U32 frame_count)
 			LLViewerStats::getInstance()->incStat(LLViewerStats::ST_TOOLBOX_SECONDS, gFrameIntervalSeconds);
 		}
 	}
-	LLViewerStats::getInstance()->setStat(LLViewerStats::ST_ENABLE_VBO, (F64)gSavedSettings.getBOOL("RenderVBOEnable"));
-	LLViewerStats::getInstance()->setStat(LLViewerStats::ST_LIGHTING_DETAIL, (F64)gPipeline.getLightingDetail());
-	LLViewerStats::getInstance()->setStat(LLViewerStats::ST_DRAW_DIST, (F64)gSavedSettings.getF32("RenderFarClip"));
-	LLViewerStats::getInstance()->setStat(LLViewerStats::ST_CHAT_BUBBLES, (F64)gSavedSettings.getBOOL("UseChatBubbles"));
+	stats.setStat(LLViewerStats::ST_ENABLE_VBO, (F64)gSavedSettings.getBOOL("RenderVBOEnable"));
+	stats.setStat(LLViewerStats::ST_LIGHTING_DETAIL, (F64)gPipeline.getLightingDetail());
+	stats.setStat(LLViewerStats::ST_DRAW_DIST, (F64)gSavedSettings.getF32("RenderFarClip"));
+	stats.setStat(LLViewerStats::ST_CHAT_BUBBLES, (F64)gSavedSettings.getBOOL("UseChatBubbles"));
 #if 0 // 1.9.2
 	LLViewerStats::getInstance()->setStat(LLViewerStats::ST_SHADER_OBJECTS, (F64)gSavedSettings.getS32("VertexShaderLevelObject"));
 	LLViewerStats::getInstance()->setStat(LLViewerStats::ST_SHADER_AVATAR, (F64)gSavedSettings.getBOOL("VertexShaderLevelAvatar"));
 	LLViewerStats::getInstance()->setStat(LLViewerStats::ST_SHADER_ENVIRONMENT, (F64)gSavedSettings.getBOOL("VertexShaderLevelEnvironment"));
 #endif
-	LLViewerStats::getInstance()->setStat(LLViewerStats::ST_FRAME_SECS, gDebugView->mFastTimerView->getTime("Frame"));
+	stats.setStat(LLViewerStats::ST_FRAME_SECS, gDebugView->mFastTimerView->getTime("Frame"));
 	F64 idle_secs = gDebugView->mFastTimerView->getTime("Idle");
 	F64 network_secs = gDebugView->mFastTimerView->getTime("Network");
-	LLViewerStats::getInstance()->setStat(LLViewerStats::ST_UPDATE_SECS, idle_secs - network_secs);
-	LLViewerStats::getInstance()->setStat(LLViewerStats::ST_NETWORK_SECS, network_secs);
-	LLViewerStats::getInstance()->setStat(LLViewerStats::ST_IMAGE_SECS, gDebugView->mFastTimerView->getTime("Update Images"));
-	LLViewerStats::getInstance()->setStat(LLViewerStats::ST_REBUILD_SECS, gDebugView->mFastTimerView->getTime("Sort Draw State"));
-	LLViewerStats::getInstance()->setStat(LLViewerStats::ST_RENDER_SECS, gDebugView->mFastTimerView->getTime("Geometry"));
+	stats.setStat(LLViewerStats::ST_UPDATE_SECS, idle_secs - network_secs);
+	stats.setStat(LLViewerStats::ST_NETWORK_SECS, network_secs);
+	stats.setStat(LLViewerStats::ST_IMAGE_SECS, gDebugView->mFastTimerView->getTime("Update Images"));
+	stats.setStat(LLViewerStats::ST_REBUILD_SECS, gDebugView->mFastTimerView->getTime("Sort Draw State"));
+	stats.setStat(LLViewerStats::ST_RENDER_SECS, gDebugView->mFastTimerView->getTime("Geometry"));
 		
 	LLCircuitData *cdp = gMessageSystem->mCircuitInfo.findCircuit(gAgent.getRegion()->getHost());
 	if (cdp)
 	{
-		LLViewerStats::getInstance()->mSimPingStat.addValue(cdp->getPingDelay());
+		stats.mSimPingStat.addValue(cdp->getPingDelay());
 		gAvgSimPing = ((gAvgSimPing * (F32)gSimPingCount) + (F32)(cdp->getPingDelay())) / ((F32)gSimPingCount + 1);
 		gSimPingCount++;
 	}
 	else
 	{
-		LLViewerStats::getInstance()->mSimPingStat.addValue(10000);
+		stats.mSimPingStat.addValue(10000);
 	}
 
-	LLViewerStats::getInstance()->mFPSStat.addValue(1);
+	stats.mFPSStat.addValue(1);
 	F32 layer_bits = (F32)(gVLManager.getLandBits() + gVLManager.getWindBits() + gVLManager.getCloudBits());
-	LLViewerStats::getInstance()->mLayersKBitStat.addValue(layer_bits/1024.f);
-	LLViewerStats::getInstance()->mObjectKBitStat.addValue(gObjectBits/1024.f);
-	LLViewerStats::getInstance()->mVFSPendingOperations.addValue(LLVFile::getVFSThread()->getPending());
-	LLViewerStats::getInstance()->mAssetKBitStat.addValue(gTransferManager.getTransferBitsIn(LLTCT_ASSET)/1024.f);
+	stats.mLayersKBitStat.addValue(layer_bits/1024.f);
+	stats.mObjectKBitStat.addValue(gObjectBits/1024.f);
+	stats.mVFSPendingOperations.addValue(LLVFile::getVFSThread()->getPending());
+	stats.mAssetKBitStat.addValue(gTransferManager.getTransferBitsIn(LLTCT_ASSET)/1024.f);
 	gTransferManager.resetTransferBitsIn(LLTCT_ASSET);
 
 	if (LLAppViewer::getTextureFetch()->getNumRequests() == 0)
 	{
-		gDebugTimers[0].pause();
+		gTextureTimer.pause();
 	}
 	else
 	{
-		gDebugTimers[0].unpause();
+		gTextureTimer.unpause();
 	}
 	
 	{
@@ -665,7 +667,7 @@ void update_statistics(U32 frame_count)
 			visible_avatar_frames = 1.f;
 			avg_visible_avatars = (avg_visible_avatars * (F32)(visible_avatar_frames - 1.f) + visible_avatars) / visible_avatar_frames;
 		}
-		LLViewerStats::getInstance()->setStat(LLViewerStats::ST_VISIBLE_AVATARS, (F64)avg_visible_avatars);
+		stats.setStat(LLViewerStats::ST_VISIBLE_AVATARS, (F64)avg_visible_avatars);
 	}
 	LLWorld::getInstance()->updateNetStats();
 	LLWorld::getInstance()->requestCacheMisses();
@@ -675,14 +677,15 @@ void update_statistics(U32 frame_count)
 	gObjectBits = 0;
 //	gDecodedBits = 0;
 
-	// Only update texture stats ones per second so that they are less noisy
+	// Only update texture stats periodically so that they are less noisy
 	{
-		static const F32 texture_stats_freq = 10.f;
+		static const F32 texture_stats_freq = 0.25f;
 		static LLFrameTimer texture_stats_timer;
 		if (texture_stats_timer.getElapsedTimeF32() >= texture_stats_freq)
 		{
-			LLViewerStats::getInstance()->mTextureKBitStat.addValue(LLViewerTextureList::sTextureBits/1024.f);
-			LLViewerStats::getInstance()->mTexturePacketsStat.addValue(LLViewerTextureList::sTexturePackets);
+			stats.mHTTPTextureKBitStat.addValue(AICurlInterface::getHTTPBandwidth()/125.f);
+			stats.mUDPTextureKBitStat.addValue(LLViewerTextureList::sTextureBits/1024.f);
+			stats.mTexturePacketsStat.addValue(LLViewerTextureList::sTexturePackets);
 			gTotalTextureBytes += LLViewerTextureList::sTextureBits / 8;
 			LLViewerTextureList::sTextureBits = 0;
 			LLViewerTextureList::sTexturePackets = 0;
@@ -695,35 +698,30 @@ void update_statistics(U32 frame_count)
 		static LLFrameTimer mem_stats_timer;
 		if (mem_stats_timer.getElapsedTimeF32() >= mem_stats_freq)
 		{
-			LLViewerStats::getInstance()->mMallocStat.addValue(SGMemStat::getMalloc()/1024.f/1024.f);
+			stats.mMallocStat.addValue(SGMemStat::getMalloc()/1024.f/1024.f);
 			mem_stats_timer.reset();
 		}
 	}
-
-	
-#if LL_LCD_COMPILE
-	bool LCDenabled = gLcdScreen->Enabled();
-	LLViewerStats::getInstance()->setStat(LLViewerStats::ST_LOGITECH_LCD, LCDenabled);
-#else
-	LLViewerStats::getInstance()->setStat(LLViewerStats::ST_LOGITECH_LCD, false);
-#endif
 }
 
-class ViewerStatsResponder : public LLHTTPClient::Responder
+class ViewerStatsResponder : public LLHTTPClient::ResponderWithResult
 {
 public:
     ViewerStatsResponder() { }
 
-    void error(U32 statusNum, const std::string& reason)
+    /*virtual*/ void error(U32 statusNum, const std::string& reason)
     {
 		llinfos << "ViewerStatsResponder::error " << statusNum << " "
 				<< reason << llendl;
     }
 
-    void result(const LLSD& content)
+    /*virtual*/ void result(const LLSD& content)
     {
 		llinfos << "ViewerStatsResponder::result" << llendl;
 	}
+
+	/*virtual*/ AIHTTPTimeoutPolicy const& getHTTPTimeoutPolicy(void) const { return viewerStatsResponder_timeout; }
+	/*virtual*/ char const* getName(void) const { return "ViewerStatsResponder"; }
 };
 
 /*
@@ -820,6 +818,7 @@ void send_stats()
 	system["gpu_class"] = (S32)LLFeatureManager::getInstance()->getGPUClass();
 	system["gpu_vendor"] = gGLManager.mGLVendorShort;
 	system["gpu_version"] = gGLManager.mDriverVersionVendorString;
+	system["opengl_version"] = gGLManager.mGLVersionString;
 
 	LLSD &download = body["downloads"];
 
@@ -866,10 +865,7 @@ void send_stats()
 	S32 window_height = gViewerWindow->getWindowHeightRaw();
 	S32 window_size = (window_width * window_height) / 1024;
 	misc["string_1"] = llformat("%d", window_size);
-	if (gDebugTimers.find(0) != gDebugTimers.end() && gFrameTimeSeconds > 0)
-	{
-		misc["string_2"] = llformat("Texture Time: %.2f, Total Time: %.2f", gDebugTimers[0].getElapsedTimeF32(), gFrameTimeSeconds);
-	}
+	misc["string_2"] = llformat("Texture Time: %.2f, Total Time: %.2f", gTextureTimer.getElapsedTimeF32(), gFrameTimeSeconds);
 
 // 	misc["int_1"] = LLSD::Integer(gSavedSettings.getU32("RenderQualityPerformance")); // Steve: 1.21
 // 	misc["int_2"] = LLSD::Integer(gFrameStalls); // Steve: 1.21
@@ -882,12 +878,81 @@ void send_stats()
 	llinfos << "Misc Stats: int_1: " << misc["int_1"] << " int_2: " << misc["int_2"] << llendl;
 	llinfos << "Misc Stats: string_1: " << misc["string_1"] << " string_2: " << misc["string_2"] << llendl;
 
-	body["DisplayNamesEnabled"] = gSavedSettings.getS32("PhoenixNameSystem") > 0;
+	body["DisplayNamesEnabled"] = gSavedSettings.getS32("PhoenixNameSystem") == 1 || gSavedSettings.getS32("PhoenixNameSystem") == 2;
 	body["DisplayNamesShowUsername"] = gSavedSettings.getS32("PhoenixNameSystem") == 1;
 	
 	body["MinimalSkin"] = false;
 	
 	LLViewerStats::getInstance()->addToMessage(body);
-	LLHTTPClient::post(url, body, new ViewerStatsResponder());
+	LLHTTPClient::post(url, body, new ViewerStatsResponder);
 }
 
+LLViewerStats::PhaseMap::PhaseMap()
+{
+}
+
+LLTimer& LLViewerStats::PhaseMap::getPhaseTimer(const std::string& phase_name)
+{
+	phase_map_t::iterator iter = mPhaseMap.find(phase_name);
+	if (iter == mPhaseMap.end())
+	{
+		LLTimer timer;
+		mPhaseMap[phase_name] = timer;
+	}
+	LLTimer& timer = mPhaseMap[phase_name];
+	return timer;
+}
+
+void LLViewerStats::PhaseMap::startPhase(const std::string& phase_name)
+{
+	LLTimer& timer = getPhaseTimer(phase_name);
+	lldebugs << "startPhase " << phase_name << llendl;
+	timer.start();
+}
+
+void LLViewerStats::PhaseMap::stopPhase(const std::string& phase_name)
+{
+	phase_map_t::iterator iter = mPhaseMap.find(phase_name);
+	if (iter != mPhaseMap.end())
+	{
+		if (iter->second.getStarted())
+		{
+			// Going from started to paused state - record stats.
+			iter->second.stop();
+		}
+	}
+}
+
+bool LLViewerStats::PhaseMap::getPhaseValues(const std::string& phase_name, F32& elapsed, bool& completed)
+{
+	phase_map_t::iterator iter = mPhaseMap.find(phase_name);
+	if (iter != mPhaseMap.end())
+	{
+		elapsed =  iter->second.getElapsedTimeF32();
+		completed = !iter->second.getStarted();
+		return true;
+	}
+	else
+	{
+		return false;
+	}
+}
+	
+void LLViewerStats::PhaseMap::clearPhases()
+{
+	lldebugs << "clearPhases" << llendl;
+
+	mPhaseMap.clear();
+}
+
+LLSD LLViewerStats::PhaseMap::dumpPhases()
+{
+	LLSD result;
+	for (phase_map_t::iterator iter = mPhaseMap.begin(); iter != mPhaseMap.end(); ++iter)
+	{
+		const std::string& phase_name = iter->first;
+		result[phase_name]["completed"] = LLSD::Integer(!(iter->second.getStarted()));
+		result[phase_name]["elapsed"] = iter->second.getElapsedTimeF32();
+	}
+	return result;
+}

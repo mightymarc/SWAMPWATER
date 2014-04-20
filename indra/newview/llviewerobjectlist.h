@@ -39,6 +39,7 @@
 // common includes
 #include "llstat.h"
 #include "llstring.h"
+#include "sguuidhash.h"
 
 // project includes
 #include "llviewerobject.h"
@@ -128,7 +129,9 @@ public:
 
 	void dirtyAllObjectInventory();
 
+	void removeFromActiveList(LLViewerObject* objectp);
 	void updateActive(LLViewerObject *objectp);
+	
 	void updateAvatarVisibility();
 
 	// Selection related stuff
@@ -203,17 +206,19 @@ public:
 	std::vector<OrphanInfo> mOrphanChildren;	// UUID's of orphaned objects
 	S32 mNumOrphans;
 
+	static LLStat sCacheHitRate;
+
 	typedef std::vector<LLPointer<LLViewerObject> > vobj_list_t;
 
 	vobj_list_t mObjects;
-	std::set<LLPointer<LLViewerObject> > mActiveObjects;
+	std::vector<LLPointer<LLViewerObject> > mActiveObjects;
 
 	vobj_list_t mMapObjects;
 
 	std::set<LLUUID> mDeadObjects;	
 
-	std::map<LLUUID, LLPointer<LLViewerObject> > mUUIDObjectMap;
-	std::map<LLUUID, LLPointer<LLVOAvatar> > mUUIDAvatarMap;
+	boost::unordered_map<LLUUID, LLPointer<LLViewerObject> > mUUIDObjectMap;
+	boost::unordered_map<LLUUID, LLPointer<LLVOAvatar> > mUUIDAvatarMap;
 
 	//set of objects that need to update their cost
 	std::set<LLUUID> mStaleObjectCost;
@@ -265,7 +270,7 @@ extern LLViewerObjectList gObjectList;
 // Inlines
 inline LLViewerObject *LLViewerObjectList::findObject(const LLUUID &id) const
 {
-	std::map<LLUUID, LLPointer<LLViewerObject> >::const_iterator iter = mUUIDObjectMap.find(id);
+	boost::unordered_map<LLUUID, LLPointer<LLViewerObject> >::const_iterator iter = mUUIDObjectMap.find(id);
 	if(iter != mUUIDObjectMap.end())
 	{
 		return iter->second;
@@ -278,7 +283,7 @@ inline LLViewerObject *LLViewerObjectList::findObject(const LLUUID &id) const
 
 inline LLVOAvatar *LLViewerObjectList::findAvatar(const LLUUID &id) const
 {
-	std::map<LLUUID, LLPointer<LLVOAvatar> >::const_iterator iter = mUUIDAvatarMap.find(id);
+	boost::unordered_map<LLUUID, LLPointer<LLVOAvatar> >::const_iterator iter = mUUIDAvatarMap.find(id);
 	return (iter != mUUIDAvatarMap.end()) ? iter->second.get() : NULL;
 }
 

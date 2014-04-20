@@ -105,12 +105,13 @@ void LLPanelAudioPrefs::refreshValues()
 	mPreviousMediaVolume = gSavedSettings.getF32("AudioLevelMedia");
 	mPreviousDoppler = gSavedSettings.getF32("AudioLevelDoppler");
 	mPreviousRolloff = gSavedSettings.getF32("AudioLevelRolloff");
+	mPreviousUnderwaterRolloff = gSavedSettings.getF32("AudioLevelUnderwaterRolloff");
 
 	mPreviousMoneyThreshold = gSavedSettings.getF32("UISndMoneyChangeThreshold");
 	mPreviousHealthThreshold = gSavedSettings.getF32("UISndHealthReductionThreshold");
 
 	mPreviousStreamingMusic = gSavedSettings.getBOOL("AudioStreamingMusic");
-	mPreviousStreamingVideo = gSavedSettings.getBOOL("AudioStreamingVideo");
+	mPreviousStreamingVideo = gSavedSettings.getBOOL("AudioStreamingMedia");
 
 	mPreviousMuteAudio = gSavedSettings.getBOOL("MuteAudio");
 	mPreviousMuteWhenMinimized = gSavedSettings.getBOOL("MuteWhenMinimized");
@@ -126,12 +127,13 @@ void LLPanelAudioPrefs::cancel()
 	gSavedSettings.setF32("AudioLevelMedia", mPreviousMediaVolume);
 	gSavedSettings.setF32("AudioLevelDoppler", mPreviousDoppler );
 	gSavedSettings.setF32("AudioLevelRolloff", mPreviousRolloff );
+	gSavedSettings.setF32("AudioLevelUnderwaterRolloff", mPreviousUnderwaterRolloff );
 
 	gSavedSettings.setF32("UISndMoneyChangeThreshold", mPreviousMoneyThreshold );
 	gSavedSettings.setF32("UISndHealthReductionThreshold", mPreviousHealthThreshold );
 
 	gSavedSettings.setBOOL("AudioStreamingMusic", mPreviousStreamingMusic );
-	gSavedSettings.setBOOL("AudioStreamingVideo", mPreviousStreamingVideo );
+	gSavedSettings.setBOOL("AudioStreamingMedia", mPreviousStreamingVideo );
 
 	
 	gSavedSettings.setBOOL("MuteAudio", mPreviousMuteAudio );

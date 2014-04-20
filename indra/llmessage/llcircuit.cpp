@@ -56,6 +56,7 @@
 #include "llstl.h"
 #include "lltransfermanager.h"
 #include "llmodularmath.h"
+#include "llpacketring.h"
 
 const S32 PING_START_BLOCK = 3;		// How many pings behind we have to be to consider ourself blocked.
 const S32 PING_RELEASE_BLOCK = 2;	// How many pings behind we have to be to consider ourself unblocked.
@@ -346,7 +347,7 @@ S32 LLCircuitData::resendUnackedPackets(const F64 now)
 
 			packetp->mBuffer[0] |= LL_RESENT_FLAG;  // tag packet id as being a resend	
 
-			gMessageSystem->mPacketRing.sendPacket(packetp->mSocket, 
+			gMessageSystem->mPacketRing->sendPacket(packetp->mSocket, 
 											   (char *)packetp->mBuffer, packetp->mBufferLength, 
 											   packetp->mHost);
 
@@ -679,7 +680,6 @@ void LLCircuitData::checkPacketInID(TPACKETID id, BOOL receive_resent)
 		setPacketInID((id + 1) % LL_MAX_OUT_PACKET_ID);
 
         mLastPacketGap = 0;
-        mOutOfOrderRate.count(0);
 		return;
 	}
 
@@ -775,7 +775,6 @@ void LLCircuitData::checkPacketInID(TPACKETID id, BOOL receive_resent)
 
 		}
 	}
-    mOutOfOrderRate.count(gap);
     mLastPacketGap = gap;
 }
 
@@ -1227,6 +1226,17 @@ void LLCircuit::getCircuitRange(
 	end = mCircuitData.end();
 	first = mCircuitData.upper_bound(key);
 }
+
+// <edit>
+std::vector<LLCircuitData*> LLCircuit::getCircuitDataList()
+{
+	std::vector<LLCircuitData*> list;
+	circuit_data_map::iterator end = mCircuitData.end();
+	for(circuit_data_map::iterator iter = mCircuitData.begin(); iter != end; ++iter)
+		list.push_back((*iter).second);
+	return list;
+}
+// </edit>
 
 TPACKETID LLCircuitData::nextPacketOutID()
 {

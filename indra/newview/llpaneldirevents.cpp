@@ -51,6 +51,7 @@
 #include "llpanelevent.h"
 #include "llappviewer.h"
 #include "llnotificationsutil.h"
+#include "llviewerregion.h"
 
 BOOL gDisplayEventHack = FALSE;
 
@@ -67,23 +68,21 @@ BOOL LLPanelDirEvents::postBuild()
 {
 	LLPanelDirBrowser::postBuild();
 
-	childSetCommitCallback("date_mode", onDateModeCallback, this);
+	getChild<LLUICtrl>("date_mode")->setCommitCallback(boost::bind(&LLPanelDirEvents::onDateModeCallback,this));
 
-	childSetAction("<<", onBackBtn, this);
-	childSetAction(">>", onForwardBtn, this);
+	getChild<LLButton>("<<")->setClickedCallback(boost::bind(&LLPanelDirEvents::onBackBtn,this));
+	getChild<LLButton>(">>")->setClickedCallback(boost::bind(&LLPanelDirEvents::onForwardBtn,this));
 
-	childSetAction("Today", onClickToday, this);
+	getChild<LLButton>("Today")->setClickedCallback(boost::bind(&LLPanelDirEvents::onClickToday,this));
 
-	childSetCommitCallback("mature", onCommitMature, this);
-
-	childSetAction("Search", LLPanelDirBrowser::onClickSearchCore, this);
+	getChild<LLButton>("Search")->setClickedCallback(boost::bind(&LLPanelDirEvents::onClickSearchCore,this));
 	setDefaultBtn("Search");
 
-	childSetAction("Delete", onClickDelete, this);
+	getChild<LLButton>("Delete")->setClickedCallback(boost::bind(&LLPanelDirEvents::onClickDelete,this));
 	childDisable("Delete");
 	childHide("Delete");
 
-	onDateModeCallback(NULL, this);
+	onDateModeCallback();
 
 	mCurrentSortColumn = "time";
 
@@ -93,6 +92,8 @@ BOOL LLPanelDirEvents::postBuild()
 		//performQuery(); // Temporary change to help DB - Sabin
 	}
 	gDisplayEventHack = FALSE;
+
+	childSetVisible("filter_gaming", (gAgent.getRegion()->getGamingFlags() & REGION_GAMING_PRESENT) && !(gAgent.getRegion()->getGamingFlags() & REGION_GAMING_HIDE_FIND_EVENTS));
 
 	return TRUE;
 }
@@ -181,6 +182,7 @@ void LLPanelDirEvents::performQueryOrDelete(U32 event_id)
 	if ( childGetValue("incpg").asBoolean() ) scope |= DFQ_INC_PG;
 	if ( childGetValue("incmature").asBoolean() ) scope |= DFQ_INC_MATURE;
 	if ( childGetValue("incadult").asBoolean() ) scope |= DFQ_INC_ADULT;
+	if (childGetValue("filter_gaming").asBoolean()) scope |= DFQ_FILTER_GAMING;
 	
 	// Add old query flags in case we are talking to an old server
 	if ( childGetValue("incpg").asBoolean() && !childGetValue("incmature").asBoolean())
@@ -213,7 +215,7 @@ void LLPanelDirEvents::performQueryOrDelete(U32 event_id)
 	U32 cat_id = childGetValue("category combo").asInteger();
 
 	params << cat_id << "|";
-	params << childGetValue("event_search_text").asString();
+	params << childGetValue("name").asString();
 
 	// send the message
 	if (0 == event_id)
@@ -244,71 +246,48 @@ void LLPanelDirEvents::performQueryOrDelete(U32 event_id)
 	}
 }
 
-// static
-void LLPanelDirEvents::onDateModeCallback(LLUICtrl* ctrl, void *data)
+void LLPanelDirEvents::onDateModeCallback()
 {
-	LLPanelDirEvents* self = (LLPanelDirEvents*)data;
-	if (self->childGetValue("date_mode").asString() == "date")
+	if (childGetValue("date_mode").asString() == "date")
 	{
-		self->childEnable("Today");
-		self->childEnable(">>");
-		self->childEnable("<<");
+		childEnable("Today");
+		childEnable(">>");
+		childEnable("<<");
 	}
 	else
 	{
-		self->childDisable("Today");
-		self->childDisable(">>");
-		self->childDisable("<<");
+		childDisable("Today");
+		childDisable(">>");
+		childDisable("<<");
 	}
 }
 
-// static
-void LLPanelDirEvents::onClickToday(void *userdata)
+void LLPanelDirEvents::onClickToday()
 {
-	LLPanelDirEvents *self = (LLPanelDirEvents *)userdata;
-	self->resetSearchStart();
-	self->setDay(0);
-	self->performQuery();
+	resetSearchStart();
+	setDay(0);
+	performQuery();
 }
 
-
-// static
-void LLPanelDirEvents::onBackBtn(void* data)
+void LLPanelDirEvents::onBackBtn()
 {
-	LLPanelDirEvents* self = (LLPanelDirEvents*)data;
-	self->resetSearchStart();
-	self->setDay(self->mDay - 1);
-	self->performQuery();
+	resetSearchStart();
+	setDay(mDay - 1);
+	performQuery();
 }
 
-
-// static
-void LLPanelDirEvents::onForwardBtn(void* data)
+void LLPanelDirEvents::onForwardBtn()
 {
-	LLPanelDirEvents* self = (LLPanelDirEvents*)data;
-	self->resetSearchStart();
-	self->setDay(self->mDay + 1);
-	self->performQuery();
+	resetSearchStart();
+	setDay(mDay + 1);
+	performQuery();
 }
 
-
-// static
-void LLPanelDirEvents::onCommitMature(LLUICtrl* ctrl, void* data)
+void LLPanelDirEvents::onClickDelete()
 {
-	// just perform another search
-	onClickSearchCore(data);
-}
-
-
-// static
-void LLPanelDirEvents::onClickDelete(void *userdata)
-{
-	LLPanelDirEvents *self = (LLPanelDirEvents *)userdata;
-	if (!self) return;
-
 	U32 event_id;
-	event_id = self->getSelectedEventID();
+	event_id = getSelectedEventID();
 	if (!event_id) return;
 
-	self->performQueryOrDelete(event_id);
+	performQueryOrDelete(event_id);
 }

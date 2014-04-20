@@ -48,9 +48,9 @@
 #include "string_table.h"
 #include "llcircuit.h"
 #include "lltimer.h"
-#include "llpacketring.h"
+//#include "llpacketring.h"
 #include "llhost.h"
-#include "llhttpclient.h"
+//#include "llhttpclient.h"
 #include "llhttpnode.h"
 #include "llpacketack.h"
 #include "llsingleton.h"
@@ -60,6 +60,12 @@
 #include "llmessagesenderinterface.h"
 
 #include "llstoredmessage.h"
+
+class LLPacketRing;
+namespace
+{
+	class LLFnPtrResponder;
+}
 
 const U32 MESSAGE_MAX_STRINGS_LENGTH = 64;
 const U32 MESSAGE_NUMBER_OF_HASH_BUCKETS = 8192;
@@ -213,7 +219,7 @@ class LLMessageSystem : public LLMessageSenderInterface
 	LLHost				mUntrustedInterface;
 
  public:
-	LLPacketRing				mPacketRing;
+	LLPacketRing*				mPacketRing;
 	LLReliablePacketParams			mReliablePacketParams;
 
 	// Set this flag to TRUE when you want *very* verbose logs.
@@ -227,6 +233,8 @@ class LLMessageSystem : public LLMessageSenderInterface
 private:
 	message_template_name_map_t		mMessageTemplates;
 	message_template_number_map_t		mMessageNumbers;
+	friend class LLFloaterMessageLogItem;
+	friend class LLFloaterMessageLog;
 
 public:
 	S32					mSystemVersionMajor;
@@ -335,7 +343,7 @@ public:
 	bool addCircuitCode(U32 code, const LLUUID& session_id);
 
 	BOOL	poll(F32 seconds); // Number of seconds that we want to block waiting for data, returns if data was received
-	BOOL	checkMessages( S64 frame_count = 0 );
+	BOOL	checkMessages(S64 frame_count = 0);
 	void	processAcks();
 
 	BOOL	isMessageFast(const char *msg);
@@ -494,7 +502,7 @@ public:
 		void (*callback)(void **,S32), 
 		void ** callback_data);
 
-	LLHTTPClient::ResponderPtr createResponder(const std::string& name);
+	LLFnPtrResponder* createResponder(const std::string& name);
 	S32		sendMessage(const LLHost &host);
 	S32		sendMessage(const U32 circuit);
 private:

@@ -36,10 +36,12 @@
 #include <string>
 #include <vector>
 #include <map>
-typedef struct _xmlrpc_value* XMLRPC_VALUE;
-// forward ecl of types from xlrpc.h
+#include <boost/intrusive_ptr.hpp>
 
-class LLXMLRPCTransaction;
+class XMLRPCResponder;
+
+// forward decl of types from xlrpc.h
+typedef struct _xmlrpc_value* XMLRPC_VALUE;
 
 //~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 // Class LLUserAuth
@@ -86,6 +88,7 @@ public:
 		E_SSL_PEER_CERTIFICATE,
 		E_SSL_CACERT,
 		E_SSL_CONNECT_ERROR,
+		E_HTTP_SERVER_ERROR,
 		E_UNHANDLED_ERROR,
 		E_LAST						// never use!
 	} UserAuthcode;
@@ -142,8 +145,7 @@ public:
 	F64 getLastTransferRateBPS() const { return mLastTransferRateBPS; }
 
 private:
-	LLXMLRPCTransaction* mTransaction;
-
+	boost::intrusive_ptr<XMLRPCResponder> mResponder;
 
 	std::string mErrorMessage;
 	

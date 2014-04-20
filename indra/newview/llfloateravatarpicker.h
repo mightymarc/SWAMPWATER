@@ -2,31 +2,25 @@
  * @file llfloateravatarpicker.h
  * @brief was llavatarpicker.h
  *
- * $LicenseInfo:firstyear=2003&license=viewergpl$
- * 
- * Copyright (c) 2003-2009, Linden Research, Inc.
- * 
+ * $LicenseInfo:firstyear=2003&license=viewerlgpl$
  * Second Life Viewer Source Code
- * The source code in this file ("Source Code") is provided by Linden Lab
- * to you under the terms of the GNU General Public License, version 2.0
- * ("GPL"), unless you have obtained a separate licensing agreement
- * ("Other License"), formally executed by you and Linden Lab.  Terms of
- * the GPL can be found in doc/GPL-license.txt in this distribution, or
- * online at http://secondlifegrid.net/programs/open_source/licensing/gplv2
+ * Copyright (C) 2010, Linden Research, Inc.
  * 
- * There are special exceptions to the terms and conditions of the GPL as
- * it is applied to this Source Code. View the full text of the exception
- * in the file doc/FLOSS-exception.txt in this software distribution, or
- * online at
- * http://secondlifegrid.net/programs/open_source/licensing/flossexception
+ * This library is free software; you can redistribute it and/or
+ * modify it under the terms of the GNU Lesser General Public
+ * License as published by the Free Software Foundation;
+ * version 2.1 of the License only.
  * 
- * By copying, modifying or distributing this software, you acknowledge
- * that you have read and understood your obligations described above,
- * and agree to abide by those obligations.
+ * This library is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+ * Lesser General Public License for more details.
  * 
- * ALL LINDEN LAB SOURCE CODE IS PROVIDED "AS IS." LINDEN LAB MAKES NO
- * WARRANTIES, EXPRESS, IMPLIED OR OTHERWISE, REGARDING ITS ACCURACY,
- * COMPLETENESS OR PERFORMANCE.
+ * You should have received a copy of the GNU Lesser General Public
+ * License along with this library; if not, write to the Free Software
+ * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301  USA
+ * 
+ * Linden Research, Inc., 945 Battery Street, San Francisco, CA  94111  USA
  * $/LicenseInfo$
  */
 
@@ -37,60 +31,69 @@
 
 #include <vector>
 
+class LLAvatarName;
+class LLScrollListCtrl;
 
-class LLFloaterAvatarPicker : public LLFloater
+class LLFloaterAvatarPicker : public LLFloater, public LLSingleton<LLFloaterAvatarPicker>
 {
 public:
-	// Call this to select an avatar.
+	typedef boost::signals2::signal<bool(const uuid_vec_t&), boost_boolean_combiner> validate_signal_t;
+	typedef validate_signal_t::slot_type validate_callback_t;
+
 	// The callback function will be called with an avatar name and UUID.
-	typedef void(*callback_t)(const std::vector<std::string>&, const std::vector<LLUUID>&, void*);
-	static LLFloaterAvatarPicker* show(callback_t callback, 
-									   void* userdata,
+	typedef boost::function<void (const uuid_vec_t&, const std::vector<LLAvatarName>&)> select_callback_t;
+	// Call this to select an avatar.	
+	static LLFloaterAvatarPicker* show(select_callback_t callback, 
 									   BOOL allow_multiple = FALSE,
 									   BOOL closeOnSelect = FALSE);
-	virtual	BOOL postBuild();
-
-	static void processAvatarPickerReply(class LLMessageSystem* msg, void**);
-
-private:
-
-	static void editKeystroke(class LLLineEditor* caller, void* user_data);
-
-	static void onBtnFind(void* userdata);
-	static void onBtnSelect(void* userdata);
-	static void onBtnRefresh(void* userdata);
-	static void onRangeAdjust(LLUICtrl* source, void* data);
-	static void onBtnClose(void* userdata);
-	static void onList(class LLUICtrl* ctrl, void* userdata);
-	void onTabChanged();
-	
-		   void doCallingCardSelectionChange(const std::deque<class LLFolderViewItem*> &items, BOOL user_action, void* data);
-	static void onCallingCardSelectionChange(const std::deque<class LLFolderViewItem*> &items, BOOL user_action, void* data);
-
-	void populateNearMe();
-	BOOL visibleItemsSelected() const; // Returns true if any items in the current tab are selected.
-
-	void find();
-	void setAllowMultiple(BOOL allow_multiple);
-
-	virtual void draw();
-	virtual BOOL handleKeyHere(KEY key, MASK mask);
-
-	std::vector<LLUUID>				mSelectedInventoryAvatarIDs;
-	std::vector<std::string>		mSelectedInventoryAvatarNames;
-	LLUUID				mQueryID;
-	BOOL				mResultsReturned;
-	BOOL				mNearMeListComplete;
-	BOOL				mCloseOnSelect;
-
-	void (*mCallback)(const std::vector<std::string>& name, const std::vector<LLUUID>& id, void* userdata);
-	void* mCallbackUserdata;
-
-	static LLFloaterAvatarPicker* sInstance;
 
 	// do not call these directly
 	LLFloaterAvatarPicker();
 	virtual ~LLFloaterAvatarPicker();
+	virtual	BOOL postBuild();
+
+	void setOkBtnEnableCb(validate_callback_t cb);
+
+	static void processAvatarPickerReply(class LLMessageSystem* msg, void**);
+	void processResponse(const LLUUID& query_id, const LLSD& content);
+
+	BOOL handleDragAndDrop(S32 x, S32 y, MASK mask,
+						   BOOL drop, EDragAndDropType cargo_type,
+						   void *cargo_data, EAcceptance *accept,
+						   std::string& tooltip_msg);
+
+	void openFriendsTab();
+
+private:
+	void editKeystroke(class LLLineEditor* caller);
+
+	void onBtnFind();
+	void onBtnSelect();
+	void onBtnRefresh();
+	void onRangeAdjust();
+	void onBtnClose();
+	void onList();
+	void onTabChanged();
+	bool isSelectBtnEnabled();
+
+	void populateNearMe();
+	void populateFriend();
+	BOOL visibleItemsSelected() const; // Returns true if any items in the current tab are selected.
+
+	void find();
+	void setAllowMultiple(BOOL allow_multiple);
+	LLScrollListCtrl* getActiveList();
+
+	virtual void draw();
+	virtual BOOL handleKeyHere(KEY key, MASK mask);
+
+	LLUUID				mQueryID;
+	int				mNumResultsReturned;
+	BOOL				mNearMeListComplete;
+	BOOL				mCloseOnSelect;
+
+	validate_signal_t mOkButtonValidateSignal;
+	select_callback_t mSelectionCallback;
 };
 
 #endif

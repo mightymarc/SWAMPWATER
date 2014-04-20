@@ -87,7 +87,7 @@ void agent_toggle_down( EKeystate s )
 	if(KEYSTATE_UP == s) return;
 	
 	gAgent.moveUp(-1);
-	if(KEYSTATE_DOWN == s && !gAgent.getFlying())
+	if(KEYSTATE_DOWN == s && !gAgent.getFlying() && gSavedSettings.getBOOL("SGShiftCrouchToggle"))
 	{
 		isCrouch = !isCrouch;
 	}
@@ -117,7 +117,7 @@ static void agent_handle_doubletap_run(EKeystate s, LLAgent::EDoubleTapRunMode m
 			gAgent.clearTempRun();
 // [/RLVa:KB]
 	}
-	else if (gAllowTapTapHoldRun &&
+	else if (gSavedSettings.getBOOL("AllowTapTapHoldRun") &&
 		 KEYSTATE_DOWN == s &&
 		 !gAgent.getRunning())
 	{

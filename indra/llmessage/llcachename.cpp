@@ -29,6 +29,7 @@
 #include "llcachename.h"
 
 // linden library includes
+#include "llcontrol.h" // For LLCachedControl
 #include "lldbstrings.h"
 #include "llframetimer.h"
 #include "llhost.h"
@@ -36,7 +37,6 @@
 #include "llsdserialize.h"
 #include "lluuid.h"
 #include "message.h"
-#include "llmemtype.h"
 
 #include <boost/regex.hpp>
 
@@ -507,9 +507,10 @@ BOOL LLCacheName::getUUID(const std::string& full_name, LLUUID& id)
 //static
 std::string LLCacheName::buildFullName(const std::string& first, const std::string& last)
 {
+	static const LLCachedControl<bool> show_resident("LiruShowLastNameResident", false);
 	std::string fullname = first;
 	if (!last.empty()
-		&& last != "Resident")
+		&& (show_resident || last != "Resident"))
 	{
 		fullname += ' ';
 		fullname += last;
@@ -520,6 +521,8 @@ std::string LLCacheName::buildFullName(const std::string& first, const std::stri
 //static
 std::string LLCacheName::cleanFullName(const std::string& full_name)
 {
+	static const LLCachedControl<bool> show_resident("LiruShowLastNameResident", false);
+	if (show_resident) return full_name;
 	return full_name.substr(0, full_name.find(" Resident"));
 }
 
@@ -540,7 +543,8 @@ std::string LLCacheName::buildUsername(const std::string& full_name)
 		username = full_name.substr(0, index);
 		std::string lastname = full_name.substr(index+1);
 
-		if (lastname != "Resident")
+		static const LLCachedControl<bool> show_resident("LiruShowLastNameResident", false);
+		if (lastname != "Resident" || show_resident)
 		{
 			username = username + "." + lastname;
 		}
@@ -692,7 +696,6 @@ bool LLCacheName::getIfThere(const LLUUID& id, std::string& fullname, BOOL& is_g
 
 void LLCacheName::processPending()
 {
-	LLMemType mt_pp(LLMemType::MTYPE_CACHE_PROCESS_PENDING);
 	const F32 SECS_BETWEEN_PROCESS = 0.1f;
 	if(!impl.mProcessTimer.checkExpirationAndReset(SECS_BETWEEN_PROCESS))
 	{
@@ -798,7 +801,6 @@ std::string LLCacheName::getDefaultLastName()
 
 void LLCacheName::Impl::processPendingAsks()
 {
-	LLMemType mt_ppa(LLMemType::MTYPE_CACHE_PROCESS_PENDING_ASKS);
 	sendRequest(_PREHASH_UUIDNameRequest, mAskNameQueue);
 	sendRequest(_PREHASH_UUIDGroupNameRequest, mAskGroupQueue);
 	mAskNameQueue.clear();
@@ -807,7 +809,6 @@ void LLCacheName::Impl::processPendingAsks()
 
 void LLCacheName::Impl::processPendingReplies()
 {
-	LLMemType mt_ppr(LLMemType::MTYPE_CACHE_PROCESS_PENDING_REPLIES);
 	// First call all the callbacks, because they might send messages.
 	for(ReplyQueue::iterator it = mReplyQueue.begin(); it != mReplyQueue.end(); ++it)
 	{

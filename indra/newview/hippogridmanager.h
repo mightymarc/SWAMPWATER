@@ -15,11 +15,14 @@
 #include "expat/expat.h"
 #endif
 
+#include <boost/signals2.hpp>
+
 class LLSD;
 
 
 class HippoGridInfo
 {
+	friend class HippoGridManager;
 public:
 	enum Platform {
 		PLATFORM_OTHER = 0,
@@ -36,29 +39,33 @@ public:
 
 	explicit HippoGridInfo(const std::string& gridName);
 
-	Platform           getPlatform();
-	bool isOpenSimulator() const;
-	bool isSecondLife() const;
-	const std::string& getGridName()        const;
+	Platform getPlatform() { return mPlatform; }
+	bool isOpenSimulator() const { return (mPlatform == PLATFORM_OPENSIM || mPlatform == PLATFORM_AURORA); }
+	bool isAurora() const { return (mPlatform == PLATFORM_AURORA); }
+	bool isSecondLife() const { return (mPlatform == PLATFORM_SECONDLIFE); }
+	bool isAvination() const { return mIsInAvination; }
+	bool isInProductionGrid() const { llassert(mPlatform == PLATFORM_SECONDLIFE); return mIsInProductionGrid; } // Should only be called if isSecondLife() returns true.
+	const std::string& getGridName()        const { return mGridName; }
 	const std::string& getGridOwner()       const;	
-	const std::string& getLoginUri()        const;
-	const std::string& getLoginPage()       const;
-	const std::string& getHelperUri()       const;
-	const std::string& getWebSite()         const;
-	const std::string& getSupportUrl()      const;
-	const std::string& getRegisterUrl()     const;
-	const std::string& getPasswordUrl()     const;
+	const std::string& getLoginUri()        const { return mLoginUri; }
+	const std::string& getLoginPage()       const { return mLoginPage; }
+	const std::string& getHelperUri()       const { return mHelperUri; }
+	const std::string& getWebSite()         const { return mWebSite; }
+	const std::string& getSupportUrl()      const { return mSupportUrl; }
+	const std::string& getRegisterUrl()     const { return mRegisterUrl; }
+	const std::string& getPasswordUrl()     const { return mPasswordUrl; }
 	// Returns the url base used for the Web Search tab
-	const std::string& getSearchUrl()       const;
-	const std::string& getGridMessage()     const;
+	const std::string& getSearchUrl()       const { return mSearchUrl; }
+	const std::string& getGridMessage()     const { return mGridMessage; }
 	const std::string& getVoiceConnector()  const { return mVoiceConnector; }
 	std::string getSearchUrl(SearchType ty, bool is_web) const;
-	bool isRenderCompat()                   const;
-	std::string getGridNick();	
+	bool isRenderCompat()                   const { return mRenderCompat; }
+	std::string getGridNick() const;
 	int getMaxAgentGroups() const { return mMaxAgentGroups; }
 
-	const std::string& getCurrencySymbol()     const;
-	const std::string& getRealCurrencySymbol() const;
+	const std::string& getCurrencySymbol()     const { return mCurrencySymbol; }
+	const std::string& getCurrencyText()       const { return mCurrencyText; }
+	const std::string& getRealCurrencySymbol() const { return mRealCurrencySymbol; }
 	std::string getUploadFee()                 const;
 	std::string getGroupCreationFee()          const;
 	std::string getDirectoryFee()              const;
@@ -80,19 +87,22 @@ public:
 	void setRenderCompat(bool compat);
 	void setMaxAgentGroups(int max)                   { mMaxAgentGroups = max;   }
 	void setVoiceConnector(const std::string& vc)     { mVoiceConnector = vc;    }
+	void setUPCSupported(bool on);
+	bool getUPCSupported();
 
 	void setCurrencySymbol(const std::string& sym);
+	void setCurrencyText(const std::string& text);
 	void setRealCurrencySymbol(const std::string& sym);
 	void setDirectoryFee(int fee);
 	bool supportsInvLinks();
 	void setSupportsInvLinks(bool b);
 	bool getAutoUpdate();
-	void setAutoUpdate(bool b);	
+	bool getLocked() { return mLocked; }
 
-	bool retrieveGridInfo();
+	void getGridInfo();
 
 	static const char* getPlatformString(Platform platform);
-	static std::string sanitizeGridNick(std::string &gridnick);
+	static std::string sanitizeGridNick(const std::string &gridnick);
 
 	static HippoGridInfo FALLBACK_GRIDINFO;
 	static void initFallback();
@@ -110,12 +120,17 @@ private:
 	std::string mPasswordUrl;
 	std::string mSearchUrl;
 	std::string mVoiceConnector;
+	bool mIsInProductionGrid;
+	bool mIsInAvination;
 	bool mRenderCompat;
 	bool mInvLinks;
 	bool mAutoUpdate;
+	bool mLocked;
+	bool mUPCSupported;
 	int mMaxAgentGroups;
 
 	std::string mCurrencySymbol;
+	std::string mCurrencyText;
 	std::string mRealCurrencySymbol;
 	int mDirectoryFee;
 	std::string mGridMessage;
@@ -129,7 +144,8 @@ private:
 	};
 	XmlState mXmlState;
 
-	static std::string sanitizeUri(std::string &uri);
+	static std::string sanitizeUri(std::string const& uri_in);
+	void useHttps(void);
 	void formatFee(std::string &fee, int cost, bool showFree) const;
 
 	static void onXmlElementStart(void* userData, const XML_Char* name, const XML_Char** atts);
@@ -141,6 +157,8 @@ private:
 class HippoGridManager
 {
 public:
+	typedef boost::signals2::signal<void (HippoGridInfo* pNewGrid, HippoGridInfo* pPrevGrid)> current_grid_change_signal_t;
+
 	HippoGridManager();
 	~HippoGridManager();
 
@@ -149,10 +167,13 @@ public:
 	void discardAndReload();
 
 	HippoGridInfo* getGrid(const std::string& grid) const;
-	HippoGridInfo* getConnectedGrid()               const;
+	HippoGridInfo* getConnectedGrid()               const { return mConnectedGrid ? mConnectedGrid : getCurrentGrid(); }
+
 	HippoGridInfo* getCurrentGrid()                 const;
-	const std::string& getDefaultGridNick()         const;
-	const std::string& getCurrentGridNick()         const;
+	std::string	   getDefaultGridNick()         const;
+	std::string	   getCurrentGridNick()         const;
+	const std::string&	   getDefaultGridName()         const;
+	const std::string&	   getCurrentGridName()         const;
 
 	void setDefaultGrid(const std::string& grid);
 	void setCurrentGrid(const std::string& grid);
@@ -165,6 +186,13 @@ public:
 	GridIterator beginGrid() { return mGridInfo.begin(); }
 	GridIterator endGrid() { return mGridInfo.end(); }
 
+	boost::signals2::connection setCurrentGridChangeCallback( const current_grid_change_signal_t::slot_type& cb )
+	{
+		if(!mCurrentGridChangeSignal)
+			mCurrentGridChangeSignal = new current_grid_change_signal_t;
+		return mCurrentGridChangeSignal->connect(cb);
+	}
+
 private:
 	friend class HippoGridInfo;
 	std::map<std::string, HippoGridInfo*> mGridInfo;
@@ -172,6 +200,8 @@ private:
 	std::string mCurrentGrid;
 	HippoGridInfo* mConnectedGrid;
 	int mDefaultGridsVersion;
+
+	current_grid_change_signal_t* mCurrentGridChangeSignal; 
 
 	void cleanup();
 	void loadFromFile();

@@ -35,8 +35,6 @@
 //-----------------------------------------------------------------------------
 #include "linden_common.h"
 
-#include "llmemtype.h"
-
 #include "llmotioncontroller.h"
 #include "llkeyframemotion.h"
 #include "llmath.h"
@@ -50,6 +48,7 @@ const U32 MAX_MOTION_INSTANCES = 32;
 //-----------------------------------------------------------------------------
 // Constants and statics
 //-----------------------------------------------------------------------------
+F32 LLMotionController::sCurrentTimeFactor = 1.f;
 LLMotionRegistry LLMotionController::sRegistry;
 
 //-----------------------------------------------------------------------------
@@ -84,13 +83,7 @@ LLMotionRegistry::~LLMotionRegistry()
 BOOL LLMotionRegistry::registerMotion( const LLUUID& id, LLMotionConstructor constructor )
 {
 	//	llinfos << "Registering motion: " << name << llendl;
-	if (!is_in_map(mMotionTable, id))
-	{
-		mMotionTable[id] = constructor;
-		return TRUE;
-	}
-	
-	return FALSE;
+	return mMotionTable.insert(std::make_pair(id,constructor)).second;
 }
 
 //-----------------------------------------------------------------------------
@@ -133,7 +126,7 @@ LLMotion *LLMotionRegistry::createMotion( const LLUUID &id )
 // Class Constructor
 //-----------------------------------------------------------------------------
 LLMotionController::LLMotionController()
-	: mTimeFactor(1.f),
+	: mTimeFactor(sCurrentTimeFactor),
 	  mCharacter(NULL),
 	  mAnimTime(0.f),
 	  mPrevTimerElapsed(0.f),
@@ -341,7 +334,6 @@ void LLMotionController::removeMotionInstance(LLMotion* motionp)
 //-----------------------------------------------------------------------------
 LLMotion* LLMotionController::createMotion( const LLUUID &id )
 {
-	LLMemType mt(LLMemType::MTYPE_ANIMATION);
 	// do we have an instance of this motion for this character?
 	LLMotion *motion = findMotion(id);
 
@@ -547,6 +539,8 @@ void LLMotionController::updateIdleActiveMotions()
 //-----------------------------------------------------------------------------
 // updateMotionsByType()
 //-----------------------------------------------------------------------------
+static LLFastTimer::DeclareTimer FTM_MOTION_ON_UPDATE("Motion onUpdate");
+
 void LLMotionController::updateMotionsByType(LLMotion::LLMotionBlendType anim_type)
 {
 	BOOL update_result = TRUE;
@@ -637,9 +631,9 @@ void LLMotionController::updateMotionsByType(LLMotion::LLMotionBlendType anim_ty
 			motionp->fadeIn();
 		}
 
-		// **********************
+		//**********************
 		// MOTION INACTIVE
-		// **********************
+		//**********************
 		if (motionp->isStopped() && mAnimTime > motionp->getStopTime() + motionp->getEaseOutDuration())
 		{
 			// this motion has gone on too long, deactivate it
@@ -659,9 +653,9 @@ void LLMotionController::updateMotionsByType(LLMotion::LLMotionBlendType anim_ty
 			}
 		}
 
-		// **********************
+		//**********************
 		// MOTION EASE OUT
-		// **********************
+		//**********************
 		else if (motionp->isStopped() && mAnimTime > motionp->getStopTime())
 		{
 			// is this the first iteration in the ease out phase?
@@ -684,9 +678,9 @@ void LLMotionController::updateMotionsByType(LLMotion::LLMotionBlendType anim_ty
 			update_result = motionp->onUpdate(mAnimTime - motionp->mActivationTimestamp, last_joint_signature);
 		}
 
-		// **********************
+		//**********************
 		// MOTION ACTIVE
-		// **********************
+		//**********************
 		else if (mAnimTime > motionp->mActivationTimestamp + motionp->getEaseInDuration())
 		{
 			posep->setWeight(motionp->getFadeWeight());
@@ -704,12 +698,15 @@ void LLMotionController::updateMotionsByType(LLMotion::LLMotionBlendType anim_ty
 			}
 
 			// perform motion update
-			update_result = motionp->onUpdate(mAnimTime - motionp->mActivationTimestamp, last_joint_signature);
+			{
+				LLFastTimer t(FTM_MOTION_ON_UPDATE);
+				update_result = motionp->onUpdate(mAnimTime - motionp->mActivationTimestamp, last_joint_signature);
+			}
 		}
 
-		// **********************
+		//**********************
 		// MOTION EASE IN
-		// **********************
+		//**********************
 		else if (mAnimTime >= motionp->mActivationTimestamp)
 		{
 			if (mLastTime < motionp->mActivationTimestamp)
@@ -837,6 +834,7 @@ void LLMotionController::updateMotions(bool force_update)
 				}
 
 				updateLoadingMotions();
+
 				return;
 			}
 			

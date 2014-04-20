@@ -37,14 +37,15 @@
 // library includes
 #include "llframestatview.h"
 #include "llfasttimerview.h"
-#include "llmemoryview.h"
 #include "llconsole.h"
 #include "lltextureview.h"
+#include "aihttpview.h"
 #include "llresmgr.h"
 #include "imageids.h"
 #include "llvelocitybar.h"
 #include "llviewerwindow.h"
 #include "llfloaterstats.h"
+#include "lluictrlfactory.h"
 
 //
 // Globals
@@ -84,37 +85,41 @@ LLDebugView::LLDebugView(const std::string& name, const LLRect &rect)
 	mFastTimerView->setVisible(FALSE);			// start invisible
 	addChild(mFastTimerView);
 
-	r.set(25, rect.getHeight() - 50, rect.getWidth()/2, rect.getHeight() - 450);
-	mMemoryView = new LLMemoryView("memory", r);
-	mMemoryView->setFollowsTop();
-	mMemoryView->setFollowsLeft();
-	mMemoryView->setVisible(FALSE);			// start invisible
-	addChild(mMemoryView);
-
-	r.set(150, rect.getHeight() - 50, 870, 100);
-	gTextureView = new LLTextureView("gTextureView", r);
-	gTextureView->setRect(r);
-	gTextureView->setFollowsBottom();
-	gTextureView->setFollowsLeft();
+	r.set(150, rect.getHeight() - 50, 970, 100);
+	LLTextureView::Params tvp;
+	tvp.name("gTextureView");
+	tvp.rect(r);
+	tvp.visible(false);
+	gTextureView = LLUICtrlFactory::create<LLTextureView>(tvp);
 	addChild(gTextureView);
 	//gTextureView->reshape(r.getWidth(), r.getHeight(), TRUE);
+
+	r.set(150, rect.getHeight() - 50, 870, 100);
+	AIHTTPView::Params hvp;
+	hvp.name("gHttpView");
+	hvp.rect(r);
+	hvp.visible(false);
+	gHttpView = LLUICtrlFactory::create<AIHTTPView>(hvp);
+	//gHttpView->setFollowsBottom();
+	//gHttpView->setFollowsLeft();
+	addChild(gHttpView);
 
 	if(gAuditTexture)
 	{
 		r.set(150, rect.getHeight() - 50, 900 + LLImageGL::sTextureLoadedCounter.size() * 30, 100);
-		gTextureSizeView = new LLTextureSizeView("gTextureSizeView");
-		gTextureSizeView->setRect(r);
-		gTextureSizeView->setFollowsBottom();
-		gTextureSizeView->setFollowsLeft();
-		gTextureSizeView->setType(LLTextureSizeView::TEXTURE_MEM_OVER_SIZE) ;
+		LLTextureSizeView::Params tsvp;
+		tsvp.name = "gTextureSizeView";
+		tsvp.rect = r;
+		tsvp.type = LLTextureSizeView::TEXTURE_MEM_OVER_SIZE;
+		gTextureSizeView = LLUICtrlFactory::create<LLTextureSizeView>(tsvp);
 		addChild(gTextureSizeView);
 
 		r.set(150, rect.getHeight() - 50, 900 + LLImageGL::sTextureMemByCategory.size() * 30, 100);
-		gTextureCategoryView = new LLTextureSizeView("gTextureCategoryView");
-		gTextureCategoryView->setRect(r);
-		gTextureCategoryView->setFollowsBottom();
-		gTextureCategoryView->setFollowsLeft();
-		gTextureCategoryView->setType(LLTextureSizeView::TEXTURE_MEM_OVER_CATEGORY);
+		LLTextureSizeView::Params tscp;
+		tscp.name = "gTextureCategoryView";
+		tscp.rect = r;
+		tscp.type = LLTextureSizeView::TEXTURE_MEM_OVER_CATEGORY;
+		gTextureSizeView = LLUICtrlFactory::create<LLTextureSizeView>(tscp);
 		addChild(gTextureCategoryView);
 	}
 
@@ -135,6 +140,7 @@ LLDebugView::~LLDebugView()
 	// These have already been deleted.  Fix the globals appropriately.
 	gDebugView = NULL;
 	gTextureView = NULL;
+	gHttpView = NULL;
 	gTextureSizeView = NULL;
 	gTextureCategoryView = NULL;
 }

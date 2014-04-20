@@ -22,6 +22,7 @@
 #include "chatbar_as_cmdline.h"
 //#include "llfloaterchat.h"
 #include "llfirstuse.h"
+#include "lltrans.h"
 
 #include "llinventory.h"
 #include "llinventoryfunctions.h"
@@ -135,73 +136,6 @@ BOOL AOInvTimer::tick()
 	}
 	return FALSE;
 }
-// NC DROP -------------------------------------------------------
-
-class AONoteCardDropTarget : public LLView
-{
-public:
-	AONoteCardDropTarget(const std::string& name, const LLRect& rect, void (*callback)(LLViewerInventoryItem*));
-	~AONoteCardDropTarget();
-
-	void doDrop(EDragAndDropType cargo_type, void* cargo_data);
-
-	//
-	// LLView functionality
-	virtual BOOL handleDragAndDrop(S32 x, S32 y, MASK mask, BOOL drop,
-								   EDragAndDropType cargo_type,
-								   void* cargo_data,
-								   EAcceptance* accept,
-								   std::string& tooltip_msg);
-protected:
-	void	(*mDownCallback)(LLViewerInventoryItem*);
-};
-
-
-AONoteCardDropTarget::AONoteCardDropTarget(const std::string& name, const LLRect& rect,
-						  void (*callback)(LLViewerInventoryItem*)) :
-	LLView(name, rect, NOT_MOUSE_OPAQUE, FOLLOWS_ALL),
-	mDownCallback(callback)
-{
-}
-
-AONoteCardDropTarget::~AONoteCardDropTarget()
-{
-}
-
-void AONoteCardDropTarget::doDrop(EDragAndDropType cargo_type, void* cargo_data)
-{
-//	llinfos << "AONoteCardDropTarget::doDrop()" << llendl;
-}
-
-BOOL AONoteCardDropTarget::handleDragAndDrop(S32 x, S32 y, MASK mask, BOOL drop,
-									 EDragAndDropType cargo_type,
-									 void* cargo_data,
-									 EAcceptance* accept,
-									 std::string& tooltip_msg)
-{
-	BOOL handled = FALSE;
-	if(getParent())
-	{
-		handled = TRUE;
-		LLViewerInventoryItem* inv_item = (LLViewerInventoryItem*)cargo_data;
-		if(gInventory.getItem(inv_item->getUUID()))
-		{
-			*accept = ACCEPT_YES_COPY_SINGLE;
-			if(drop)
-			{
-				mDownCallback(inv_item);
-			}
-		}
-		else
-		{
-			*accept = ACCEPT_NO;
-		}
-	}
-	return handled;
-}
-
-AONoteCardDropTarget * LLFloaterAO::mAOItemDropTarget;
-
 
 // STUFF -------------------------------------------------------
 
@@ -282,8 +216,6 @@ LLFloaterAO::~LLFloaterAO()
 	mcomboBox_lands = 0;
 	mcomboBox_standups = 0;
 	mcomboBox_prejumps = 0;
-	delete mAOItemDropTarget;
-	mAOItemDropTarget = NULL;
 //	llinfos << "floater destroyed" << llendl;
 }
 
@@ -314,37 +246,6 @@ bool LLFloaterAO::getInstance()
 
 BOOL LLFloaterAO::postBuild()
 {
-	LLView *target_view = getChild<LLView>("ao_notecard");
-	if(target_view)
-	{
-		if (mAOItemDropTarget)
-		{
-			delete mAOItemDropTarget;
-		}
-		mAOItemDropTarget = new AONoteCardDropTarget("drop target", target_view->getRect(), AOItemDrop);//, mAvatarID);
-		addChild(mAOItemDropTarget);
-	}
-	if(LLStartUp::getStartupState() == STATE_STARTED)
-	{
-		LLUUID itemidimport = (LLUUID)gSavedPerAccountSettings.getString("AOConfigNotecardID");
-		LLViewerInventoryItem* itemimport = gInventory.getItem(itemidimport);
-		if(itemimport)
-		{
-			childSetValue("ao_nc_text","Currently set to: "+itemimport->getName());
-		}
-		else if(itemidimport.isNull())
-		{
-			childSetValue("ao_nc_text","Currently not set");
-		}
-		else
-		{
-			childSetValue("ao_nc_text","Currently set to a item not on this account");
-		}
-	}
-	else
-	{
-		childSetValue("ao_nc_text","Not logged in");
-	}
 	childSetAction("more_btn", onClickMore, this);
 	childSetAction("less_btn", onClickLess, this);
 
@@ -353,9 +254,9 @@ BOOL LLFloaterAO::postBuild()
 	childSetAction("newcard",onClickNewCard,this);
 	childSetAction("prevstand",onClickPrevStand,this);
 	childSetAction("nextstand",onClickNextStand,this);
-	childSetCommitCallback("AOEnabled",onClickToggleAO);
-	childSetCommitCallback("AOSitsEnabled",onClickToggleSits);
-	childSetCommitCallback("standtime",onSpinnerCommit);
+	getChild<LLUICtrl>("AOEnabled")->setCommitCallback(boost::bind(&LLFloaterAO::onClickToggleAO));
+	getChild<LLUICtrl>("AOSitsEnabled")->setCommitCallback(boost::bind(&LLFloaterAO::onClickToggleSits));
+	getChild<LLUICtrl>("standtime")->setCommitCallback(boost::bind(&LLFloaterAO::onSpinnerCommit,_1));
 	mcomboBox_stands = getChild<LLComboBox>("stands");
 	mcomboBox_walks = getChild<LLComboBox>("walks");
 	mcomboBox_runs = getChild<LLComboBox>("runs");
@@ -373,28 +274,28 @@ BOOL LLFloaterAO::postBuild()
 	mcomboBox_lands = getChild<LLComboBox>("lands");
 	mcomboBox_standups = getChild<LLComboBox>("standups");
 	mcomboBox_prejumps = getChild<LLComboBox>("prejumps");
-	getChild<LLComboBox>("stands")->setCommitCallback(onComboBoxCommit);
-	getChild<LLComboBox>("walks")->setCommitCallback(onComboBoxCommit);
-	getChild<LLComboBox>("runs")->setCommitCallback(onComboBoxCommit);
-	getChild<LLComboBox>("jumps")->setCommitCallback(onComboBoxCommit);
-	getChild<LLComboBox>("sits")->setCommitCallback(onComboBoxCommit);
-	getChild<LLComboBox>("gsits")->setCommitCallback(onComboBoxCommit);
-	getChild<LLComboBox>("crouchs")->setCommitCallback(onComboBoxCommit);
-	getChild<LLComboBox>("cwalks")->setCommitCallback(onComboBoxCommit);
-	getChild<LLComboBox>("falls")->setCommitCallback(onComboBoxCommit);
-	getChild<LLComboBox>("hovers")->setCommitCallback(onComboBoxCommit);
-	getChild<LLComboBox>("flys")->setCommitCallback(onComboBoxCommit);
-	getChild<LLComboBox>("flyslows")->setCommitCallback(onComboBoxCommit);
-	getChild<LLComboBox>("flyups")->setCommitCallback(onComboBoxCommit);
-	getChild<LLComboBox>("flydowns")->setCommitCallback(onComboBoxCommit);
-	getChild<LLComboBox>("lands")->setCommitCallback(onComboBoxCommit);
-	getChild<LLComboBox>("standups")->setCommitCallback(onComboBoxCommit);
-	getChild<LLComboBox>("prejumps")->setCommitCallback(onComboBoxCommit);
+	getChild<LLComboBox>("stands")->setCommitCallback(boost::bind(&LLFloaterAO::onComboBoxCommit,_1));
+	getChild<LLComboBox>("walks")->setCommitCallback(boost::bind(&LLFloaterAO::onComboBoxCommit,_1));
+	getChild<LLComboBox>("runs")->setCommitCallback(boost::bind(&LLFloaterAO::onComboBoxCommit,_1));
+	getChild<LLComboBox>("jumps")->setCommitCallback(boost::bind(&LLFloaterAO::onComboBoxCommit,_1));
+	getChild<LLComboBox>("sits")->setCommitCallback(boost::bind(&LLFloaterAO::onComboBoxCommit,_1));
+	getChild<LLComboBox>("gsits")->setCommitCallback(boost::bind(&LLFloaterAO::onComboBoxCommit,_1));
+	getChild<LLComboBox>("crouchs")->setCommitCallback(boost::bind(&LLFloaterAO::onComboBoxCommit,_1));
+	getChild<LLComboBox>("cwalks")->setCommitCallback(boost::bind(&LLFloaterAO::onComboBoxCommit,_1));
+	getChild<LLComboBox>("falls")->setCommitCallback(boost::bind(&LLFloaterAO::onComboBoxCommit,_1));
+	getChild<LLComboBox>("hovers")->setCommitCallback(boost::bind(&LLFloaterAO::onComboBoxCommit,_1));
+	getChild<LLComboBox>("flys")->setCommitCallback(boost::bind(&LLFloaterAO::onComboBoxCommit,_1));
+	getChild<LLComboBox>("flyslows")->setCommitCallback(boost::bind(&LLFloaterAO::onComboBoxCommit,_1));
+	getChild<LLComboBox>("flyups")->setCommitCallback(boost::bind(&LLFloaterAO::onComboBoxCommit,_1));
+	getChild<LLComboBox>("flydowns")->setCommitCallback(boost::bind(&LLFloaterAO::onComboBoxCommit,_1));
+	getChild<LLComboBox>("lands")->setCommitCallback(boost::bind(&LLFloaterAO::onComboBoxCommit,_1));
+	getChild<LLComboBox>("standups")->setCommitCallback(boost::bind(&LLFloaterAO::onComboBoxCommit,_1));
+	getChild<LLComboBox>("prejumps")->setCommitCallback(boost::bind(&LLFloaterAO::onComboBoxCommit,_1));
 
 	return TRUE;
 }
 
-void LLFloaterAO::onSpinnerCommit(LLUICtrl* ctrl, void* userdata)
+void LLFloaterAO::onSpinnerCommit(LLUICtrl* ctrl)
 {
 	LLSpinCtrl* spin = (LLSpinCtrl*) ctrl;
 	if(spin)
@@ -406,7 +307,7 @@ void LLFloaterAO::onSpinnerCommit(LLUICtrl* ctrl, void* userdata)
 	}
 }
 
-void LLFloaterAO::onComboBoxCommit(LLUICtrl* ctrl, void* userdata)
+void LLFloaterAO::onComboBoxCommit(LLUICtrl* ctrl)
 {
 	LLComboBox* box = (LLComboBox*)ctrl;
 	if(box)
@@ -590,7 +491,6 @@ void LLFloaterAO::updateLayout(LLFloaterAO* floater)
 		floater->childSetVisible("sits", advanced);
 		floater->childSetVisible("gsits", advanced);
 		floater->childSetVisible("crouchs", advanced);
-		floater->childSetVisible("crouchwalks", advanced);
 		floater->childSetVisible("falls", advanced);
 		floater->childSetVisible("hovers", advanced);
 		floater->childSetVisible("flys", advanced);
@@ -724,12 +624,12 @@ void LLFloaterAO::onClickLess(void* data)
 	updateLayout(sInstance);
 }
 
-void LLFloaterAO::onClickToggleAO(LLUICtrl *, void*)
+void LLFloaterAO::onClickToggleAO()
 {
 	run();
 }
 
-void LLFloaterAO::onClickToggleSits(LLUICtrl *, void*)
+void LLFloaterAO::onClickToggleSits()
 {
 	run();
 }
@@ -789,12 +689,6 @@ LLUUID LLFloaterAO::getCurrentStandId()
 void LLFloaterAO::setCurrentStandId(const LLUUID& id)
 {
 	mCurrentStandId = id;
-}
-
-void LLFloaterAO::AOItemDrop(LLViewerInventoryItem* item)
-{
-	gSavedPerAccountSettings.setString("AOConfigNotecardID", item->getUUID().asString());
-	sInstance->childSetValue("ao_nc_text","Currently set to: "+item->getName());
 }
 
 LLUUID LLFloaterAO::GetAnimID(const LLUUID& id)
@@ -1379,7 +1273,7 @@ BOOL LLFloaterAO::SetDefault(void* userdata, LLUUID ao_id, std::string defaultan
 	if (sInstance && (userdata))
 	{
 		LLComboBox *box = (LLComboBox *) userdata;
-		if (LLUUID::null == ao_id)
+		if (ao_id.isNull())
 		{
 			box->clear();
 			box->removeall();

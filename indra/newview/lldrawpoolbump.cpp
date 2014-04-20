@@ -159,7 +159,7 @@ void LLStandardBumpmap::addstandard()
 		gStandardBumpmapList[LLStandardBumpmap::sStandardBumpmapCount].mLabel = label;
 		gStandardBumpmapList[LLStandardBumpmap::sStandardBumpmapCount].mImage = 
 			LLViewerTextureManager::getFetchedTexture(LLUUID(bump_image_id));	
-		gStandardBumpmapList[LLStandardBumpmap::sStandardBumpmapCount].mImage->setBoostLevel(LLViewerTexture::BOOST_BUMP) ;
+		gStandardBumpmapList[LLStandardBumpmap::sStandardBumpmapCount].mImage->setBoostLevel(LLGLTexture::BOOST_BUMP) ;
 		gStandardBumpmapList[LLStandardBumpmap::sStandardBumpmapCount].mImage->setLoadedCallback(LLBumpImageList::onSourceStandardLoaded, 0, TRUE, FALSE, NULL, NULL );
 		gStandardBumpmapList[LLStandardBumpmap::sStandardBumpmapCount].mImage->forceToSaveRawImage(0) ;
 		LLStandardBumpmap::sStandardBumpmapCount++;
@@ -456,9 +456,6 @@ void LLDrawPoolBump::unbindCubeMap(LLGLSLShader* shader, S32 shader_level, S32& 
 	LLCubeMap* cube_map = gSky.mVOSkyp ? gSky.mVOSkyp->getCubeMap() : NULL;
 	if( cube_map )
 	{
-		cube_map->disable();
-		cube_map->restoreMatrix();
-
 		if (!invisible && shader_level > 1)
 		{
 			shader->disableTexture(LLViewerShaderMgr::ENVIRONMENT_MAP, LLTexUnit::TT_CUBE_MAP);
@@ -471,6 +468,10 @@ void LLDrawPoolBump::unbindCubeMap(LLGLSLShader* shader, S32 shader_level, S32& 
 				}
 			}
 		}
+        // Moved below shader->disableTexture call to avoid false alarms from auto-re-enable of textures on stage 0
+        // MAINT-755
+		cube_map->disable();
+		cube_map->restoreMatrix();
 	}
 
 	if (!LLGLSLShader::sNoFixedFunction)
@@ -521,7 +522,14 @@ void LLDrawPoolBump::beginFullbrightShiny()
 	}
 	else
 	{
-		shader = &gObjectFullbrightShinyProgram;
+		if (LLPipeline::sRenderDeferred)
+		{
+			shader = &gDeferredFullbrightShinyProgram;
+		}
+		else
+		{
+			shader = &gObjectFullbrightShinyProgram;
+		}
 	}
 
 	LLCubeMap* cube_map = gSky.mVOSkyp ? gSky.mVOSkyp->getCubeMap() : NULL;
@@ -570,6 +578,7 @@ void LLDrawPoolBump::renderFullbrightShiny()
 	{
 		LLGLEnable blend_enable(GL_BLEND);
 
+		gGL.setSceneBlendType(LLRender::BT_REPLACE);
 		if (mVertexShaderLevel > 1)
 		{
 			LLRenderPass::pushBatches(LLRenderPass::PASS_FULLBRIGHT_SHINY, sVertexMask | LLVertexBuffer::MAP_TEXTURE_INDEX, TRUE, TRUE);
@@ -578,6 +587,7 @@ void LLDrawPoolBump::renderFullbrightShiny()
 		{
 			LLRenderPass::renderTexture(LLRenderPass::PASS_FULLBRIGHT_SHINY, sVertexMask);
 		}
+		gGL.setSceneBlendType(LLRender::BT_ALPHA);
 	}
 }
 
@@ -848,12 +858,12 @@ void LLDrawPoolBump::renderDeferred(S32 pass)
 	LLFastTimer ftm(FTM_RENDER_BUMP);
 
 	U32 type = LLRenderPass::PASS_BUMP;
-	LLCullResult::drawinfo_list_t::iterator begin = gPipeline.beginRenderMap(type);
-	LLCullResult::drawinfo_list_t::iterator end = gPipeline.endRenderMap(type);
+	LLCullResult::drawinfo_iterator begin = gPipeline.beginRenderMap(type);
+	LLCullResult::drawinfo_iterator end = gPipeline.endRenderMap(type);
 
-	U32 mask = LLVertexBuffer::MAP_VERTEX | LLVertexBuffer::MAP_TEXCOORD0 | LLVertexBuffer::MAP_BINORMAL | LLVertexBuffer::MAP_NORMAL | LLVertexBuffer::MAP_COLOR;
+	U32 mask = LLVertexBuffer::MAP_VERTEX | LLVertexBuffer::MAP_TEXCOORD0 | LLVertexBuffer::MAP_TANGENT | LLVertexBuffer::MAP_NORMAL | LLVertexBuffer::MAP_COLOR;
 	
-	for (LLCullResult::drawinfo_list_t::iterator i = begin; i != end; ++i)	
+	for (LLCullResult::drawinfo_iterator i = begin; i != end; ++i)	
 	{
 		LLDrawInfo& params = **i;
 
@@ -896,7 +906,9 @@ void LLDrawPoolBump::renderPostDeferred(S32 pass)
 	switch (pass)
 	{
 	case 0:
+		gGL.setColorMask(true, true);
 		renderFullbrightShiny();
+		gGL.setColorMask(true, false);
 		break;
 	case 1:
 		renderBump(LLRenderPass::PASS_POST_BUMP);
@@ -1075,7 +1087,7 @@ LLViewerTexture* LLBumpImageList::getBrightnessDarknessImage(LLViewerFetchedText
 			src_image->getHeight() != bump->getHeight())// ||
 			//(LLPipeline::sRenderDeferred && bump->getComponents() != 4))
 		{
-			src_image->setBoostLevel(LLViewerTexture::BOOST_BUMP) ;
+			src_image->setBoostLevel(LLGLTexture::BOOST_BUMP) ;
 			src_image->setLoadedCallback( callback_func, 0, TRUE, FALSE, new LLUUID(src_image->getID()), NULL );
 			src_image->forceToSaveRawImage(0) ;
 		}
@@ -1192,7 +1204,7 @@ static LLFastTimer::DeclareTimer FTM_BUMP_SOURCE_MIN_MAX("Min/Max");
 static LLFastTimer::DeclareTimer FTM_BUMP_SOURCE_RGB2LUM("RGB to Luminance");
 static LLFastTimer::DeclareTimer FTM_BUMP_SOURCE_RESCALE("Rescale");
 static LLFastTimer::DeclareTimer FTM_BUMP_SOURCE_GEN_NORMAL("Generate Normal");
-static LLFastTimer::DeclareTimer FTM_BUMP_SOURCE_CREATE("Create");
+static LLFastTimer::DeclareTimer FTM_BUMP_SOURCE_CREATE("Bump Source Create");
 
 // static
 void LLBumpImageList::onSourceLoaded( BOOL success, LLViewerTexture *src_vi, LLImageRaw* src, LLUUID& source_asset_id, EBumpEffect bump_code )
@@ -1370,9 +1382,14 @@ void LLBumpImageList::onSourceLoaded( BOOL success, LLViewerTexture *src_vi, LLI
 					LLGLDisable blend(GL_BLEND);
 					gGL.setColorMask(TRUE, TRUE);
 					gNormalMapGenProgram.bind();
-					gNormalMapGenProgram.uniform1f("norm_scale", gSavedSettings.getF32("RenderNormalMapScale"));
-					gNormalMapGenProgram.uniform1f("stepX", 1.f/bump->getWidth());
-					gNormalMapGenProgram.uniform1f("stepY", 1.f/bump->getHeight());
+
+					static LLStaticHashedString sNormScale("norm_scale");
+					static LLStaticHashedString sStepX("stepX");
+					static LLStaticHashedString sStepY("stepY");
+
+					gNormalMapGenProgram.uniform1f(sNormScale, gSavedSettings.getF32("RenderNormalMapScale"));
+					gNormalMapGenProgram.uniform1f(sStepX, 1.f/bump->getWidth());
+					gNormalMapGenProgram.uniform1f(sStepY, 1.f/bump->getHeight());
 
 					LLVector2 v((F32) bump->getWidth()/gPipeline.mScreen.getWidth(),
 								(F32) bump->getHeight()/gPipeline.mScreen.getHeight());
@@ -1449,10 +1466,10 @@ void LLBumpImageList::onSourceLoaded( BOOL success, LLViewerTexture *src_vi, LLI
 
 void LLDrawPoolBump::renderBump(U32 type, U32 mask)
 {	
-	LLCullResult::drawinfo_list_t::iterator begin = gPipeline.beginRenderMap(type);
-	LLCullResult::drawinfo_list_t::iterator end = gPipeline.endRenderMap(type);
+	LLCullResult::drawinfo_iterator begin = gPipeline.beginRenderMap(type);
+	LLCullResult::drawinfo_iterator end = gPipeline.endRenderMap(type);
 
-	for (LLCullResult::drawinfo_list_t::iterator i = begin; i != end; ++i)	
+	for (LLCullResult::drawinfo_iterator i = begin; i != end; ++i)	
 	{
 		LLDrawInfo& params = **i;
 
@@ -1572,16 +1589,21 @@ void LLDrawPoolInvisible::render(S32 pass)
 		gOcclusionProgram.unbind();
 	}
 
-	if (gPipeline.hasRenderBatches(LLRenderPass::PASS_INVISI_SHINY))
+	/*if (gPipeline.hasRenderBatches(LLRenderPass::PASS_INVISI_SHINY)) // invisible (deprecated)
 	{
 		beginShiny(true);
 		renderShiny(true);
 		endShiny(true);
-	}
+	}*/
 }
 
 void LLDrawPoolInvisible::beginDeferredPass(S32 pass)
 {
+	static const LLCachedControl<bool> enable("SianaRenderDeferredInvisiprim");
+	if (!enable)
+	{
+	    return;
+	}
 	beginRenderPass(pass);
 }
 
@@ -1593,25 +1615,28 @@ void LLDrawPoolInvisible::endDeferredPass( S32 pass )
 void LLDrawPoolInvisible::renderDeferred( S32 pass )
 { //render invisiprims; this doesn't work becaue it also blocks all the post-deferred stuff
 	static const LLCachedControl<bool> enable("SianaRenderDeferredInvisiprim");
-	if (!enable) {
+	if (!enable)
+	{
 	    return;
 	}
 
 	LLFastTimer t(FTM_RENDER_INVISIBLE);
-  
+ 
+	gOcclusionProgram.bind();
+
 	U32 invisi_mask = LLVertexBuffer::MAP_VERTEX;
 	glStencilMask(0);
-	glStencilOp(GL_ZERO, GL_KEEP, GL_REPLACE);
 	gGL.setColorMask(false, false);
 	pushBatches(LLRenderPass::PASS_INVISIBLE, invisi_mask, FALSE);
 	gGL.setColorMask(true, true);
-	glStencilOp(GL_KEEP, GL_KEEP, GL_REPLACE);
 	glStencilMask(0xFFFFFFFF);
 	
-	if (gPipeline.hasRenderBatches(LLRenderPass::PASS_INVISI_SHINY))
+	gOcclusionProgram.unbind();
+
+	/*if (gPipeline.hasRenderBatches(LLRenderPass::PASS_INVISI_SHINY)) // invisible (deprecated)
 	{
 		beginShiny(true);
 		renderShiny(true);
 		endShiny(true);
-	}
+	}*/
 }

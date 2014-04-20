@@ -27,6 +27,7 @@
 
 #include "llerror.h"	// *TODO: eliminate this
 
+#include <map>
 #include <typeinfo>
 #include <boost/noncopyable.hpp>
 
@@ -226,7 +227,7 @@ void LLSingleton<DERIVED_TYPE>::createInstance(SingletonInstanceData& data)
 	
 	if (data.mInitState == INITIALIZING)
 	{
-		llwarns << "Tried to access singleton " << typeid(DERIVED_TYPE).name() << " from initSingleton(), using half-initialized object" << llendl;
+		llerrs << "Tried to access singleton " << typeid(DERIVED_TYPE).name() << " from initSingleton(), using half-initialized object" << llendl;
 		return;
 	}
 

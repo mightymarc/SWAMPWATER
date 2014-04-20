@@ -1,32 +1,27 @@
+
 /** 
  * @file lldir.cpp
  * @brief implementation of directory utilities base class
  *
- * $LicenseInfo:firstyear=2002&license=viewergpl$
- * 
- * Copyright (c) 2002-2009, Linden Research, Inc.
- * 
+ * $LicenseInfo:firstyear=2002&license=viewerlgpl$
  * Second Life Viewer Source Code
- * The source code in this file ("Source Code") is provided by Linden Lab
- * to you under the terms of the GNU General Public License, version 2.0
- * ("GPL"), unless you have obtained a separate licensing agreement
- * ("Other License"), formally executed by you and Linden Lab.  Terms of
- * the GPL can be found in doc/GPL-license.txt in this distribution, or
- * online at http://secondlifegrid.net/programs/open_source/licensing/gplv2
+ * Copyright (C) 2010, Linden Research, Inc.
  * 
- * There are special exceptions to the terms and conditions of the GPL as
- * it is applied to this Source Code. View the full text of the exception
- * in the file doc/FLOSS-exception.txt in this software distribution, or
- * online at
- * http://secondlifegrid.net/programs/open_source/licensing/flossexception
+ * This library is free software; you can redistribute it and/or
+ * modify it under the terms of the GNU Lesser General Public
+ * License as published by the Free Software Foundation;
+ * version 2.1 of the License only.
  * 
- * By copying, modifying or distributing this software, you acknowledge
- * that you have read and understood your obligations described above,
- * and agree to abide by those obligations.
+ * This library is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+ * Lesser General Public License for more details.
  * 
- * ALL LINDEN LAB SOURCE CODE IS PROVIDED "AS IS." LINDEN LAB MAKES NO
- * WARRANTIES, EXPRESS, IMPLIED OR OTHERWISE, REGARDING ITS ACCURACY,
- * COMPLETENESS OR PERFORMANCE.
+ * You should have received a copy of the GNU Lesser General Public
+ * License along with this library; if not, write to the Free Software
+ * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301  USA
+ * 
+ * Linden Research, Inc., 945 Battery Street, San Francisco, CA  94111  USA
  * $/LicenseInfo$
  */
 
@@ -47,6 +42,18 @@
 #include "lluuid.h"
 
 #include "lldiriterator.h"
+#include "stringize.h"
+#include <boost/filesystem.hpp>
+#include <boost/foreach.hpp>
+#include <boost/range/begin.hpp>
+#include <boost/range/end.hpp>
+#include <boost/assign/list_of.hpp>
+#include <boost/bind.hpp>
+#include <boost/ref.hpp>
+#include <algorithm>
+
+using boost::assign::list_of;
+using boost::assign::map_list_of;
 
 #if LL_WINDOWS
 #include "lldir_win32.h"
@@ -64,6 +71,8 @@ LLDir_Linux gDirUtil;
 
 LLDir *gDirUtilp = (LLDir *)&gDirUtil;
 
+static const char* const empty = "";
+std::string LLDir::sDumpDir = "";
 LLDir::LLDir()
 :	mAppName(""),
 	mExecutablePathAndName(""),
@@ -84,7 +93,32 @@ LLDir::~LLDir()
 {
 }
 
-
+std::vector<std::string> LLDir::getFilesInDir(const std::string &dirname)
+{
+    //Returns a vector of fullpath filenames.
+    
+    boost::filesystem::path p (dirname);
+    std::vector<std::string> v;
+    
+    if (exists(p))
+    {
+        if (is_directory(p))
+        {
+            boost::filesystem::directory_iterator end_iter;
+            for (boost::filesystem::directory_iterator dir_itr(p);
+                 dir_itr != end_iter;
+                 ++dir_itr)
+            {
+                if (boost::filesystem::is_regular_file(dir_itr->status()))
+                {
+                    v.push_back(dir_itr->path().filename().string());
+                }
+            }
+        }
+    }
+    return v;
+}   
+            
 S32 LLDir::deleteFilesInDir(const std::string &dirname, const std::string &mask)
 {
 	S32 count = 0;
@@ -92,50 +126,81 @@ S32 LLDir::deleteFilesInDir(const std::string &dirname, const std::string &mask)
 	std::string fullpath;
 	S32 result;
 
-	LLDirIterator iter(dirname, mask);
-	while (iter.next(filename))
+	// File masks starting with "/" will match nothing, so we consider them invalid.
+	if (LLStringUtil::startsWith(mask, getDirDelimiter()))
 	{
-		fullpath = dirname;
-		fullpath += getDirDelimiter();
-		fullpath += filename;
+		llwarns << "Invalid file mask: " << mask << llendl;
+		llassert(!"Invalid file mask");
+	}
 
-		if(LLFile::isdir(fullpath))
+	try
+	{
+		LLDirIterator iter(dirname, mask);
+		while (iter.next(filename))
 		{
-			// skipping directory traversal filenames
-			count++;
-			continue;
-		}
+			fullpath = add(dirname, filename);
 
-		S32 retry_count = 0;
-		while (retry_count < 5)
-		{
-			if (0 != LLFile::remove(fullpath))
+			if(LLFile::isdir(fullpath))
 			{
-				retry_count++;
-				result = errno;
-				llwarns << "Problem removing " << fullpath << " - errorcode: "
+				// skipping directory traversal filenames
+				count++;
+				continue;
+			}
+
+			S32 retry_count = 0;
+			while (retry_count < 5)
+			{
+				if (0 != LLFile::remove(fullpath))
+				{
+					retry_count++;
+					result = errno;
+					llwarns << "Problem removing " << fullpath << " - errorcode: "
 						<< result << " attempt " << retry_count << llendl;
 
-				if(retry_count >= 5)
-				{
-					llwarns << "Failed to remove " << fullpath << llendl ;
-					return count ;
-				}
+					if(retry_count >= 5)
+					{
+						llwarns << "Failed to remove " << fullpath << llendl ;
+						return count ;
+					}
 
-				ms_sleep(100);
-			}
-			else
-			{
-				if (retry_count)
-				{
-					llwarns << "Successfully removed " << fullpath << llendl;
+					ms_sleep(100);
 				}
-				break;
-			}			
+				else
+				{
+					if (retry_count)
+					{
+						llwarns << "Successfully removed " << fullpath << llendl;
+					}
+					break;
+				}			
+			}
+			count++;
 		}
-		count++;
 	}
+	catch(...)
+	{
+		llwarns << "Unable to remove some files from " + dirname  << llendl;
+	}
+
 	return count;
+}
+
+U32 LLDir::deleteDirAndContents(const std::string& dir_name)
+{
+	//Removes the directory and its contents.  Returns number of files removed.
+	// Singu Note: boost::filesystem throws exceptions
+	S32 res = 0;
+
+	try 
+	{
+		res = boost::filesystem::remove_all(dir_name);
+	}
+	catch(const boost::filesystem::filesystem_error& e)
+	{
+		llwarns << "boost::filesystem::remove_all(\"" + dir_name + "\") failed: '" + e.code().message() + "'" << llendl;
+	}
+
+	return res;
 }
 
 const std::string LLDir::findFile(const std::string &filename, 
@@ -225,6 +290,34 @@ const std::string &LLDir::getChatLogsDir() const
 	return mChatLogsDir;
 }
 
+void LLDir::setDumpDir( const std::string& path )
+{
+    LLDir::sDumpDir = path;
+    if (! sDumpDir.empty() && sDumpDir.rbegin() == mDirDelimiter.rbegin() )
+    {
+        sDumpDir.erase(sDumpDir.size() -1);
+    }
+}
+
+const std::string &LLDir::getDumpDir() const
+{
+    if (sDumpDir.empty() )
+    {
+		/* Singu Note: don't generate a different dump dir each time
+        LLUUID uid;
+        uid.generate();
+        
+        sDumpDir = gDirUtilp->getExpandedFilename(LL_PATH_LOGS, "")
+                    + "dump-" + uid.asString();
+		*/
+
+		sDumpDir = gDirUtilp->getExpandedFilename(LL_PATH_LOGS, "") + "singularity-debug";
+        dir_exists_or_crash(sDumpDir);  
+    }
+
+	return LLDir::sDumpDir;
+}
+
 const std::string &LLDir::getPerAccountChatLogsDir() const
 {
 	return mPerAccountChatLogsDir;
@@ -265,12 +358,16 @@ std::string LLDir::buildSLOSCacheDir() const
 		}
 		else
 		{
-			res = getOSUserAppDir() + mDirDelimiter + "cache_sg1";
+			res = add(getOSUserAppDir(), "cache_sg1");
 		}
 	}
 	else
 	{
-		res = getOSCacheDir() + mDirDelimiter + "SingularityViewer";
+#if defined(_WIN64)
+		res = add(getOSCacheDir(), "SingularityViewer64");
+#else
+		res = add(getOSCacheDir(), "SingularityViewer");
+#endif
 	}
 	return res;
 }
@@ -318,6 +415,39 @@ const std::string &LLDir::getLLPluginDir() const
 	return mLLPluginDir;
 }
 
+static std::string ELLPathToString(ELLPath location)
+{
+	typedef std::map<ELLPath, const char*> ELLPathMap;
+#define ENT(symbol) (symbol, #symbol)
+	static const ELLPathMap sMap = map_list_of
+		ENT(LL_PATH_NONE)
+		ENT(LL_PATH_USER_SETTINGS)
+		ENT(LL_PATH_APP_SETTINGS)
+		ENT(LL_PATH_PER_SL_ACCOUNT) // returns/expands to blank string if we don't know the account name yet
+		ENT(LL_PATH_CACHE)
+		ENT(LL_PATH_CHARACTER)
+		ENT(LL_PATH_HELP)
+		ENT(LL_PATH_LOGS)
+		ENT(LL_PATH_TEMP)
+		ENT(LL_PATH_SKINS)
+		ENT(LL_PATH_TOP_SKIN)
+		ENT(LL_PATH_CHAT_LOGS)
+		ENT(LL_PATH_PER_ACCOUNT_CHAT_LOGS)
+		ENT(LL_PATH_USER_SKIN)
+		ENT(LL_PATH_LOCAL_ASSETS)
+		ENT(LL_PATH_EXECUTABLE)
+		ENT(LL_PATH_DEFAULT_SKIN)
+		ENT(LL_PATH_FONTS)
+		ENT(LL_PATH_LAST)
+	;
+#undef ENT
+
+	ELLPathMap::const_iterator found = sMap.find(location);
+	if (found != sMap.end())
+		return found->second;
+	return STRINGIZE("Invalid ELLPath value " << location);
+}
+
 std::string LLDir::getExpandedFilename(ELLPath location, const std::string& filename) const
 {
 	return getExpandedFilename(location, "", filename);
@@ -338,15 +468,11 @@ std::string LLDir::getExpandedFilename(ELLPath location, const std::string& subd
 		break;
 
 	case LL_PATH_APP_SETTINGS:
-		prefix = getAppRODataDir();
-		prefix += mDirDelimiter;
-		prefix += "app_settings";
+		prefix = add(getAppRODataDir(), "app_settings");
 		break;
 	
 	case LL_PATH_CHARACTER:
-		prefix = getAppRODataDir();
-		prefix += mDirDelimiter;
-		prefix += "character";
+		prefix = add(getAppRODataDir(), "character");
 		break;
 		
 	case LL_PATH_HELP:
@@ -357,14 +483,29 @@ std::string LLDir::getExpandedFilename(ELLPath location, const std::string& subd
 		prefix = getCacheDir();
 		break;
 		
+    case LL_PATH_DUMP:
+        prefix=getDumpDir();
+        break;
+            
 	case LL_PATH_USER_SETTINGS:
-		prefix = getOSUserAppDir();
-		prefix += mDirDelimiter;
-		prefix += "user_settings";
+		prefix = add(getOSUserAppDir(), "user_settings");
 		break;
 
 	case LL_PATH_PER_SL_ACCOUNT:
 		prefix = getLindenUserDir();
+		if (prefix.empty())
+		{
+			// if we're asking for the per-SL-account directory but we haven't
+			// logged in yet (or otherwise don't know the account name from
+			// which to build this string), then intentionally return a blank
+			// string to the caller and skip the below warning about a blank
+			// prefix.
+			LL_DEBUGS("LLDir") << "getLindenUserDir() not yet set: "
+							   << ELLPathToString(location)
+							   << ", '" << subdir1 << "', '" << subdir2 << "', '" << in_filename
+							   << "' => ''" << LL_ENDL;
+			return std::string();
+		}
 		break;
 		
 	case LL_PATH_CHAT_LOGS:
@@ -376,9 +517,7 @@ std::string LLDir::getExpandedFilename(ELLPath location, const std::string& subd
 		break;
 
 	case LL_PATH_LOGS:
-		prefix = getOSUserAppDir();
-		prefix += mDirDelimiter;
-		prefix += "logs";
+		prefix = add(getOSUserAppDir(), "logs");
 		break;
 
 	case LL_PATH_TEMP:
@@ -402,9 +541,7 @@ std::string LLDir::getExpandedFilename(ELLPath location, const std::string& subd
 		break;
 
 	case LL_PATH_LOCAL_ASSETS:
-		prefix = getAppRODataDir();
-		prefix += mDirDelimiter;
-		prefix += "local_assets";
+		prefix = add(getAppRODataDir(), "local_assets");
 		break;
 
 	case LL_PATH_EXECUTABLE:
@@ -412,56 +549,36 @@ std::string LLDir::getExpandedFilename(ELLPath location, const std::string& subd
 		break;
 		
 	case LL_PATH_FONTS:
-		prefix = getAppRODataDir();
-		prefix += mDirDelimiter;
-		prefix += "fonts";
+		prefix = add(getAppRODataDir(), "fonts");
 		break;
 		
 	default:
 		llassert(0);
 	}
 
-	std::string filename = in_filename;
-	if (!subdir2.empty())
-	{
-		filename = subdir2 + mDirDelimiter + filename;
-	}
-
-	if (!subdir1.empty())
-	{
-		filename = subdir1 + mDirDelimiter + filename;
-	}
-
 	if (prefix.empty())
 	{
-		llwarns << "prefix is empty, possible bad filename" << llendl;
-	}
-	
-	std::string expanded_filename;
-	if (!filename.empty())
-	{
-		if (!prefix.empty())
-		{
-			expanded_filename += prefix;
-			expanded_filename += mDirDelimiter;
-			expanded_filename += filename;
-		}
-		else
-		{
-			expanded_filename = filename;
-		}
-	}
-	else if (!prefix.empty())
-	{
-		// Directory only, no file name.
-		expanded_filename = prefix;
-	}
-	else
-	{
-		expanded_filename.assign("");
+		llwarns << ELLPathToString(location)
+				<< ", '" << subdir1 << "', '" << subdir2 << "', '" << in_filename
+				<< "': prefix is empty, possible bad filename" << llendl;
 	}
 
-	//llinfos << "*** EXPANDED FILENAME: <" << expanded_filename << ">" << llendl;
+	std::string expanded_filename = add(add(prefix, subdir1), subdir2);
+	if (expanded_filename.empty() && in_filename.empty())
+	{
+		return "";
+	}
+	// Use explicit concatenation here instead of another add() call. Callers
+	// passing in_filename as "" expect to obtain a pathname ending with
+	// mDirSeparator so they can later directly concatenate with a specific
+	// filename. A caller using add() doesn't care, but there's still code
+	// loose in the system that uses std::string::operator+().
+	expanded_filename += mDirDelimiter;
+	expanded_filename += in_filename;
+
+	LL_DEBUGS("LLDir") << ELLPathToString(location)
+					   << ", '" << subdir1 << "', '" << subdir2 << "', '" << in_filename
+					   << "' => '" << expanded_filename << "'" << LL_ENDL;
 	return expanded_filename;
 }
 
@@ -536,12 +653,7 @@ std::string LLDir::getTempFilename() const
 	random_uuid.generate();
 	random_uuid.toString(uuid_str);
 
-	std::string temp_filename = getTempDir();
-	temp_filename += mDirDelimiter;
-	temp_filename += uuid_str;
-	temp_filename += ".tmp";
-
-	return temp_filename;
+	return add(getTempDir(), uuid_str + ".tmp");
 }
 
 // static
@@ -578,15 +690,9 @@ void LLDir::setLindenUserDir(const std::string &grid, const std::string &first, 
 	{
 		// some platforms have case-sensitive filesystems, so be
 		// utterly consistent with our firstname/lastname case.
-		std::string firstlower(first);
-		LLStringUtil::toLower(firstlower);
-		std::string lastlower(last);
-		LLStringUtil::toLower(lastlower);
-		mLindenUserDir = getOSUserAppDir();
-		mLindenUserDir += mDirDelimiter;
-		mLindenUserDir += firstlower;
-		mLindenUserDir += "_";
-		mLindenUserDir += lastlower;
+		std::string userlower(first+"_"+last);
+		LLStringUtil::toLower(userlower);
+		mLindenUserDir = add(getOSUserAppDir(), userlower);
 		
 		if (!grid.empty())
 		{
@@ -623,16 +729,9 @@ void LLDir::setPerAccountChatLogsDir(const std::string &grid, const std::string 
 	{
 		// some platforms have case-sensitive filesystems, so be
 		// utterly consistent with our firstname/lastname case.
-		std::string firstlower(first);
-		LLStringUtil::toLower(firstlower);
-		std::string lastlower(last);
-		LLStringUtil::toLower(lastlower);
-		mPerAccountChatLogsDir = getChatLogsDir();
-		mPerAccountChatLogsDir += mDirDelimiter;
-		mPerAccountChatLogsDir += firstlower;
-		mPerAccountChatLogsDir += "_";
-		mPerAccountChatLogsDir += lastlower;
-
+		std::string userlower(first+"_"+last);
+		LLStringUtil::toLower(userlower);
+		mPerAccountChatLogsDir = add(getChatLogsDir(), userlower);
 		if (!grid.empty())
 		{
 			std::string gridlower(grid);
@@ -650,22 +749,18 @@ void LLDir::setPerAccountChatLogsDir(const std::string &grid, const std::string 
 void LLDir::setSkinFolder(const std::string &skin_folder)
 {
 	mSkinDir = getSkinBaseDir();
-	mSkinDir += mDirDelimiter;
-	mSkinDir += skin_folder;
+	append(mSkinDir, skin_folder);
 
 	// user modifications to current skin
 	// e.g. c:\documents and settings\users\username\application data\second life\skins\dazzle
 	mUserSkinDir = getOSUserAppDir();
-	mUserSkinDir += mDirDelimiter;
-	mUserSkinDir += "skins_sg1";
-	mUserSkinDir += mDirDelimiter;	
-	mUserSkinDir += skin_folder;
+	append(mUserSkinDir, "skins_sg1");
+	append(mUserSkinDir, skin_folder);
 
 	// base skin which is used as fallback for all skinned files
 	// e.g. c:\program files\secondlife\skins\default
 	mDefaultSkinDir = getSkinBaseDir();
-	mDefaultSkinDir += mDirDelimiter;	
-	mDefaultSkinDir += "default";
+	append(mDefaultSkinDir, "default");
 }
 
 bool LLDir::setCacheDir(const std::string &path)
@@ -679,7 +774,7 @@ bool LLDir::setCacheDir(const std::string &path)
 	else
 	{
 		LLFile::mkdir(path);
-		std::string tempname = path + mDirDelimiter + "temp";
+		std::string tempname = add(path, "temp");
 		LLFILE* file = LLFile::fopen(tempname,"wt");
 		if (file)
 		{
@@ -712,6 +807,57 @@ void LLDir::dumpCurrentDirectories()
 	LL_DEBUGS2("AppInit","Directories") << "  SkinDir:               " << getSkinDir() << LL_ENDL;
 }
 
+std::string LLDir::add(const std::string& path, const std::string& name) const
+{
+	std::string destpath(path);
+	append(destpath, name);
+	return destpath;
+}
+
+void LLDir::append(std::string& destpath, const std::string& name) const
+{
+	// Delegate question of whether we need a separator to helper method.
+	SepOff sepoff(needSep(destpath, name));
+	if (sepoff.first)               // do we need a separator?
+	{
+		destpath += mDirDelimiter;
+	}
+	// If destpath ends with a separator, AND name starts with one, skip
+	// name's leading separator.
+	destpath += name.substr(sepoff.second);
+}
+
+LLDir::SepOff LLDir::needSep(const std::string& path, const std::string& name) const
+{
+	if (path.empty() || name.empty())
+	{
+		// If either path or name are empty, we do not need a separator
+		// between them.
+		return SepOff(false, 0);
+	}
+	// Here we know path and name are both non-empty. But if path already ends
+	// with a separator, or if name already starts with a separator, we need
+	// not add one.
+	std::string::size_type seplen(mDirDelimiter.length());
+	bool path_ends_sep(path.substr(path.length() - seplen) == mDirDelimiter);
+	bool name_starts_sep(name.substr(0, seplen) == mDirDelimiter);
+	if ((! path_ends_sep) && (! name_starts_sep))
+	{
+		// If neither path nor name brings a separator to the junction, then
+		// we need one.
+		return SepOff(true, 0);
+	}
+	if (path_ends_sep && name_starts_sep)
+	{
+		// But if BOTH path and name bring a separator, we need not add one.
+		// Moreover, we should actually skip the leading separator of 'name'.
+		return SepOff(false, seplen);
+	}
+	// Here we know that either path_ends_sep or name_starts_sep is true --
+	// but not both. So don't add a separator, and don't skip any characters:
+	// simple concatenation will do the trick.
+	return SepOff(false, 0);
+}
 
 void dir_exists_or_crash(const std::string &dir_name)
 {

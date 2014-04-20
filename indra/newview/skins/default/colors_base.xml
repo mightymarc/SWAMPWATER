@@ -73,6 +73,7 @@
 <ScrollHighlightedColor value="183, 184, 188, 128" />	    <!-- Hover color -->
 <ScrollbarThumbColor value="60, 76, 124, 255" />            <!-- Scroll bar-->
 <ScrollbarTrackColor value="153, 154, 158, 255" />          <!-- Scroll bar background-->
+<DefaultListText value="0, 0, 0, 255"/>                     <!-- We are replacing all the hardcoded black text with this color so we can make skins with white text on dark background -->
 
 <!-- MENUS -->
 <MenuBarBgColor value="62, 62, 62, 255" />
@@ -149,6 +150,14 @@
 <RadarLinden value="0, 0, 128, 255" />
 <RadarEstateOwner value="204, 102, 10, 255" />
 <RadarMuted value="128, 128, 128, 255" />
+<RadarTextChatRange value="255, 0, 0, 255"/>
+<RadarTextShoutRange value="204, 170, 0, 128"/>
+<RadarTextDrawDist value="0, 153, 0, 255"/>
+<RadarTextYoung value="255, 0, 0, 255"/>
+
+<!-- SPEAKERS -->
+<SpeakersInactive value="76, 76, 76, 255"/>
+<SpeakersGhost value="255, 0, 0, 255"/>
 
 <!-- MINI-MAP -->
 <NetMapBackgroundColor value="0, 0, 0, 77" />
@@ -210,5 +219,21 @@
 <MultiSliderTrackColor value="30, 30, 30, 255"/>
 <MultiSliderThumbCenterSelectedColor value="255, 50, 50, 255"/>
 <MultiSliderTriangleColor value="255, 255, 50, 255"/>
+
+<!-- Mesh upload colors -->
+<MeshImportTableNormalColor value="255, 255, 255, 255"/>
+<MeshImportTableHighlightColor value="51, 205, 255, 255"/>
+
+<!-- Pathfinding colors -->
+<PathfindingErrorColor value="255, 51, 51, 255" />
+<PathfindingWarningColor value="255, 219, 0, 255" />
+<PathfindingGoodColor value="51, 255, 51, 255" />
+<PathfindingDefaultBeaconColor value="255, 0, 0, 204" />
+<PathfindingDefaultBeaconTextColor value="255, 255, 255, 255" />
+<PathfindingLinksetBeaconColor value="0, 0, 255, 204" />
+<PathfindingCharacterBeaconColor value="255, 0, 0, 204" />
+
+<!-- LSL colors -->
+<LSLFunctionColor value="128, 0, 38, 0" />
 
 </settings>

@@ -48,8 +48,9 @@ class LLViewerTextEditor;
 class LLMessageSystem;
 class LLUUID;
 class LLCheckBoxCtrl;
-class LLPanelActiveSpeakers;
+class LLParticipantList;
 class LLLogChat;
+class LLChatBar;
 
 class LLFloaterChat
 	:	public LLFloater, public LLUISingleton<LLFloaterChat, LLFloaterChat>
@@ -62,6 +63,7 @@ public:
 	virtual void draw();
 	virtual BOOL postBuild();
 	virtual void onClose(bool app_quitting);
+	virtual void onFocusReceived();
 	virtual void handleVisibilityChange(BOOL cur_visibility);
 	virtual void setMinimized(BOOL);
 	void updateConsoleVisibility();
@@ -93,8 +95,13 @@ public:
 	static void show(LLFloater* instance, const LLSD& key);
 	static void hide(LLFloater* instance, const LLSD& key);
 
-	LLPanelActiveSpeakers* mPanel;
+	LLParticipantList* mPanel;
 	BOOL mScrolledToEnd;
+
+	BOOL    focusFirstItem(BOOL prefer_text_fields = FALSE, BOOL focus_flash = TRUE );
+
+	CachedUICtrl<LLButton> mToggleActiveSpeakersBtn;
+	CachedUICtrl<LLChatBar> mChatPanel;
 };
 
 #endif

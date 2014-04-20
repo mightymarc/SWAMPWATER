@@ -34,7 +34,6 @@
 #define RLV_EXTENSION_CMD_GETSETDEBUG_EX	// Extends the debug variables accessible through @getdebug_xxx/@setdebug_xxx
 #define RLV_EXTENSION_CMD_FINDFOLDERS		// @findfolders:<option>=<channel> - @findfolder with multiple results
 #define RLV_EXTENSION_FORCEWEAR_GESTURES	// @attach*/detach* commands also (de)activate gestures
-#define RLV_EXTENSION_GIVETORLV_A2A			// Allow "Give to #RLV" on avatar-to-avatar inventory offers
 #define RLV_EXTENSION_NOTIFY_BEHAVIOUR		// Provides the option to show a customizable notification whenever a behaviour gets (un)set
 #define RLV_EXTENSION_STARTLOCATION			// Reenables "Start Location" at login if not @tploc=n or @unsit=n restricted at last logoff
 #define RLV_EXPERIMENTAL					// Enables/disables experimental features en masse
@@ -76,7 +75,7 @@ const S32 RLV_VERSION_BUILD = 0;
 // Implementation version
 const S32 RLVa_VERSION_MAJOR = 1;
 const S32 RLVa_VERSION_MINOR = 4;
-const S32 RLVa_VERSION_PATCH = 5;
+const S32 RLVa_VERSION_PATCH = 8;
 const S32 RLVa_VERSION_BUILD = 0;
 
 // Uncomment before a final release
@@ -151,6 +150,8 @@ enum ERlvBehaviour {
 	RLV_BHVR_SENDIMTO,				// "sendimto"
 	RLV_BHVR_RECVIM,				// "recvim"
 	RLV_BHVR_RECVIMFROM,			// "recvimfrom"
+	RLV_BHVR_STARTIM,				// "startim"
+	RLV_BHVR_STARTIMTO,				// "startimto"
 	RLV_BHVR_PERMISSIVE,			// "permissive"
 	RLV_BHVR_NOTIFY,				// "notify"
 	RLV_BHVR_SHOWINV,				// "showinv"
@@ -253,7 +254,8 @@ enum ERlvCmdRet {
 	RLV_RET_SUCCESS     = 0x0100,	// Command executed succesfully
 	RLV_RET_SUCCESS_UNSET,			// Command executed succesfully (RLV_TYPE_REMOVE for an unrestricted behaviour)
 	RLV_RET_SUCCESS_DUPLICATE,		// Command executed succesfully (RLV_TYPE_ADD for an already restricted behaviour)
-	RLV_RET_FAILED      = 0x0200,	// Command failed (general failure)
+	RLV_RET_SUCCESS_DELAYED,		// Command parsed valid but will execute at a later time
+	RLV_RET_FAILED		= 0x0200,	// Command failed (general failure)
 	RLV_RET_FAILED_SYNTAX,			// Command failed (syntax error)
 	RLV_RET_FAILED_OPTION,			// Command failed (invalid option)
 	RLV_RET_FAILED_PARAM,			// Command failed (invalid param)
@@ -337,6 +339,7 @@ enum ERlvAttachGroupType
 
 #define RLV_STRING_BLOCKED_GENERIC			"blocked_generic"
 #define RLV_STRING_BLOCKED_PERMATTACH		"blocked_permattach"
+#define RLV_STRING_BLOCKED_PERMTELEPORT		"blocked_permteleport"
 #define RLV_STRING_BLOCKED_RECVIM			"blocked_recvim"
 #define RLV_STRING_BLOCKED_RECVIM_REMOTE	"blocked_recvim_remote"
 #define RLV_STRING_BLOCKED_SENDIM			"blocked_sendim"

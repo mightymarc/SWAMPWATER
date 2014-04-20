@@ -48,6 +48,7 @@
 #include "llinventorydefines.h"
 #include "llinventoryfilter.h"
 #include "llinventoryfunctions.h"
+#include "llinventoryicon.h"
 #include "llpreviewanim.h"
 #include "llpreviewgesture.h"
 #include "llpreviewnotecard.h"
@@ -94,8 +95,8 @@ public:
 	LLTaskInvFVBridge(LLPanelObjectInventory* panel,
 					  const LLUUID& uuid,
 					  const std::string& name,
-		U32 flags=0);
-	virtual ~LLTaskInvFVBridge( ) {}
+					  U32 flags=0);
+	virtual ~LLTaskInvFVBridge() {}
 
 	virtual LLFontGL::StyleFlags getLabelStyle() const { return LLFontGL::NORMAL; }
 	virtual std::string getLabelSuffix() const { return LLStringUtil::null; }
@@ -131,7 +132,7 @@ public:
 	virtual BOOL copyToClipboard() const;
 	virtual void cutToClipboard();
 	virtual BOOL isClipboardPasteable() const;
-	virtual void pasteFromClipboard();
+	virtual void pasteFromClipboard(bool only_copies = false);
 	virtual void pasteLinkFromClipboard();
 	virtual void buildContextMenu(LLMenuGL& menu, U32 flags);
 	virtual void performAction(LLInventoryModel* model, std::string action);
@@ -243,9 +244,9 @@ void LLTaskInvFVBridge::buyItem()
         if (sale_info.getSaleType() != LLSaleInfo::FS_CONTENTS)
         {
         	U32 next_owner_mask = perm.getMaskNextOwner();
-        	args["MODIFYPERM"] = LLNotifications::instance().getGlobalString((next_owner_mask & PERM_MODIFY) ? "PermYes" : "PermNo");
-        	args["COPYPERM"] = LLNotifications::instance().getGlobalString((next_owner_mask & PERM_COPY) ? "PermYes" : "PermNo");
-        	args["RESELLPERM"] = LLNotifications::instance().getGlobalString((next_owner_mask & PERM_TRANSFER) ? "PermYes" : "PermNo");
+        	args["MODIFYPERM"] = LLTrans::getString((next_owner_mask & PERM_MODIFY) ? "PermYes" : "PermNo");
+        	args["COPYPERM"] = LLTrans::getString((next_owner_mask & PERM_COPY) ? "PermYes" : "PermNo");
+        	args["RESELLPERM"] = LLTrans::getString((next_owner_mask & PERM_TRANSFER) ? "PermYes" : "PermNo");
         }
 
 		std::string alertdesc;
@@ -318,9 +319,17 @@ const std::string& LLTaskInvFVBridge::getName() const
 const std::string& LLTaskInvFVBridge::getDisplayName() const
 {
 	LLInventoryItem* item = findItem();
+
 	if(item)
 	{
 		mDisplayName.assign(item->getName());
+
+		// Localize "New Script", "New Script 1", "New Script 2", etc.
+		if (item->getType() == LLAssetType::AT_LSL_TEXT &&
+			LLStringUtil::startsWith(item->getName(), "New Script"))
+		{
+			LLStringUtil::replaceString(mDisplayName, "New Script", LLTrans::getString("PanelContentsNewScript"));
+		}
 
 		const LLPermissions& perm(item->getPermissions());
 		BOOL copy = gAgent.allowOperation(PERM_COPY, perm, GP_OBJECT_MANIPULATE);
@@ -596,7 +605,7 @@ BOOL LLTaskInvFVBridge::isClipboardPasteable() const
 	return FALSE;
 }
 
-void LLTaskInvFVBridge::pasteFromClipboard()
+void LLTaskInvFVBridge::pasteFromClipboard(bool only_copies)
 {
 }
 
@@ -662,6 +671,36 @@ BOOL LLTaskInvFVBridge::dragOrDrop(MASK mask, BOOL drop,
 //	llwarns << "LLTaskInvFVBridge::dropped() - not implemented" << llendl;
 //}
 
+void pack_script_message(LLMessageSystem*, const LLInventoryItem*, const LLViewerObject*);
+
+void reset_script(const LLInventoryItem* item, const LLViewerObject* obj)
+{
+	if (!item || !obj) return;
+	gMessageSystem->newMessageFast(_PREHASH_ScriptReset);
+	pack_script_message(gMessageSystem, item, obj);
+	gMessageSystem->sendReliable(obj->getRegion()->getHost());
+}
+
+void set_script_running(bool running, const LLInventoryItem* item, const LLViewerObject* obj)
+{
+	if (!item || !obj) return;
+	LLMessageSystem* msg = gMessageSystem;
+	msg->newMessageFast(_PREHASH_SetScriptRunning);
+	pack_script_message(msg, item, obj);
+	msg->addBOOLFast(_PREHASH_Running, running);
+	msg->sendReliable(obj->getRegion()->getHost());
+}
+
+void pack_script_message(LLMessageSystem* msg, const LLInventoryItem* item, const LLViewerObject* obj)
+{
+	msg->nextBlockFast(_PREHASH_AgentData);
+	msg->addUUIDFast(_PREHASH_AgentID, gAgentID);
+	msg->addUUIDFast(_PREHASH_SessionID, gAgentSessionID);
+	msg->nextBlockFast(_PREHASH_Script);
+	msg->addUUIDFast(_PREHASH_ObjectID, obj->getID());
+	msg->addUUIDFast(_PREHASH_ItemID, item->getUUID());
+}
+
 // virtual
 void LLTaskInvFVBridge::performAction(LLInventoryModel* model, std::string action)
 {
@@ -677,7 +716,9 @@ void LLTaskInvFVBridge::performAction(LLInventoryModel* model, std::string actio
 		{
 			if (price > 0 && price > gStatusBar->getBalance())
 			{
-				LLFloaterBuyCurrency::buyCurrency("This costs", price);
+				LLStringUtil::format_map_t args;
+				args["CURRENCY"] = gHippoGridManager->getConnectedGrid()->getCurrencySymbol();
+				LLFloaterBuyCurrency::buyCurrency( LLTrans::getString("this_costs", args), price );
 			}
 			else
 			{
@@ -693,6 +734,18 @@ void LLTaskInvFVBridge::performAction(LLInventoryModel* model, std::string actio
 	{
 		showProperties();
 	}
+	else if (action == "reset_script")
+	{
+		reset_script(findItem(), gObjectList.findObject(mPanel->getTaskUUID()));
+	}
+	else if (action == "start_script")
+	{
+		set_script_running(true, findItem(), gObjectList.findObject(mPanel->getTaskUUID()));
+	}
+	else if (action == "stop_script")
+	{
+		set_script_running(false, findItem(), gObjectList.findObject(mPanel->getTaskUUID()));
+	}
 }
 
 void LLTaskInvFVBridge::buildContextMenu(LLMenuGL& menu, U32 flags)
@@ -707,14 +760,13 @@ void LLTaskInvFVBridge::buildContextMenu(LLMenuGL& menu, U32 flags)
 		return;
 	}
 
-	 // *TODO: Translate
 	if(gAgent.allowOperation(PERM_OWNER, item->getPermissions(),
 							 GP_OBJECT_MANIPULATE)
 	   && item->getSaleInfo().isForSale())
 	{
 		items.push_back(std::string("Task Buy"));
 
-		std::string label("Buy");
+		std::string label= LLTrans::getString("Buy");
 		// Check the price of the item.
 		S32 price = getPrice();
 		if (-1 == price)
@@ -724,7 +776,7 @@ void LLTaskInvFVBridge::buildContextMenu(LLMenuGL& menu, U32 flags)
 		else
 		{
 			std::ostringstream info;
-			info << "Buy for " << gHippoGridManager->getConnectedGrid()->getCurrencySymbol() << price;
+			info << LLTrans::getString("Buyfor") << gHippoGridManager->getConnectedGrid()->getCurrencySymbol() << price;
 			label.assign(info.str());
 		}
 
@@ -742,6 +794,20 @@ void LLTaskInvFVBridge::buildContextMenu(LLMenuGL& menu, U32 flags)
 	}
 	else if (canOpenItem())
 	{
+		if (LLAssetType::AT_LSL_TEXT == item->getType())
+		{
+			items.push_back(std::string("Task Reset"));
+			items.push_back(std::string("Task Set Running"));
+			items.push_back(std::string("Task Set Not Running"));
+			const LLViewerObject* obj = gObjectList.findObject(mPanel->getTaskUUID());
+			if (!obj || !(obj->permModify() || obj->permYouOwner()))
+			{
+				disabled_items.push_back(std::string("Task Reset"));
+				disabled_items.push_back(std::string("Task Set Running"));
+				disabled_items.push_back(std::string("Task Set Not Running"));
+			}
+		}
+
 		items.push_back(std::string("Task Open"));
 		if (!isItemCopyable())
 		{
@@ -1014,8 +1080,8 @@ class LLTaskSoundBridge : public LLTaskInvFVBridge
 {
 public:
 	LLTaskSoundBridge(LLPanelObjectInventory* panel,
-		const LLUUID& uuid,
-		const std::string& name) :
+					  const LLUUID& uuid,
+					  const std::string& name) :
 		LLTaskInvFVBridge(panel, uuid, name) {}
 
 	virtual BOOL canOpenItem() const { return TRUE; }
@@ -1072,13 +1138,12 @@ void LLTaskSoundBridge::buildContextMenu(LLMenuGL& menu, U32 flags)
 	std::vector<std::string> items;
 	std::vector<std::string> disabled_items;
 
-	// *TODO: Translate
 	if(item->getPermissions().getOwner() != gAgent.getID()
 	   && item->getSaleInfo().isForSale())
 	{
 		items.push_back(std::string("Task Buy"));
 
-		std::string label("Buy");
+		std::string label= LLTrans::getString("Buy");
 		// Check the price of the item.
 		S32 price = getPrice();
 		if (-1 == price)
@@ -1088,7 +1153,7 @@ void LLTaskSoundBridge::buildContextMenu(LLMenuGL& menu, U32 flags)
 		else
 		{
 			std::ostringstream info;
-			info << "Buy for " << gHippoGridManager->getConnectedGrid()->getCurrencySymbol() << price;
+			info <<  LLTrans::getString("Buyfor") << gHippoGridManager->getConnectedGrid()->getCurrencySymbol() << price;
 			label.assign(info.str());
 		}
 
@@ -1123,6 +1188,7 @@ void LLTaskSoundBridge::buildContextMenu(LLMenuGL& menu, U32 flags)
 	}
 
 	items.push_back(std::string("Task Play"));
+
 	/*menu.addSeparator();
 	menu.append(new LLMenuItemCallGL("Play",
 									 &LLTaskSoundBridge::playSound,
@@ -1140,8 +1206,8 @@ class LLTaskLandmarkBridge : public LLTaskInvFVBridge
 {
 public:
 	LLTaskLandmarkBridge(LLPanelObjectInventory* panel,
-		const LLUUID& uuid,
-		const std::string& name) :
+						 const LLUUID& uuid,
+						 const std::string& name) :
 		LLTaskInvFVBridge(panel, uuid, name) {}
 };
 
@@ -1170,7 +1236,6 @@ BOOL LLTaskCallingCardBridge::renameItem(const std::string& new_name)
 {
 	return FALSE;
 }
-
 
 ///----------------------------------------------------------------------------
 /// Class LLTaskScriptBridge
@@ -1206,7 +1271,7 @@ public:
 void LLTaskLSLBridge::openItem()
 {
 	llinfos << "LLTaskLSLBridge::openItem() " << mUUID << llendl;
-	if(LLLiveLSLEditor::show(mUUID, mPanel->getTaskUUID()))
+	if(LLLiveLSLEditor::show(mUUID))
 	{
 		return;
 	}
@@ -1255,7 +1320,7 @@ void LLTaskLSLBridge::openItem()
 
 BOOL LLTaskLSLBridge::removeItem()
 {
-	LLLiveLSLEditor::hide(mUUID, mPanel->getTaskUUID());
+	LLLiveLSLEditor::hide(mUUID);
 	return LLTaskInvFVBridge::removeItem();
 }
 
@@ -1619,7 +1684,7 @@ void LLPanelObjectInventory::reset()
 	mFolders->getFilter()->setShowFolderState(LLInventoryFilter::SHOW_ALL_FOLDERS);
 
 	LLRect scroller_rect(0, getRect().getHeight(), getRect().getWidth(), 0);
-	mScroller = new LLScrollableContainerView(std::string("task inventory scroller"), scroller_rect, mFolders );
+	mScroller = new LLScrollContainer(std::string("task inventory scroller"), scroller_rect, mFolders );
 	mScroller->setFollowsAll();
 	addChild(mScroller);
 
@@ -1905,24 +1970,23 @@ void LLPanelObjectInventory::draw()
 
 	if(mIsInventoryEmpty)
 	{
-		// *TODO: Translate
 		if((LLUUID::null != mTaskUUID) && (!mHaveInventory))
 		{
-			LLFontGL::getFontSansSerif()->renderUTF8(std::string("Loading contents..."), 0,
-										 (S32)(getRect().getWidth() * 0.5f),
-										 10,
-										 LLColor4( 1, 1, 1, 1 ),
-										 LLFontGL::HCENTER,
-										 LLFontGL::BOTTOM);
+			LLFontGL::getFontSansSerif()->renderUTF8(LLTrans::getString("LoadingContents"), 0,
+													 (S32)(getRect().getWidth() * 0.5f),
+													 10,
+													 LLColor4( 1, 1, 1, 1 ),
+													 LLFontGL::HCENTER,
+													 LLFontGL::BOTTOM);
 		}
 		else if(mHaveInventory)
 		{
-			LLFontGL::getFontSansSerif()->renderUTF8(std::string("No contents"), 0,
-										 (S32)(getRect().getWidth() * 0.5f),
-										 10,
-										 LLColor4( 1, 1, 1, 1 ),
-										 LLFontGL::HCENTER,
-										 LLFontGL::BOTTOM);
+			LLFontGL::getFontSansSerif()->renderUTF8(LLTrans::getString("NoContents"), 0,
+													 (S32)(getRect().getWidth() * 0.5f),
+													 10,
+													 LLColor4( 1, 1, 1, 1 ),
+													 LLFontGL::HCENTER,
+													 LLFontGL::BOTTOM);
 		}
 	}
 }

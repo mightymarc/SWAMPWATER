@@ -2,7 +2,7 @@
  * @file aithreadsafe.h
  * @brief Implementation of AIThreadSafe, AIReadAccessConst, AIReadAccess and AIWriteAccess.
  *
- * Copyright (c) 2010, Aleric Inglewood.
+ * Copyright (c) 2010 - 2013, Aleric Inglewood.
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -31,6 +31,9 @@
  *   Added AIThreadSafeSingleThread and friends.
  *   Added AIAccessConst (and derived AIAccess from it) to allow read
  *   access to a const AIThreadSafeSimple.
+ *
+ *   26/01/2013
+ *   Added support for LLCondition to AIThreadSafeSimple.
  */
 
 // This file defines wrapper template classes for arbitrary types T
@@ -103,18 +106,18 @@
 // on a compiler that doesn't need this hack.
 #define AI_NEED_ACCESS_CC (defined(__GNUC__) && (((__GNUC__ == 4) && (__GNUC_MINOR__ < 3)) || (__GNUC__ < 4)))
 
-template<typename T> struct AIReadAccessConst;
-template<typename T> struct AIReadAccess;
-template<typename T> struct AIWriteAccess;
-template<typename T> struct AIAccessConst;
-template<typename T> struct AIAccess;
+template<typename T, typename RWLOCK> struct AIReadAccessConst;
+template<typename T, typename RWLOCK> struct AIReadAccess;
+template<typename T, typename RWLOCK> struct AIWriteAccess;
+template<typename T, typename MUTEX> struct AIAccessConst;
+template<typename T, typename MUTEX> struct AIAccess;
 template<typename T> struct AISTAccessConst;
 template<typename T> struct AISTAccess;
 
+// This helper class is needed because offsetof is only allowed on POD types.
 template<typename T>
-class AIThreadSafeBits
+struct AIThreadSafeBitsPOD
 {
-private:
 	// AIThreadSafe is a wrapper around an instance of T.
 	// Because T might not have a default constructor, it is constructed
 	// 'in place', with placement new, in the memory reserved here.
@@ -122,7 +125,11 @@ private:
 	// Make sure that the memory that T will be placed in is properly
 	// aligned by using an array of long's.
 	long mMemory[(sizeof(T) + sizeof(long) - 1) / sizeof(long)];
+};
 
+template<typename T>
+class AIThreadSafeBits : private AIThreadSafeBitsPOD<T>
+{
 public:
 	// The wrapped objects are constructed in-place with placement new *outside*
 	// of this object (by AITHREADSAFE macro(s) or derived classes).
@@ -130,20 +137,20 @@ public:
 	~AIThreadSafeBits() { ptr()->~T(); }
 
 	// Only for use by AITHREADSAFE, see below.
-	void* memory() const { return const_cast<long*>(&mMemory[0]); }
+	void* memory() const { return const_cast<long*>(&AIThreadSafeBitsPOD<T>::mMemory[0]); }
 
 	// Cast a T* back to AIThreadSafeBits<T>. This is the inverse of memory().
 	template<typename T2>
 	  static AIThreadSafeBits<T2>* wrapper_cast(T2* ptr)
-	      { return reinterpret_cast<AIThreadSafeBits<T2>*>(reinterpret_cast<char*>(ptr) - offsetof(AIThreadSafeBits<T2>, mMemory[0])); }
+	      { return static_cast<AIThreadSafeBits<T2>*>(reinterpret_cast<AIThreadSafeBitsPOD<T2>*>(reinterpret_cast<char*>(ptr) - offsetof(AIThreadSafeBitsPOD<T2>, mMemory[0]))); }
 	template<typename T2>
 	  static AIThreadSafeBits<T2> const* wrapper_cast(T2 const* ptr)
-	      { return reinterpret_cast<AIThreadSafeBits<T2> const*>(reinterpret_cast<char const*>(ptr) - offsetof(AIThreadSafeBits<T2>, mMemory[0])); }
+	      { return static_cast<AIThreadSafeBits<T2> const*>(reinterpret_cast<AIThreadSafeBitsPOD<T2> const*>(reinterpret_cast<char const*>(ptr) - offsetof(AIThreadSafeBitsPOD<T2>, mMemory[0]))); }
 
 protected:
 	// Accessors.
-	T const* ptr() const { return reinterpret_cast<T const*>(mMemory); }
-	T* ptr() { return reinterpret_cast<T*>(mMemory); }
+	T const* ptr() const { return reinterpret_cast<T const*>(AIThreadSafeBitsPOD<T>::mMemory); }
+	T* ptr() { return reinterpret_cast<T*>(AIThreadSafeBitsPOD<T>::mMemory); }
 };
 
 /**
@@ -218,17 +225,17 @@ protected:
  * </code>
  *
  */
-template<typename T>
+template<typename T, typename RWLOCK = AIRWLock>
 class AIThreadSafe : public AIThreadSafeBits<T>
 {
 protected:
 	// Only these may access the object (through ptr()).
-	friend struct AIReadAccessConst<T>;
-	friend struct AIReadAccess<T>;
-	friend struct AIWriteAccess<T>;
+	friend struct AIReadAccessConst<T, RWLOCK>;
+	friend struct AIReadAccess<T, RWLOCK>;
+	friend struct AIWriteAccess<T, RWLOCK>;
 
 	// Locking control.
-	AIRWLock mRWLock;
+	RWLOCK mRWLock;
 
 	// For use by AIThreadSafeDC
 	AIThreadSafe(void) { }
@@ -303,20 +310,20 @@ public:
  *
  * which is not possible with AITHREADSAFE.
  */
-template<typename T>
-class AIThreadSafeDC : public AIThreadSafe<T>
+template<typename T, typename RWLOCK = AIRWLock>
+class AIThreadSafeDC : public AIThreadSafe<T, RWLOCK>
 {
 public:
 	// Construct a wrapper around a default constructed object.
-	AIThreadSafeDC(void) { new (AIThreadSafe<T>::ptr()) T; }
+	AIThreadSafeDC(void) { new (AIThreadSafe<T, RWLOCK>::ptr()) T; }
 	// Allow an arbitrary parameter to be passed for construction.
-	template<typename T2> AIThreadSafeDC(T2 const& val) { new (AIThreadSafe<T>::ptr()) T(val); }
+	template<typename T2> AIThreadSafeDC(T2 const& val) { new (AIThreadSafe<T, RWLOCK>::ptr()) T(val); }
 };
 
 /**
  * @brief Read lock object and provide read access.
  */
-template<typename T>
+template<typename T, typename RWLOCK = AIRWLock>
 struct AIReadAccessConst
 {
 	//! Internal enum for the lock-type of the AI*Access object.
@@ -329,14 +336,14 @@ struct AIReadAccessConst
 	};
 
 	//! Construct a AIReadAccessConst from a constant AIThreadSafe.
-	AIReadAccessConst(AIThreadSafe<T> const& wrapper)
-		: mWrapper(const_cast<AIThreadSafe<T>&>(wrapper)),
+	AIReadAccessConst(AIThreadSafe<T, RWLOCK> const& wrapper, bool high_priority = false)
+		: mWrapper(const_cast<AIThreadSafe<T, RWLOCK>&>(wrapper)),
 		  mState(readlocked)
 #if AI_NEED_ACCESS_CC
 		  ,	mIsCopyConstructed(false)
 #endif
 		{
-			mWrapper.mRWLock.rdlock();
+			mWrapper.mRWLock.rdlock(high_priority);
 		}
 
 	//! Destruct the AI*Access object.
@@ -362,14 +369,14 @@ struct AIReadAccessConst
 
 protected:
 	//! Constructor used by AIReadAccess.
-	AIReadAccessConst(AIThreadSafe<T>& wrapper, state_type state)
+	AIReadAccessConst(AIThreadSafe<T, RWLOCK>& wrapper, state_type state)
 		: mWrapper(wrapper), mState(state)
 #if AI_NEED_ACCESS_CC
 		  ,	mIsCopyConstructed(false)
 #endif
 		{ }
 
-	AIThreadSafe<T>& mWrapper;	//!< Reference to the object that we provide access to.
+	AIThreadSafe<T, RWLOCK>& mWrapper;	//!< Reference to the object that we provide access to.
 	state_type const mState;	//!< The lock state that mWrapper is in.
 
 #if AI_NEED_ACCESS_CC
@@ -386,39 +393,39 @@ private:
 /**
  * @brief Read lock object and provide read access, with possible promotion to write access.
  */
-template<typename T>
-struct AIReadAccess : public AIReadAccessConst<T>
+template<typename T, typename RWLOCK = AIRWLock>
+struct AIReadAccess : public AIReadAccessConst<T, RWLOCK>
 {
-	typedef typename AIReadAccessConst<T>::state_type state_type;
-	using AIReadAccessConst<T>::readlocked;
+	typedef typename AIReadAccessConst<T, RWLOCK>::state_type state_type;
+	using AIReadAccessConst<T, RWLOCK>::readlocked;
 
 	//! Construct a AIReadAccess from a non-constant AIThreadSafe.
-	AIReadAccess(AIThreadSafe<T>& wrapper) : AIReadAccessConst<T>(wrapper, readlocked) { this->mWrapper.mRWLock.rdlock(); }
+	AIReadAccess(AIThreadSafe<T, RWLOCK>& wrapper, bool high_priority = false) : AIReadAccessConst<T, RWLOCK>(wrapper, readlocked) { this->mWrapper.mRWLock.rdlock(high_priority); }
 
 protected:
 	//! Constructor used by AIWriteAccess.
-	AIReadAccess(AIThreadSafe<T>& wrapper, state_type state) : AIReadAccessConst<T>(wrapper, state) { }
+	AIReadAccess(AIThreadSafe<T, RWLOCK>& wrapper, state_type state) : AIReadAccessConst<T, RWLOCK>(wrapper, state) { }
 
-	friend struct AIWriteAccess<T>;
+	friend struct AIWriteAccess<T, RWLOCK>;
 };
 
 /**
  * @brief Write lock object and provide read/write access.
  */
-template<typename T>
-struct AIWriteAccess : public AIReadAccess<T>
+template<typename T, typename RWLOCK = AIRWLock>
+struct AIWriteAccess : public AIReadAccess<T, RWLOCK>
 {
-	using AIReadAccessConst<T>::readlocked;
-	using AIReadAccessConst<T>::read2writelocked;
-	using AIReadAccessConst<T>::writelocked;
-	using AIReadAccessConst<T>::write2writelocked;
+	using AIReadAccessConst<T, RWLOCK>::readlocked;
+	using AIReadAccessConst<T, RWLOCK>::read2writelocked;
+	using AIReadAccessConst<T, RWLOCK>::writelocked;
+	using AIReadAccessConst<T, RWLOCK>::write2writelocked;
 
 	//! Construct a AIWriteAccess from a non-constant AIThreadSafe.
-	AIWriteAccess(AIThreadSafe<T>& wrapper) : AIReadAccess<T>(wrapper, writelocked) { this->mWrapper.mRWLock.wrlock();}
+	AIWriteAccess(AIThreadSafe<T, RWLOCK>& wrapper) : AIReadAccess<T, RWLOCK>(wrapper, writelocked) { this->mWrapper.mRWLock.wrlock();}
 
 	//! Promote read access to write access.
-	explicit AIWriteAccess(AIReadAccess<T>& access)
-		: AIReadAccess<T>(access.mWrapper, (access.mState == readlocked) ? read2writelocked : write2writelocked)
+	explicit AIWriteAccess(AIReadAccess<T, RWLOCK>& access)
+		: AIReadAccess<T, RWLOCK>(access.mWrapper, (access.mState == readlocked) ? read2writelocked : write2writelocked)
 		{
 			if (this->mState == read2writelocked)
 			{
@@ -452,16 +459,16 @@ struct AIWriteAccess : public AIReadAccess<T>
  *
  * See also AIThreadSafe
  */
-template<typename T>
+template<typename T, typename MUTEX = LLMutex>
 class AIThreadSafeSimple : public AIThreadSafeBits<T>
 {
 protected:
 	// Only this one may access the object (through ptr()).
-	friend struct AIAccessConst<T>;
-	friend struct AIAccess<T>;
+	friend struct AIAccessConst<T, MUTEX>;
+	friend struct AIAccess<T, MUTEX>;
 
 	// Locking control.
-	LLMutex mMutex;
+	MUTEX mMutex;
 
 	friend struct AIRegisteredStateMachinesList;
 	// For use by AIThreadSafeSimpleDC and AIRegisteredStateMachinesList.
@@ -502,6 +509,7 @@ public:
  *       If that is needed, have a look at AIThreadSafeSimpleDC.
  */
 #define AITHREADSAFESIMPLE(type, var, paramlist) AIThreadSafeSimple<type> var(new (var.memory()) type paramlist)
+#define AITHREADSAFESIMPLECONDITION(type, var, paramlist) AIThreadSafeSimple<type, LLCondition> var(new (var.memory()) type paramlist)
 
 /**
  * @brief A wrapper class for objects that need to be accessed by more than one thread.
@@ -532,18 +540,18 @@ public:
  *
  * which is not possible with AITHREADSAFESIMPLE.
  */
-template<typename T>
-class AIThreadSafeSimpleDC : public AIThreadSafeSimple<T>
+template<typename T, typename MUTEX = LLMutex>
+class AIThreadSafeSimpleDC : public AIThreadSafeSimple<T, MUTEX>
 {
 public:
 	// Construct a wrapper around a default constructed object.
-	AIThreadSafeSimpleDC(void) { new (AIThreadSafeSimple<T>::ptr()) T; }
+	AIThreadSafeSimpleDC(void) { new (AIThreadSafeSimple<T, MUTEX>::ptr()) T; }
 	// Allow an arbitrary parameter to be passed for construction.
-	template<typename T2> AIThreadSafeSimpleDC(T2 const& val) { new (AIThreadSafeSimple<T>::ptr()) T(val); }
+	template<typename T2> AIThreadSafeSimpleDC(T2 const& val) { new (AIThreadSafeSimple<T, MUTEX>::ptr()) T(val); }
 
 protected:
 	// For use by AIThreadSafeSimpleDCRootPool
-	AIThreadSafeSimpleDC(LLAPRRootPool& parent) : AIThreadSafeSimple<T>(parent) { new (AIThreadSafeSimple<T>::ptr()) T; }
+	AIThreadSafeSimpleDC(LLAPRRootPool& parent) : AIThreadSafeSimple<T, MUTEX>(parent) { new (AIThreadSafeSimple<T, MUTEX>::ptr()) T; }
 };
 
 // Helper class for AIThreadSafeSimpleDCRootPool to assure initialization of
@@ -583,11 +591,11 @@ public:
 /**
  * @brief Write lock object and provide read access.
  */
-template<typename T>
+template<typename T, typename MUTEX = LLMutex>
 struct AIAccessConst
 {
 	//! Construct a AIAccessConst from a constant AIThreadSafeSimple.
-	AIAccessConst(AIThreadSafeSimple<T> const& wrapper) : mWrapper(const_cast<AIThreadSafeSimple<T>&>(wrapper))
+	AIAccessConst(AIThreadSafeSimple<T, MUTEX> const& wrapper) : mWrapper(const_cast<AIThreadSafeSimple<T, MUTEX>&>(wrapper))
 #if AI_NEED_ACCESS_CC
 		, mIsCopyConstructed(false)
 #endif
@@ -609,8 +617,13 @@ struct AIAccessConst
 	  this->mWrapper.mMutex.unlock();
 	}
 
+	// If MUTEX is an LLCondition, then this can be used to wait for a signal.
+	void wait() { this->mWrapper.mMutex.wait(); }
+	// If MUTEX is a LLCondition then this can be used to wake up the waiting thread.
+	void signal() { this->mWrapper.mMutex.signal(); }
+
 protected:
-	AIThreadSafeSimple<T>& mWrapper;		//!< Reference to the object that we provide access to.
+	AIThreadSafeSimple<T, MUTEX>& mWrapper;		//!< Reference to the object that we provide access to.
 
 #if AI_NEED_ACCESS_CC
 	bool mIsCopyConstructed;
@@ -626,11 +639,11 @@ private:
 /**
  * @brief Write lock object and provide read/write access.
  */
-template<typename T>
-struct AIAccess : public AIAccessConst<T>
+template<typename T, typename MUTEX = LLMutex>
+struct AIAccess : public AIAccessConst<T, MUTEX>
 {
 	//! Construct a AIAccess from a non-constant AIThreadSafeSimple.
-	AIAccess(AIThreadSafeSimple<T>& wrapper) : AIAccessConst<T>(wrapper) { }
+	AIAccess(AIThreadSafeSimple<T, MUTEX>& wrapper) : AIAccessConst<T, MUTEX>(wrapper) { }
 
 	//! Access the underlaying object for (read and) write access.
 	T* operator->() const { return this->mWrapper.ptr(); }
@@ -673,18 +686,18 @@ protected:
 
 #ifdef LL_DEBUG
 	mutable bool mAccessed;
-	mutable apr_os_thread_t mTheadID;
+	mutable AIThreadID mTheadID;
 
 	void accessed(void) const
 	{
 	  if (!mAccessed)
 	  {
 		mAccessed = true;
-		mTheadID = apr_os_thread_current();
+		mTheadID.reset();
 	  }
 	  else
 	  {
-		llassert_always(apr_os_thread_equal(mTheadID, apr_os_thread_current()));
+		llassert_always(mTheadID.equals_current_thread());
 	  }
 	}
 #endif

@@ -57,8 +57,13 @@ void show_item_profile(const LLUUID& item_uuid);
 
 void rename_category(LLInventoryModel* model, const LLUUID& cat_id, const std::string& new_name);
 
+void copy_inventory_category(LLInventoryModel* model, LLViewerInventoryCategory* cat, const LLUUID& parent_id, const LLUUID& root_copy_id = LLUUID::null);
+
 // Generates a string containing the path to the item specified by item_id.
 void append_path(const LLUUID& id, std::string& path);
+
+// Same as append_path but omits the root prefix "/My Inventory/".
+void append_path_short(const LLUUID& id, std::string& path);
 
 void copy_item_to_outbox(LLInventoryItem* inv_item, LLUUID dest_folder, const LLUUID& top_level_folder, S32 operation_id);
 void move_item_within_outbox(LLInventoryItem* inv_item, LLUUID dest_folder, S32 operation_id);
@@ -348,11 +353,10 @@ public:
 };
 
 //~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-// Class LLFindWearables
+// Class LLFindWearablesEx
 //
 // Collects wearables based on given criteria.
 //~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-
 class LLFindWearablesEx : public LLInventoryCollectFunctor
 {
 public:
@@ -414,6 +418,7 @@ public:
  *******************************************************************************/
 class LLFolderViewItem;
 class LLFolderViewFolder;
+
 //~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 // Class LLFolderViewFunctor
 //

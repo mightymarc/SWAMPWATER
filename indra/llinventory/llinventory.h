@@ -2,31 +2,25 @@
  * @file llinventory.h
  * @brief LLInventoryItem and LLInventoryCategory class declaration.
  *
- * $LicenseInfo:firstyear=2001&license=viewergpl$
- * 
- * Copyright (c) 2001-2009, Linden Research, Inc.
- * 
+ * $LicenseInfo:firstyear=2001&license=viewerlgpl$
  * Second Life Viewer Source Code
- * The source code in this file ("Source Code") is provided by Linden Lab
- * to you under the terms of the GNU General Public License, version 2.0
- * ("GPL"), unless you have obtained a separate licensing agreement
- * ("Other License"), formally executed by you and Linden Lab.  Terms of
- * the GPL can be found in doc/GPL-license.txt in this distribution, or
- * online at http://secondlifegrid.net/programs/open_source/licensing/gplv2
+ * Copyright (C) 2010, Linden Research, Inc.
  * 
- * There are special exceptions to the terms and conditions of the GPL as
- * it is applied to this Source Code. View the full text of the exception
- * in the file doc/FLOSS-exception.txt in this software distribution, or
- * online at
- * http://secondlifegrid.net/programs/open_source/licensing/flossexception
+ * This library is free software; you can redistribute it and/or
+ * modify it under the terms of the GNU Lesser General Public
+ * License as published by the Free Software Foundation;
+ * version 2.1 of the License only.
  * 
- * By copying, modifying or distributing this software, you acknowledge
- * that you have read and understood your obligations described above,
- * and agree to abide by those obligations.
+ * This library is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+ * Lesser General Public License for more details.
  * 
- * ALL LINDEN LAB SOURCE CODE IS PROVIDED "AS IS." LINDEN LAB MAKES NO
- * WARRANTIES, EXPRESS, IMPLIED OR OTHERWISE, REGARDING ITS ACCURACY,
- * COMPLETENESS OR PERFORMANCE.
+ * You should have received a copy of the GNU Lesser General Public
+ * License along with this library; if not, write to the Free Software
+ * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301  USA
+ * 
+ * Linden Research, Inc., 945 Battery Street, San Francisco, CA  94111  USA
  * $/LicenseInfo$
  */
 
@@ -36,7 +30,6 @@
 #include "lldarray.h"
 #include "llfoldertype.h"
 #include "llinventorytype.h"
-#include "llmemtype.h"
 #include "llpermissions.h"
 #include "llrefcount.h"
 #include "llsaleinfo.h"
@@ -60,7 +53,6 @@ public:
 	// Initialization
 	//--------------------------------------------------------------------
 public:
-	MEM_TYPE_NEW(LLMemType::MTYPE_INVENTORY);
 	LLInventoryObject();
 	LLInventoryObject(const LLUUID& uuid, 
 					  const LLUUID& parent_uuid,
@@ -135,7 +127,6 @@ public:
 	// Initialization
 	//--------------------------------------------------------------------
 public:
-	MEM_TYPE_NEW(LLMemType::MTYPE_INVENTORY);
 	LLInventoryItem(const LLUUID& uuid,
 					const LLUUID& parent_uuid,
 					const LLPermissions& permissions,
@@ -154,11 +145,6 @@ public:
 	LLInventoryItem(const LLInventoryItem* other);
 	virtual void copyItem(const LLInventoryItem* other); // LLRefCount requires custom copy
 	void generateUUID() { mUUID.generate(); }
-	
-		// As a constructor alternative, the clone() method works like a
-	// copy constructor, but gens a new UUID.
-	// It is up to the caller to delete (unref) the item.
-	virtual void cloneItem(LLPointer<LLInventoryItem>& newitem) const;
 protected:
 	~LLInventoryItem(); // ref counted
 	
@@ -171,6 +157,7 @@ public:
 	virtual const LLUUID& getCreatorUUID() const;
 	virtual const LLUUID& getAssetUUID() const;
 	virtual const std::string& getDescription() const;
+	virtual const std::string& getActualDescription() const; // Does not follow links
 	virtual const LLSaleInfo& getSaleInfo() const;
 	virtual LLInventoryType::EType getInventoryType() const;
 	virtual U32 getFlags() const;
@@ -200,9 +187,9 @@ public:
 	// Assumes you have already called nextBlock().
 	virtual void packMessage(LLMessageSystem* msg) const;
 
-	// unpack returns TRUE if the inventory item came through the
-	// network ok. It uses a simple crc check which is defeatable, but
-	// we want to detect network mangling somehow.
+	// Returns TRUE if the inventory item came through the network correctly.
+	// Uses a simple crc check which is defeatable, but we want to detect 
+	// network mangling somehow.
 	virtual BOOL unpackMessage(LLMessageSystem* msg, const char* block, S32 block_num = 0);
 
 	//--------------------------------------------------------------------
@@ -241,9 +228,8 @@ protected:
 //~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 // Class LLInventoryCategory
 //
-// An instance of this class represents a category of inventory
-// items. Users come with a set of default categories, and can create
-// new ones as needed.
+//   A category/folder of inventory items. Users come with a set of default 
+//   categories, and can create new ones as needed.
 //~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 class LLInventoryCategory : public LLInventoryObject
 {
@@ -254,7 +240,6 @@ public:
 	// Initialization
 	//--------------------------------------------------------------------
 public:
-	MEM_TYPE_NEW(LLMemType::MTYPE_INVENTORY);
 	LLInventoryCategory(const LLUUID& uuid, const LLUUID& parent_uuid,
 						LLFolderType::EType preferred_type,
 						const std::string& name);
@@ -304,7 +289,6 @@ protected:
 //   item, appropriate for serialization.
 //-----------------------------------------------------------------------------
 LLSD ll_create_sd_from_inventory_item(LLPointer<LLInventoryItem> item);
-LLPointer<LLInventoryItem> ll_create_item_from_sd(const LLSD& sd_item);
 LLSD ll_create_sd_from_inventory_category(LLPointer<LLInventoryCategory> cat);
 LLPointer<LLInventoryCategory> ll_create_category_from_sd(const LLSD& sd_cat);
 

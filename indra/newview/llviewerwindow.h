@@ -45,11 +45,11 @@
 #include "v3dmath.h"
 #include "v2math.h"
 #include "llcursortypes.h"
+#include "llpanel.h"
 #include "llwindowcallbacks.h"
 #include "lltimer.h"
 #include "llstat.h"
 #include "llmousehandler.h"
-#include "llalertdialog.h"
 #include "llmousehandler.h"
 #include "llhandle.h"
 #include "llnotifications.h"
@@ -115,6 +115,7 @@ public:
 	LLVector2       mSTCoords;
 	LLCoordScreen	mXYCoords;
 	LLVector3		mNormal;
+	LLVector4		mTangent;
 	LLVector3		mBinormal;
 	BOOL			mPickTransparent;
 	void		    getSurfaceInfo();
@@ -163,7 +164,8 @@ public:
 	/*virtual*/ BOOL handleRightMouseUp(LLWindow *window,  LLCoordGL pos, MASK mask);
 	/*virtual*/ BOOL handleMiddleMouseDown(LLWindow *window,  LLCoordGL pos, MASK mask);
 	/*virtual*/ BOOL handleMiddleMouseUp(LLWindow *window,  LLCoordGL pos, MASK mask);
-	/*virtual*/ void handleMouseMove(LLWindow *window,  LLCoordGL pos, MASK mask);
+	/*virtual*/ LLWindowCallbacks::DragNDropResult handleDragNDrop(LLWindow *window, LLCoordGL pos, MASK mask, LLWindowCallbacks::DragNDropAction action, std::string data);
+				void handleMouseMove(LLWindow *window,  LLCoordGL pos, MASK mask);
 	/*virtual*/ void handleMouseLeave(LLWindow *window);
 	/*virtual*/ void handleResize(LLWindow *window,  S32 x,  S32 y);
 	/*virtual*/ void handleFocus(LLWindow *window);
@@ -233,7 +235,7 @@ public:
 	S32				getCurrentMouseDX()		const	{ return mCurrentMouseDelta.mX; }
 	S32				getCurrentMouseDY()		const	{ return mCurrentMouseDelta.mY; }
 	LLCoordGL		getCurrentMouseDelta()	const	{ return mCurrentMouseDelta; }
-	LLStat *		getMouseVelocityStat()		{ return &mMouseVelocityStat; }
+	LLStat*			getMouseVelocityStat()		{ return &mMouseVelocityStat; }
 	BOOL			getLeftMouseDown()	const	{ return mLeftMouseDown; }
 	BOOL			getMiddleMouseDown()	const	{ return mMiddleMouseDown; }
 	BOOL			getRightMouseDown()	const	{ return mRightMouseDown; }
@@ -273,17 +275,21 @@ public:
 													
 	void			setShowProgress(const BOOL show);
 	BOOL			getShowProgress() const;
-	void			moveProgressViewToFront();
 	void			setProgressString(const std::string& string);
 	void			setProgressPercent(const F32 percent);
 	void			setProgressMessage(const std::string& msg);
 	void			setProgressCancelButtonVisible( BOOL b, const std::string& label = LLStringUtil::null );
 	LLProgressView *getProgressView() const;
+	void			revealIntroPanel();
+	void			abortShowProgress();
+	void			setStartupComplete();
 
 	void			updateObjectUnderCursor();
 
-	void			updateUI();							// Once per frame, update UI based on mouse position
+	void			updateUI();		// Once per frame, update UI based on mouse position, calls following update* functions
+	void				updateLayout();						
 	void				updateMouseDelta();		
+	void				updateKeyboardFocus();		
 
 	BOOL			handleKey(KEY key, MASK mask);
 	void			handleScrollWheel	(S32 clicks);
@@ -308,17 +314,21 @@ public:
 	enum ESnapshotType
 	{
 		SNAPSHOT_TYPE_COLOR,
-		SNAPSHOT_TYPE_DEPTH,
+		SNAPSHOT_TYPE_DEPTH
 	};
 	BOOL			saveSnapshot(const std::string&  filename, S32 image_width, S32 image_height, BOOL show_ui = TRUE, BOOL do_rebuild = FALSE, ESnapshotType type = SNAPSHOT_TYPE_COLOR);
-	BOOL			rawSnapshot(LLImageRaw *raw, S32 image_width, S32 image_height, BOOL keep_window_aspect = TRUE, BOOL is_texture = FALSE,
-								BOOL show_ui = TRUE, BOOL do_rebuild = FALSE, ESnapshotType type = SNAPSHOT_TYPE_COLOR, S32 max_size = MAX_SNAPSHOT_IMAGE_SIZE, F32 supersample = 1.f );
+	bool			rawRawSnapshot(LLImageRaw* raw, S32 image_width, S32 image_height, F32 aspect,
+								BOOL show_ui = TRUE, BOOL do_rebuild = FALSE, ESnapshotType type = SNAPSHOT_TYPE_COLOR,
+								S32 max_size = MAX_SNAPSHOT_IMAGE_SIZE, F32 supersample = 1.f, bool uncrop = false);
+	bool			rawSnapshot(LLImageRaw* raw, S32 image_width, S32 image_height, F32 aspect,
+								BOOL show_ui = TRUE, BOOL do_rebuild = FALSE, ESnapshotType type = SNAPSHOT_TYPE_COLOR,
+								S32 max_size = MAX_SNAPSHOT_IMAGE_SIZE, F32 supersample = 1.f);
 	BOOL			thumbnailSnapshot(LLImageRaw *raw, S32 preview_width, S32 preview_height, BOOL show_ui, BOOL do_rebuild, ESnapshotType type) ;
 	BOOL			isSnapshotLocSet() const { return ! sSnapshotDir.empty(); }
 	void			resetSnapshotLoc() const { sSnapshotDir.clear(); }
-	void saveImageNumbered(LLPointer<LLImageFormatted> image);
-	void saveImageNumbered_continued1(LLPointer<LLImageFormatted> image, std::string const& extension, AIFilePicker* filepicker);
-	void saveImageNumbered_continued2(LLPointer<LLImageFormatted> image, std::string const& extension);
+	void saveImageNumbered(LLPointer<LLImageFormatted> image, int index);
+	void saveImageNumbered_continued1(LLPointer<LLImageFormatted> image, std::string const& extension, AIFilePicker* filepicker, int index);
+	void saveImageNumbered_continued2(LLPointer<LLImageFormatted> image, std::string const& extension, int index);
 
 	// Reset the directory where snapshots are saved.
 	// Client will open directory picker on next snapshot save.
@@ -338,19 +348,19 @@ public:
 	static void     hoverPickCallback(const LLPickInfo& pick_info);
 	
 	LLHUDIcon* cursorIntersectIcon(S32 mouse_x, S32 mouse_y, F32 depth,
-										   LLVector3* intersection);
+										   LLVector4a* intersection);
 
 	LLViewerObject* cursorIntersect(S32 mouse_x = -1, S32 mouse_y = -1, F32 depth = 512.f,
 									LLViewerObject *this_object = NULL,
 									S32 this_face = -1,
 									BOOL pick_transparent = FALSE,
 									S32* face_hit = NULL,
-									LLVector3 *intersection = NULL,
+									LLVector4a *intersection = NULL,
 									LLVector2 *uv = NULL,
-									LLVector3 *normal = NULL,
-									LLVector3 *binormal = NULL,
-									LLVector3* start = NULL,
-									LLVector3* end = NULL);
+									LLVector4a *normal = NULL,
+									LLVector4a *tangent = NULL,
+									LLVector4a* start = NULL,
+									LLVector4a* end = NULL);
 	
 	
 	// Returns a pointer to the last object hit
@@ -397,12 +407,12 @@ private:
 	LLRect			getChatConsoleRect(); // Get optimal cosole rect.
 
 public:
-	LLWindow*		mWindow;						// graphical window object
 
 	void			unblockToolTips(){mToolTipBlocked = FALSE;}	//hack until LLToolTipMgr is ported.
 
 protected:
-	BOOL			mActive;
+	LLWindow*		mWindow;						// graphical window object
+	bool			mActive;
 	BOOL			mWantFullscreen;
 	BOOL			mShowFullscreenProgress;
 	LLRect			mWindowRectRaw;
@@ -426,12 +436,12 @@ protected:
 
 	BOOL			mMouseInWindow;				// True if the mouse is over our window or if we have captured the mouse.
 	BOOL			mFocusCycleMode;
+	typedef std::set<LLHandle<LLView> > view_handle_set_t;
+	view_handle_set_t mMouseHoverViews;
 
 	// Variables used for tool override switching based on modifier keys.  JC
 	MASK			mLastMask;			// used to detect changes in modifier mask
 	LLTool*			mToolStored;		// the tool we're overriding
-	BOOL			mSuppressToolbox;	// sometimes hide the toolbox, despite
-										// having a camera tool selected
 	BOOL			mHideCursorPermanent;	// true during drags, mouselook
 	BOOL            mCursorHidden;
 	LLPickInfo		mLastPick;
@@ -449,7 +459,7 @@ protected:
 	class LLDebugText* mDebugText; // Internal class for debug text
 	
 	bool			mResDirty;
-	bool			mStatesDirty;
+	//bool			mStatesDirty;  //Singu Note: No longer needed. State update is now in restoreGL.
 	bool			mIsFullscreenChecked; // Did the user check the fullscreen checkbox in the display settings
 	U32			mCurrResolutionIndex;
 
@@ -458,6 +468,9 @@ protected:
 	static std::string sSnapshotDir;
 
 	static std::string sMovieBaseName;
+
+	// Object temporarily hovered over while dragging
+	LLPointer<LLViewerObject>	mDragHoveredObject;
 };	
 
 class LLBottomPanel : public LLPanel
@@ -497,13 +510,13 @@ extern LLFrameTimer		gAwayTimer;				// tracks time before setting the avatar awa
 extern LLFrameTimer		gAwayTriggerTimer;		// how long the avatar has been away
 
 extern LLViewerObject*  gDebugRaycastObject;
-extern LLVector3        gDebugRaycastIntersection;
+extern LLVector4a       gDebugRaycastIntersection;
 extern LLVector2        gDebugRaycastTexCoord;
-extern LLVector3        gDebugRaycastNormal;
-extern LLVector3        gDebugRaycastBinormal;
+extern LLVector4a       gDebugRaycastNormal;
+extern LLVector4a       gDebugRaycastTangent;
 extern S32				gDebugRaycastFaceHit;
-extern LLVector3		gDebugRaycastStart;
-extern LLVector3		gDebugRaycastEnd;
+extern LLVector4a		gDebugRaycastStart;
+extern LLVector4a		gDebugRaycastEnd;
 
 extern BOOL			gDisplayCameraPos;
 extern BOOL			gDisplayWindInfo;

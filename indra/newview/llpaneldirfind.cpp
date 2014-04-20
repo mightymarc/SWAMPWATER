@@ -107,13 +107,17 @@ BOOL LLPanelDirFind::postBuild()
 {
 	LLPanelDirBrowser::postBuild();
 
-	childSetAction("back_btn", onClickBack, this);
-	childSetAction("home_btn", onClickHome, this);
-	childSetAction("forward_btn", onClickForward, this);
-	childSetAction("reload_btn", onClickRefresh, this);
-	childSetCommitCallback("search_editor", onCommitSearch, this);
-	childSetAction("search_btn", onClickSearch, this);
-	childSetAction("?", onClickHelp, this);
+	getChild<LLButton>("back_btn")->setCommitCallback(boost::bind(&LLPanelDirFind::onClickBack,this));
+	if (hasChild("home_btn"))
+		getChild<LLButton>("home_btn")->setCommitCallback(boost::bind(&LLPanelDirFind::onClickHome,this));
+	getChild<LLButton>("forward_btn")->setCommitCallback(boost::bind(&LLPanelDirFind::onClickForward,this));
+	getChild<LLButton>("reload_btn")->setCommitCallback(boost::bind(&LLPanelDirFind::onClickRefresh,this));
+	if (hasChild("search_editor"))
+		getChild<LLButton>("search_editor")->setCommitCallback(boost::bind(&LLPanelDirFind::onClickSearch,this));
+	if (hasChild("search_btn"))
+		getChild<LLButton>("search_btn")->setCommitCallback(boost::bind(&LLPanelDirFind::onClickSearch,this));
+	if (hasChild("?"))
+		getChild<LLButton>("?")->setCommitCallback(boost::bind(&LLPanelDirFind::onClickHelp,this));
 
 	// showcase doesn't have maturity flags -- it's all PG
 	if (hasChild("incmature"))
@@ -147,19 +151,18 @@ BOOL LLPanelDirFind::postBuild()
 	if (mWebBrowser)
 	{
 		mWebBrowser->addObserver(this);
-		
-		// new pages appear in same window as the results page now
-		mWebBrowser->setOpenInInternalBrowser( false );
-		mWebBrowser->setOpenInExternalBrowser( false );	
 
 		// need to handle secondlife:///app/ URLs for direct teleports
-		mWebBrowser->setTrusted( true );
+		mWebBrowser->setTrustedContent( true );
 
 		// redirect 404 pages from S3 somewhere else
 		mWebBrowser->set404RedirectUrl( getString("redirect_404_url") );
 
 		navigateToDefaultPage();
 	}
+
+	if (LLUICtrl* ctrl = findChild<LLUICtrl>("filter_gaming"))
+		ctrl->setVisible(gAgent.getRegion() && (gAgent.getRegion()->getGamingFlags() & REGION_GAMING_PRESENT) && !(gAgent.getRegion()->getGamingFlags() & REGION_GAMING_HIDE_FIND_ALL));
 
 	return TRUE;
 }
@@ -255,7 +258,8 @@ void LLPanelDirFindAll::search(const std::string& search_text)
 
 void LLPanelDirFind::focus()
 {
-	childSetFocus("search_editor");
+	if (hasChild("search_editor"))
+		childSetFocus("search_editor");
 }
 
 void LLPanelDirFind::navigateToDefaultPage()
@@ -289,17 +293,20 @@ void LLPanelDirFind::navigateToDefaultPage()
 			start_url += "panel=" + getName() + "&";
 		}
 
-		BOOL inc_pg = childGetValue("incpg").asBoolean();
-		BOOL inc_mature = childGetValue("incmature").asBoolean();
-		BOOL inc_adult = childGetValue("incadult").asBoolean();
-		if (!(inc_pg || inc_mature || inc_adult))
+		if (hasChild("incmature"))
 		{
-			// if nothing's checked, just go for pg; we don't notify in
-			// this case because it's a default page.
-			inc_pg = true;
-		}
+			bool inc_pg = childGetValue("incpg").asBoolean();
+			bool inc_mature = childGetValue("incmature").asBoolean();
+			bool inc_adult = childGetValue("incadult").asBoolean();
+			if (!(inc_pg || inc_mature || inc_adult))
+			{
+				// if nothing's checked, just go for pg; we don't notify in
+				// this case because it's a default page.
+				inc_pg = true;
+			}
 	
-		start_url += getSearchURLSuffix(inc_pg, inc_mature, inc_adult, true);
+			start_url += getSearchURLSuffix(inc_pg, inc_mature, inc_adult, true);
+		}
 	}
 
 	llinfos << "default web search url: "  << start_url << llendl;
@@ -309,9 +316,9 @@ void LLPanelDirFind::navigateToDefaultPage()
 		mWebBrowser->navigateTo( start_url );
 	}
 }
-// static
-std::string LLPanelDirFind::buildSearchURL(const std::string& search_text, const std::string& collection, 
-										   bool inc_pg, bool inc_mature, bool inc_adult, bool is_web)
+
+const std::string LLPanelDirFind::buildSearchURL(const std::string& search_text, const std::string& collection,
+										   bool inc_pg, bool inc_mature, bool inc_adult, bool is_web) const
 {
 	std::string url;
 	if (search_text.empty()) 
@@ -363,8 +370,8 @@ std::string LLPanelDirFind::buildSearchURL(const std::string& search_text, const
 	llinfos << "web search url " << url << llendl;
 	return url;
 }
-// static
-std::string LLPanelDirFind::getSearchURLSuffix(bool inc_pg, bool inc_mature, bool inc_adult, bool is_web)
+
+const std::string LLPanelDirFind::getSearchURLSuffix(bool inc_pg, bool inc_mature, bool inc_adult, bool is_web) const
 {
 	std::string url = gHippoGridManager->getConnectedGrid()->getSearchUrl(HippoGridInfo::SEARCH_ALL_TEMPLATE, is_web);
 	llinfos << "Suffix template " << url << llendl;
@@ -426,71 +433,60 @@ std::string LLPanelDirFind::getSearchURLSuffix(bool inc_pg, bool inc_mature, boo
 			std::string teen_string = gAgent.isTeen() ? "y" : "n";
 			std::string teen_tag = "[TEEN]";
 			url.replace( url.find( teen_tag ), teen_tag.length(), teen_string );
+
+			// and set the flag for gaming areas if not on SL Grid.
+			if (!gHippoGridManager->getConnectedGrid()->isSecondLife())
+			{
+				substring = "[DICE]";
+				url.replace(url.find(substring), substring.length(), (hasChild("filter_gaming") && childGetValue("filter_gaming").asBoolean()) ? "y" : "n");
+			}
 		}	
 	}
 	
 	return url;
 }
 
-
-// static
-void LLPanelDirFind::onClickBack( void* data )
+void LLPanelDirFind::onClickBack()
 {
-	LLPanelDirFind* self = ( LLPanelDirFind* )data;
-	if ( self->mWebBrowser )
+	if ( mWebBrowser )
 	{
-		self->mWebBrowser->navigateBack();
+		mWebBrowser->navigateBack();
 	}
 }
 
-// static
-void LLPanelDirFind::onClickHelp( void* data )
+void LLPanelDirFind::onClickHelp()
 {
 	LLNotificationsUtil::add("ClickSearchHelpAll");
 }
 
-// static
-void LLPanelDirFind::onClickForward( void* data )
+void LLPanelDirFind::onClickForward()
 {
-	LLPanelDirFind* self = ( LLPanelDirFind* )data;
-	if ( self->mWebBrowser )
+	if ( mWebBrowser )
 	{
-		self->mWebBrowser->navigateForward();
+		mWebBrowser->navigateForward();
 	}
 }
 
-// static
-void LLPanelDirFind::onClickHome( void* data )
+void LLPanelDirFind::onClickHome()
 {
-	LLPanelDirFind* self = ( LLPanelDirFind* )data;
-	if ( self->mWebBrowser )
+	if ( mWebBrowser )
 	{
-		self->mWebBrowser->navigateHome();
+		mWebBrowser->navigateHome();
 	}
 }
 
-// static
-void LLPanelDirFind::onClickRefresh( void* data )
+void LLPanelDirFind::onClickRefresh()
 {
-	LLPanelDirFind* self = ( LLPanelDirFind* )data;
-	if ( self->mWebBrowser )
+	if ( mWebBrowser )
 	{
-		self->mWebBrowser->navigateTo(self->mWebBrowser->getCurrentNavUrl());
+		mWebBrowser->navigateTo(mWebBrowser->getCurrentNavUrl());
 	}
 }
 
-// static
-void LLPanelDirFind::onCommitSearch(LLUICtrl*, void* data)
+void LLPanelDirFind::onClickSearch()
 {
-	onClickSearch(data);
-}
-
-// static
-void LLPanelDirFind::onClickSearch(void* data)
-{
-	LLPanelDirFind* self = ( LLPanelDirFind* )data;
-	std::string search_text = self->childGetText("search_editor");
-	self->search(search_text);
+	std::string search_text = childGetText("search_editor");
+	search(search_text);
 
 	LLFloaterDirectory::sNewSearchCount++;
 }
@@ -555,11 +551,14 @@ BOOL LLPanelDirFindAllOld::postBuild()
 {
 	LLPanelDirBrowser::postBuild();
 
-	childSetKeystrokeCallback("name", &LLPanelDirBrowser::onKeystrokeName, this);
+	getChild<LLLineEditor>("name")->setKeystrokeCallback(boost::bind(&LLPanelDirBrowser::onKeystrokeName,this,_1));
 
-	childSetAction("Search", onClickSearch, this);
+	getChild<LLButton>("Search")->setCommitCallback(boost::bind(&LLPanelDirFindAllOld::onClickSearch,this));
 	childDisable("Search");
 	setDefaultBtn( "Search" );
+
+	if (LLUICtrl* ctrl = findChild<LLUICtrl>("filter_gaming"))
+		ctrl->setVisible(gAgent.getRegion() && (gAgent.getRegion()->getGamingFlags() & REGION_GAMING_PRESENT) && !(gAgent.getRegion()->getGamingFlags() & REGION_GAMING_HIDE_FIND_ALL_CLASSIC));
 
 	return TRUE;
 }
@@ -576,33 +575,23 @@ void LLPanelDirFindAllOld::draw()
 	LLPanelDirBrowser::draw();
 }
 
-// static
-void LLPanelDirFindAllOld::onCommitScope(LLUICtrl* ctrl, void* data)
+void LLPanelDirFindAllOld::onClickSearch()
 {
-	LLPanelDirFindAllOld* self = (LLPanelDirFindAllOld*)data;
-	self->setFocus(TRUE);
-}
-
-// static
-void LLPanelDirFindAllOld::onClickSearch(void *userdata)
-{
-	LLPanelDirFindAllOld *self = (LLPanelDirFindAllOld *)userdata;
-
-	if (self->childGetValue("name").asString().length() < self->mMinSearchChars)
+	if (childGetValue("name").asString().length() < mMinSearchChars)
 	{
 		return;
 	};
 
-	BOOL inc_pg = self->childGetValue("incpg").asBoolean();
-	BOOL inc_mature = self->childGetValue("incmature").asBoolean();
-	BOOL inc_adult = self->childGetValue("incadult").asBoolean();
+	BOOL inc_pg = childGetValue("incpg").asBoolean();
+	BOOL inc_mature = childGetValue("incmature").asBoolean();
+	BOOL inc_adult = childGetValue("incadult").asBoolean();
 	if (!(inc_pg || inc_mature || inc_adult))
 	{
 		LLNotificationsUtil::add("NoContentToSearch");
 		return;
 	}
 
-	self->setupNewSearch();
+	setupNewSearch();
 
 	// Figure out scope
 	U32 scope = 0x0;
@@ -623,10 +612,15 @@ void LLPanelDirFindAllOld::onClickSearch(void *userdata)
 		scope |= DFQ_INC_ADULT;
 	}
 
+	if (hasChild("filter_gaming") && childGetValue("filter_gaming").asBoolean())
+	{
+		scope |= DFQ_FILTER_GAMING;
+	}
+
 	// send the message
 	LLMessageSystem *msg = gMessageSystem;
 	S32 start_row = 0;
-	sendDirFindQuery(msg, self->mSearchID, self->childGetValue("name").asString(), scope, start_row);
+	sendDirFindQuery(msg, mSearchID, childGetValue("name").asString(), scope, start_row);
 
 	// Also look up classified ads. JC 12/2005
 	BOOL filter_auto_renew = FALSE;
@@ -636,8 +630,8 @@ void LLPanelDirFindAllOld::onClickSearch(void *userdata)
 	msg->addUUID("AgentID", gAgent.getID());
 	msg->addUUID("SessionID", gAgent.getSessionID());
 	msg->nextBlock("QueryData");
-	msg->addUUID("QueryID", self->mSearchID);
-	msg->addString("QueryText", self->childGetValue("name").asString());
+	msg->addUUID("QueryID", mSearchID);
+	msg->addString("QueryText", childGetValue("name").asString());
 	msg->addU32("QueryFlags", classified_flags);
 	msg->addU32("Category", 0);	// all categories
 	msg->addS32("QueryStart", 0);
@@ -663,8 +657,8 @@ void LLPanelDirFindAllOld::onClickSearch(void *userdata)
 	msg->addUUID("AgentID", gAgent.getID() );
 	msg->addUUID("SessionID", gAgent.getSessionID());
 	msg->nextBlock("QueryData");
-	msg->addUUID("QueryID", self->mSearchID );
-	msg->addString("QueryText", self->childGetValue("name").asString());
+	msg->addUUID("QueryID", mSearchID );
+	msg->addString("QueryText", childGetValue("name").asString());
 	msg->addU32("QueryFlags", query_flags );
 	msg->addS32("QueryStart", 0 ); // Always get the first 100 when using find ALL
 	msg->addS8("Category", LLParcel::C_ANY);

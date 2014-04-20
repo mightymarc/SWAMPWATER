@@ -157,11 +157,6 @@ public:
 	
 	static bool getLayeredXMLNode(LLXMLNodePtr& root, const std::vector<std::string>& paths);
 	
-	
-	// Write standard XML file header:
-	// <?xml version="1.0" encoding="utf-8" standalone="yes" ?>
-	static void writeHeaderToFile(LLFILE *out_file);
-	
 	// Write XML to file with one attribute per line.
 	// XML escapes values as they are written.
     void writeToFile(LLFILE *out_file, const std::string& indent = std::string(), bool use_type_decorations=true);
@@ -279,6 +274,8 @@ public:
 
 	// Escapes " (quot) ' (apos) & (amp) < (lt) > (gt)
 	static std::string escapeXML(const std::string& xml);
+	// Escapes -- (double-hyphen)
+	static std::string commentEscape(std::string const& comment);
 
 	// Set the default node corresponding to this default node
 	void setDefault(LLXMLNode *default_node);

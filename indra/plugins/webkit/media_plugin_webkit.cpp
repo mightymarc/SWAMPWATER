@@ -25,8 +25,10 @@
  * $/LicenseInfo$
  * @endcond
  */
-#include "llqtwebkit.h"
 #include "linden_common.h"
+
+#include "llqtwebkit.h"
+
 #include "indra_constants.h" // for indra keyboard codes
 
 #include "lltimer.h"
@@ -160,8 +162,8 @@ private:
 		mVolumeCatcher.pump();
 
 		checkEditState();
-		
-		if(mInitState == INIT_STATE_NAVIGATE_COMPLETE)
+	
+		if(mInitState >= INIT_STATE_NAVIGATE_COMPLETE)
 		{
 			if(!mInitialNavigateURL.empty())
 			{
@@ -284,7 +286,7 @@ private:
 		bool result = LLQtWebKit::getInstance()->init( application_dir, component_dir, mProfileDir, native_window_handle );
 		if ( result )
 		{
-			mInitState = INIT_STATE_INITIALIZED;
+			setInitState(INIT_STATE_INITIALIZED);
 
 			// debug spam sent to viewer and displayed in the log as usual
 			postDebugMessage( "browser initialized okay" );
@@ -1016,14 +1018,6 @@ void MediaPluginWebKit::receiveMessage(const char *message_string)
 
 				// FIXME: Should we do anything with this if it comes in after the browser has been initialized?
 			}
-			else if(message_name == "plugins_enabled")
-			{
-				mPluginsEnabled = message_in.getValueBoolean("enable");
-			}
-			else if(message_name == "javascript_enabled")
-			{
-				mJavascriptEnabled = message_in.getValueBoolean("enable");
-			}
 			else if(message_name == "size_change")
 			{
 				std::string name = message_in.getValue("name");
@@ -1312,12 +1306,12 @@ void MediaPluginWebKit::receiveMessage(const char *message_string)
 				mCookiesEnabled = message_in.getValueBoolean("enable");
 				LLQtWebKit::getInstance()->enableCookies( mCookiesEnabled );
 			}
-			else if(message_name == "enable_plugins")
+			else if(message_name == "plugins_enabled")
 			{
 				mPluginsEnabled = message_in.getValueBoolean("enable");
 				LLQtWebKit::getInstance()->enablePlugins( mPluginsEnabled );
 			}
-			else if(message_name == "enable_javascript")
+			else if(message_name == "javascript_enabled")
 			{
 				mJavascriptEnabled = message_in.getValueBoolean("enable");
 				//LLQtWebKit::getInstance()->enableJavascript( mJavascriptEnabled );

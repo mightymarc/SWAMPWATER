@@ -2,31 +2,25 @@
  * @file llmanipscale.cpp
  * @brief LLManipScale class implementation
  *
- * $LicenseInfo:firstyear=2001&license=viewergpl$
- * 
- * Copyright (c) 2001-2009, Linden Research, Inc.
- * 
+ * $LicenseInfo:firstyear=2001&license=viewerlgpl$
  * Second Life Viewer Source Code
- * The source code in this file ("Source Code") is provided by Linden Lab
- * to you under the terms of the GNU General Public License, version 2.0
- * ("GPL"), unless you have obtained a separate licensing agreement
- * ("Other License"), formally executed by you and Linden Lab.  Terms of
- * the GPL can be found in doc/GPL-license.txt in this distribution, or
- * online at http://secondlifegrid.net/programs/open_source/licensing/gplv2
+ * Copyright (C) 2010, Linden Research, Inc.
  * 
- * There are special exceptions to the terms and conditions of the GPL as
- * it is applied to this Source Code. View the full text of the exception
- * in the file doc/FLOSS-exception.txt in this software distribution, or
- * online at
- * http://secondlifegrid.net/programs/open_source/licensing/flossexception
+ * This library is free software; you can redistribute it and/or
+ * modify it under the terms of the GNU Lesser General Public
+ * License as published by the Free Software Foundation;
+ * version 2.1 of the License only.
  * 
- * By copying, modifying or distributing this software, you acknowledge
- * that you have read and understood your obligations described above,
- * and agree to abide by those obligations.
+ * This library is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+ * Lesser General Public License for more details.
  * 
- * ALL LINDEN LAB SOURCE CODE IS PROVIDED "AS IS." LINDEN LAB MAKES NO
- * WARRANTIES, EXPRESS, IMPLIED OR OTHERWISE, REGARDING ITS ACCURACY,
- * COMPLETENESS OR PERFORMANCE.
+ * You should have received a copy of the GNU Lesser General Public
+ * License along with this library; if not, write to the Free Software
+ * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301  USA
+ * 
+ * Linden Research, Inc., 945 Battery Street, San Francisco, CA  94111  USA
  * $/LicenseInfo$
  */
 
@@ -93,13 +87,6 @@ const LLManip::EManipPart MANIPULATOR_IDS[NUM_MANIPULATORS] =
 	LLManip::LL_FACE_NEGY,
 	LLManip::LL_FACE_NEGZ
 };
-
-
-F32 get_default_max_prim_scale(bool is_flora) 
-{
-//CF: both scales are 256, so what?, I now use gridmanagersetting
-	return gHippoLimits->getMaxPrimScale();
-}
 
 // static
 void LLManipScale::setUniform(BOOL b)
@@ -392,7 +379,6 @@ BOOL LLManipScale::handleMouseUp(S32 x, S32 y, MASK mask)
 		// Might have missed last update due to UPDATE_DELAY timing
 		LLSelectMgr::getInstance()->sendMultipleUpdate( mLastUpdateFlags );
 		
-		//gAgent.setObjectTracking(gSavedSettings.getBOOL("TrackFocusObject"));
 		LLSelectMgr::getInstance()->saveSelectedObjectTransform(SELECT_ACTION_TYPE_PICK);
 	}
 	return LLManip::handleMouseUp(x, y, mask);
@@ -825,7 +811,10 @@ void LLManipScale::drag( S32 x, S32 y )
 	{
 		LLSelectNode* selectNode = *iter;
 		LLViewerObject*cur = selectNode->getObject();
-		if( cur->permModify() && cur->permMove() && !cur->isAvatar())
+		LLViewerObject *root_object = (cur == NULL) ? NULL : cur->getRootEdit();
+		if( cur->permModify() && cur->permMove() && !cur->isPermanentEnforced() &&
+			((root_object == NULL) || !root_object->isPermanentEnforced()) &&
+			!cur->isAvatar())
 		{
 			selectNode->mLastScale = cur->getScale();
 			selectNode->mLastPositionLocal = cur->getPosition();
@@ -963,8 +952,11 @@ void LLManipScale::dragCorner( S32 x, S32 y )
 		mInSnapRegime = FALSE;
 	}
 
-	F32 max_scale_factor = get_default_max_prim_scale() / MIN_PRIM_SCALE;
-	F32 min_scale_factor = MIN_PRIM_SCALE / get_default_max_prim_scale();
+	F32 max_prim_scale = gHippoLimits->getMaxPrimScale();
+	F32 min_prim_scale = gHippoLimits->getMinPrimScale();
+
+	F32 max_scale_factor = max_prim_scale / min_prim_scale;
+	F32 min_scale_factor = min_prim_scale / max_prim_scale;
 
 	// find max and min scale factors that will make biggest object hit max absolute scale and smallest object hit min absolute scale
 	for (LLObjectSelection::iterator iter = mObjectSelection->begin();
@@ -972,14 +964,17 @@ void LLManipScale::dragCorner( S32 x, S32 y )
 	{
 		LLSelectNode* selectNode = *iter;
 		LLViewerObject* cur = selectNode->getObject();
-		if(  cur->permModify() && cur->permMove() && !cur->isAvatar() )
+		LLViewerObject *root_object = (cur == NULL) ? NULL : cur->getRootEdit();
+		if(  cur->permModify() && cur->permMove() && !cur->isPermanentEnforced() &&
+			((root_object == NULL) || !root_object->isPermanentEnforced()) &&
+			!cur->isAvatar() )
 		{
 			const LLVector3& scale = selectNode->mSavedScale;
 
-			F32 cur_max_scale_factor = llmin( get_default_max_prim_scale(LLPickInfo::isFlora(cur)) / scale.mV[VX], get_default_max_prim_scale(LLPickInfo::isFlora(cur)) / scale.mV[VY], get_default_max_prim_scale(LLPickInfo::isFlora(cur)) / scale.mV[VZ] );
+			F32 cur_max_scale_factor = llmin( max_prim_scale / scale.mV[VX], max_prim_scale / scale.mV[VY], max_prim_scale / scale.mV[VZ] );
 			max_scale_factor = llmin( max_scale_factor, cur_max_scale_factor );
 
-			F32 cur_min_scale_factor = llmax( MIN_PRIM_SCALE / scale.mV[VX], MIN_PRIM_SCALE / scale.mV[VY], MIN_PRIM_SCALE / scale.mV[VZ] );
+			F32 cur_min_scale_factor = llmax( min_prim_scale / scale.mV[VX], min_prim_scale / scale.mV[VY], min_prim_scale / scale.mV[VZ] );
 			min_scale_factor = llmax( min_scale_factor, cur_min_scale_factor );
 		}
 	}
@@ -994,7 +989,10 @@ void LLManipScale::dragCorner( S32 x, S32 y )
 	{
 		LLSelectNode* selectNode = *iter;
 		LLViewerObject* cur = selectNode->getObject();
-		if( cur->permModify() && cur->permMove() && !cur->isAvatar() && cur->isRootEdit() )
+		LLViewerObject *root_object = (cur == NULL) ? NULL : cur->getRootEdit();
+		if( cur->permModify() && cur->permMove() && !cur->isPermanentEnforced() &&
+			((root_object == NULL) || !root_object->isPermanentEnforced()) &&
+			!cur->isAvatar() && cur->isRootEdit() )
 		{
 			const LLVector3& scale = selectNode->mSavedScale;
 			cur->setScale( scale_factor * scale );
@@ -1042,7 +1040,10 @@ void LLManipScale::dragCorner( S32 x, S32 y )
 	{
 		LLSelectNode* selectNode = *iter;
 		LLViewerObject*cur = selectNode->getObject();
-		if( cur->permModify() && cur->permMove() && !cur->isAvatar() && !cur->isRootEdit() )
+		LLViewerObject *root_object = (cur == NULL) ? NULL : cur->getRootEdit();
+		if( cur->permModify() && cur->permMove() && !cur->isPermanentEnforced() &&
+			((root_object == NULL) || !root_object->isPermanentEnforced()) &&
+			!cur->isAvatar() && !cur->isRootEdit() )
 		{
 			const LLVector3& scale = selectNode->mSavedScale;
 			cur->setScale( scale_factor * scale, FALSE );
@@ -1178,9 +1179,6 @@ void LLManipScale::dragFace( S32 x, S32 y )
 		mInSnapRegime = FALSE;
 	}
 
-	BOOL send_scale_update = FALSE;
-	BOOL send_position_update = FALSE;
-
 	LLVector3 dir_agent;
 	if( part_dir_local.mV[VX] )
 	{
@@ -1197,8 +1195,6 @@ void LLManipScale::dragFace( S32 x, S32 y )
 	stretchFace( 
 		projected_vec(drag_start_dir_f, dir_agent) + drag_start_center_agent,
 		projected_vec(drag_delta, dir_agent));
-	send_position_update = TRUE;
-	send_scale_update = TRUE;
 
 	mDragPointGlobal = drag_point_global;
 }
@@ -1250,7 +1246,10 @@ void LLManipScale::stretchFace( const LLVector3& drag_start_agent, const LLVecto
 	{
 		LLSelectNode* selectNode = *iter;
 		LLViewerObject*cur = selectNode->getObject();
-		if( cur->permModify() && cur->permMove() && !cur->isAvatar() )
+		LLViewerObject *root_object = (cur == NULL) ? NULL : cur->getRootEdit();
+		if( cur->permModify() && cur->permMove() && !cur->isPermanentEnforced() &&
+			((root_object == NULL) || !root_object->isPermanentEnforced()) &&
+			!cur->isAvatar() )
 		{
 			LLBBox cur_bbox			= cur->getBoundingBoxAgent();
 			LLVector3 start_local	= cur_bbox.agentToLocal( drag_start_agent );
@@ -1273,7 +1272,7 @@ void LLManipScale::stretchFace( const LLVector3& drag_start_agent, const LLVecto
 
 			F32 denom = axis * dir_local;
 			F32 desired_delta_size	= is_approx_zero(denom) ? 0.f : (delta_local_mag / denom);  // in meters
-			F32 desired_scale		= llclamp(selectNode->mSavedScale.mV[axis_index] + desired_delta_size, MIN_PRIM_SCALE, get_default_max_prim_scale(LLPickInfo::isFlora(cur)));
+			F32 desired_scale		= llclamp(selectNode->mSavedScale.mV[axis_index] + desired_delta_size, gHippoLimits->getMinPrimScale(), gHippoLimits->getMaxPrimScale());
 			// propagate scale constraint back to position offset
 			desired_delta_size		= desired_scale - selectNode->mSavedScale.mV[axis_index]; // propagate constraint back to position
 
@@ -1345,7 +1344,7 @@ void LLManipScale::renderGuidelinesPart( const LLBBox& bbox )
 
 	guideline_end -= guideline_start;
 	guideline_end.normVec();
-	guideline_end *= LLWorld::getInstance()->getRegionWidthInMeters();
+	guideline_end *= gAgent.getRegion()->getWidth();
 	guideline_end += guideline_start;
 
 	{
@@ -1974,7 +1973,7 @@ F32		LLManipScale::partToMaxScale( S32 part, const LLBBox &bbox ) const
 			max_extent = bbox_extents.mV[i];
 		}
 	}
-	max_scale_factor = bbox_extents.magVec() * get_default_max_prim_scale() / max_extent;
+	max_scale_factor = bbox_extents.magVec() * gHippoLimits->getMaxPrimScale() / max_extent;
 
 	if (getUniform())
 	{
@@ -1989,7 +1988,7 @@ F32		LLManipScale::partToMinScale( S32 part, const LLBBox &bbox ) const
 {
 	LLVector3 bbox_extents = unitVectorToLocalBBoxExtent( partToUnitVector( part ), bbox );
 	bbox_extents.abs();
-	F32 min_extent = get_default_max_prim_scale();
+	F32 min_extent = gHippoLimits->getMaxPrimScale();
 	for (U32 i = VX; i <= VZ; i++)
 	{
 		if (bbox_extents.mV[i] > 0.f && bbox_extents.mV[i] < min_extent)
@@ -1997,7 +1996,7 @@ F32		LLManipScale::partToMinScale( S32 part, const LLBBox &bbox ) const
 			min_extent = bbox_extents.mV[i];
 		}
 	}
-	F32 min_scale_factor = bbox_extents.magVec() * MIN_PRIM_SCALE / min_extent;
+	F32 min_scale_factor = bbox_extents.magVec() * gHippoLimits->getMinPrimScale() / min_extent;
 
 	if (getUniform())
 	{
@@ -2013,36 +2012,34 @@ LLVector3 LLManipScale::nearestAxis( const LLVector3& v ) const
 	// Note: yes, this is a slow but easy implementation
 	// assumes v is normalized
 
-	F32 coords[][3] =
+	static LLVector3 coords[] =
 		{
-			{ 1.f, 0.f, 0.f },
-			{ 0.f, 1.f, 0.f },
-			{ 0.f, 0.f, 1.f },
-			{-1.f, 0.f, 0.f },
-			{ 0.f,-1.f, 0.f },
-			{ 0.f, 0.f,-1.f }
+			LLVector3( 1.f, 0.f, 0.f ),
+			LLVector3( 0.f, 1.f, 0.f ),
+			LLVector3( 0.f, 0.f, 1.f ),
+			LLVector3(-1.f, 0.f, 0.f ),
+			LLVector3( 0.f,-1.f, 0.f ),
+			LLVector3( 0.f, 0.f,-1.f )
 		};
 
 	F32 cosine[6];
-	cosine[0] = v * LLVector3( coords[0] );
-	cosine[1] = v * LLVector3( coords[1] );
-	cosine[2] = v * LLVector3( coords[2] );
+	cosine[0] = v * coords[0];
+	cosine[1] = v * coords[1];
+	cosine[2] = v * coords[2];
 	cosine[3] = -cosine[0];
 	cosine[4] = -cosine[1];
 	cosine[5] = -cosine[2];
 
-	F32 greatest_cos = cosine[0];
 	S32 greatest_index = 0;
 	for( S32 i=1; i<6; i++ )
 	{
-		if( greatest_cos < cosine[i] )
+		if( cosine[greatest_index] < cosine[i] )
 		{
-			greatest_cos = cosine[i];
 			greatest_index = i;
 		}
 	}
 
-	return LLVector3( coords[greatest_index] );
+	return coords[greatest_index];
 }
 
 // virtual
@@ -2057,7 +2054,10 @@ BOOL LLManipScale::canAffectSelection()
 		{
 			virtual bool apply(LLViewerObject* objectp)
 			{
-				return objectp->permModify() && objectp->permMove() && !objectp->isSeat();
+				LLViewerObject *root_object = (objectp == NULL) ? NULL : objectp->getRootEdit();
+				return objectp->permModify() && objectp->permMove() && !objectp->isPermanentEnforced() &&
+					((root_object == NULL) || !root_object->isPermanentEnforced()) &&
+					!objectp->isSeat();
 			}
 		} func;
 		can_scale = mObjectSelection->applyToObjects(&func);

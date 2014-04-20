@@ -39,6 +39,7 @@
 #include "llviewerfoldertype.h"
 #include "llagentwearables.h"
 #include "llvoavatarself.h"
+#include "llinventoryclipboard.h"
 
 // linden library includes
 #include "lltrans.h"
@@ -88,17 +89,19 @@ LLInventoryFilter::~LLInventoryFilter()
 {
 }
 
-BOOL LLInventoryFilter::check(LLFolderViewItem* item) 
+BOOL LLInventoryFilter::check(LLFolderViewItem* item)
 {
-	// If it's a folder and we're showing all folders, return TRUE automatically.
+	// Clipboard cut items are *always* filtered so we need this value upfront
+	const LLFolderViewEventListener* listener = item->getListener();
+	const LLUUID item_id = listener ? listener->getUUID() : LLUUID::null;
+	const bool passed_clipboard = item_id.notNull() ? checkAgainstClipboard(item_id) : true;
+
+	// If it's a folder and we're showing all folders, return automatically.
 	const BOOL is_folder = (dynamic_cast<const LLFolderViewFolder*>(item) != NULL);
 	if (is_folder && (mFilterOps.mShowFolderState == LLInventoryFilter::SHOW_ALL_FOLDERS))
 	{
-		return TRUE;
+		return passed_clipboard;
 	}
-
-	const LLFolderViewEventListener* listener = item->getListener();
-	const LLUUID item_id = listener ? listener->getUUID() : LLUUID::null;
 
 	mSubStringMatchOffset = mFilterSubString.size() ? item->getSearchableLabel().find(mFilterSubString) : std::string::npos;
 
@@ -109,23 +112,41 @@ BOOL LLInventoryFilter::check(LLFolderViewItem* item)
 	const BOOL passed = (passed_filtertype &&
 						 passed_permissions &&
 						 passed_filterlink &&
+						 passed_clipboard &&
 						 passed_wearable &&
 						 (mFilterSubString.size() == 0 || mSubStringMatchOffset != std::string::npos));
 
 	return passed;
 }
 
-bool LLInventoryFilter::checkFolder(const LLFolderViewFolder* folder)
+bool LLInventoryFilter::checkFolder(const LLFolderViewFolder* folder) const
 {
-	// we're showing all folders, overriding filter
-	if (mFilterOps.mShowFolderState == LLInventoryFilter::SHOW_ALL_FOLDERS)
+	if (!folder)
 	{
-		return true;
+		llwarns << "The filter can not be checked on an invalid folder." << llendl;
+		llassert(false); // crash in development builds
+		return false;
 	}
 
 	const LLFolderViewEventListener* listener = folder->getListener();
+	if (!listener)
+	{
+		llwarns << "Folder view event listener not found." << llendl;
+		llassert(false); // crash in development builds
+		return false;
+	}
+
 	const LLUUID folder_id = listener->getUUID();
 	
+	// Always check against the clipboard
+	const BOOL passed_clipboard = checkAgainstClipboard(folder_id);
+
+	// we're showing all folders, overriding filter
+	if (mFilterOps.mShowFolderState == LLInventoryFilter::SHOW_ALL_FOLDERS)
+	{
+		return passed_clipboard;
+	}
+
 	if (mFilterOps.mFilterTypes & FILTERTYPE_CATEGORY)
 	{
 		// Can only filter categories for items in your inventory
@@ -138,7 +159,7 @@ bool LLInventoryFilter::checkFolder(const LLFolderViewFolder* folder)
 			return false;
 	}
 
-	return true;
+	return passed_clipboard;
 }
 
 BOOL LLInventoryFilter::checkAgainstFilterType(const LLFolderViewItem* item) const
@@ -232,6 +253,30 @@ BOOL LLInventoryFilter::checkAgainstFilterType(const LLFolderViewItem* item) con
 	}
 	
 	return TRUE;
+}
+
+// Items and folders that are on the clipboard or, recursively, in a folder which
+// is on the clipboard must be filtered out if the clipboard is in the "cut" mode.
+bool LLInventoryFilter::checkAgainstClipboard(const LLUUID& object_id) const
+{
+	if (LLInventoryClipboard::instance().isCutMode())
+	{
+		LLUUID current_id = object_id;
+		LLInventoryObject *current_object = gInventory.getObject(object_id);
+		while (current_id.notNull() && current_object)
+		{
+			if (LLInventoryClipboard::instance().isOnClipboard(current_id))
+			{
+				return false;
+			}
+			current_id = current_object->getParentUUID();
+			if (current_id.notNull())
+			{
+				current_object = gInventory.getObject(current_id);
+			}
+		}
+	}
+	return true;
 }
 
 BOOL LLInventoryFilter::checkAgainstPermissions(const LLFolderViewItem* item) const
@@ -665,133 +710,156 @@ const std::string& LLInventoryFilter::getFilterText()
 
 	if (isFilterObjectTypesWith(LLInventoryType::IT_ANIMATION))
 	{
-		filtered_types += " Animations,";
+		//filtered_types += " Animations,";
+		filtered_types += LLTrans::getString("Animations");
 		filtered_by_type = TRUE;
 		num_filter_types++;
 	}
 	else
 	{
-		not_filtered_types += " Animations,";
+		//not_filtered_types += " Animations,";
+		not_filtered_types += LLTrans::getString("Animations");
+
 		filtered_by_all_types = FALSE;
 	}
 
 	if (isFilterObjectTypesWith(LLInventoryType::IT_CALLINGCARD))
 	{
-		filtered_types += " Calling Cards,";
+		//filtered_types += " Calling Cards,";
+		filtered_types += LLTrans::getString("Calling Cards");
 		filtered_by_type = TRUE;
 		num_filter_types++;
 	}
 	else
 	{
-		not_filtered_types += " Calling Cards,";
+		//not_filtered_types += " Calling Cards,";
+		not_filtered_types += LLTrans::getString("Calling Cards");
 		filtered_by_all_types = FALSE;
 	}
 
 	if (isFilterObjectTypesWith(LLInventoryType::IT_WEARABLE))
 	{
-		filtered_types += " Clothing,";
+		//filtered_types += " Clothing,";
+		filtered_types +=  LLTrans::getString("Clothing");
 		filtered_by_type = TRUE;
 		num_filter_types++;
 	}
 	else
 	{
-		not_filtered_types += " Clothing,";
+		//not_filtered_types += " Clothing,";
+		not_filtered_types +=  LLTrans::getString("Clothing");
 		filtered_by_all_types = FALSE;
 	}
 
 	if (isFilterObjectTypesWith(LLInventoryType::IT_GESTURE))
 	{
-		filtered_types += " Gestures,";
+		//filtered_types += " Gestures,";
+		filtered_types +=  LLTrans::getString("Gestures");
 		filtered_by_type = TRUE;
 		num_filter_types++;
 	}
 	else
 	{
-		not_filtered_types += " Gestures,";
+		//not_filtered_types += " Gestures,";
+		not_filtered_types +=  LLTrans::getString("Gestures");
 		filtered_by_all_types = FALSE;
 	}
 
 	if (isFilterObjectTypesWith(LLInventoryType::IT_LANDMARK))
 	{
-		filtered_types += " Landmarks,";
+		//filtered_types += " Landmarks,";
+		filtered_types +=  LLTrans::getString("Landmarks");
 		filtered_by_type = TRUE;
 		num_filter_types++;
 	}
 	else
 	{
-		not_filtered_types += " Landmarks,";
+		//not_filtered_types += " Landmarks,";
+		not_filtered_types +=  LLTrans::getString("Landmarks");
 		filtered_by_all_types = FALSE;
 	}
 
 	if (isFilterObjectTypesWith(LLInventoryType::IT_NOTECARD))
 	{
-		filtered_types += " Notecards,";
+		//filtered_types += " Notecards,";
+		filtered_types +=  LLTrans::getString("Notecards");
 		filtered_by_type = TRUE;
 		num_filter_types++;
 	}
 	else
 	{
-		not_filtered_types += " Notecards,";
+		//not_filtered_types += " Notecards,";
+		not_filtered_types +=  LLTrans::getString("Notecards");
 		filtered_by_all_types = FALSE;
 	}
 	
 	if (isFilterObjectTypesWith(LLInventoryType::IT_OBJECT) && isFilterObjectTypesWith(LLInventoryType::IT_ATTACHMENT))
 	{
-		filtered_types += " Objects,";
+		//filtered_types += " Objects,";
+		filtered_types +=  LLTrans::getString("Objects");
 		filtered_by_type = TRUE;
 		num_filter_types++;
 	}
 	else
 	{
-		not_filtered_types += " Objects,";
+		//not_filtered_types += " Objects,";
+		not_filtered_types +=  LLTrans::getString("Objects");
 		filtered_by_all_types = FALSE;
 	}
 	
 	if (isFilterObjectTypesWith(LLInventoryType::IT_LSL))
 	{
-		filtered_types += " Scripts,";
+		//filtered_types += " Scripts,";
+		filtered_types +=  LLTrans::getString("Scripts");
 		filtered_by_type = TRUE;
 		num_filter_types++;
 	}
 	else
 	{
-		not_filtered_types += " Scripts,";
+		//not_filtered_types += " Scripts,";
+		not_filtered_types +=  LLTrans::getString("Scripts");
 		filtered_by_all_types = FALSE;
 	}
 	
 	if (isFilterObjectTypesWith(LLInventoryType::IT_SOUND))
 	{
-		filtered_types += " Sounds,";
+		//filtered_types += " Sounds,";
+		filtered_types +=  LLTrans::getString("Sounds");
 		filtered_by_type = TRUE;
 		num_filter_types++;
 	}
 	else
 	{
-		not_filtered_types += " Sounds,";
+		//not_filtered_types += " Sounds,";
+		not_filtered_types +=  LLTrans::getString("Sounds");
 		filtered_by_all_types = FALSE;
 	}
 
 	if (isFilterObjectTypesWith(LLInventoryType::IT_TEXTURE))
 	{
-		filtered_types += " Textures,";
+		//filtered_types += " Textures,";
+		filtered_types +=  LLTrans::getString("Textures");
 		filtered_by_type = TRUE;
 		num_filter_types++;
 	}
 	else
 	{
-		not_filtered_types += " Textures,";
+		//not_filtered_types += " Textures,";
+		not_filtered_types +=  LLTrans::getString("Textures");
 		filtered_by_all_types = FALSE;
 	}
 
 	if (isFilterObjectTypesWith(LLInventoryType::IT_SNAPSHOT))
 	{
-		filtered_types += " Snapshots,";
+		//filtered_types += " Snapshots,";
+		filtered_types +=  LLTrans::getString("Snapshots");
 		filtered_by_type = TRUE;
 		num_filter_types++;
 	}
 	else
 	{
-		not_filtered_types += " Snapshots,";
+		//not_filtered_types += " Snapshots,";
+		not_filtered_types +=  LLTrans::getString("Snapshots");
 		filtered_by_all_types = FALSE;
 	}
 
@@ -806,7 +874,8 @@ const std::string& LLInventoryFilter::getFilterText()
 		}
 		else
 		{
-			mFilterText += "No ";
+			//mFilterText += "No ";
+			mFilterText += LLTrans::getString("No Filters");
 			mFilterText += not_filtered_types;
 		}
 		// remove the ',' at the end
@@ -815,12 +884,14 @@ const std::string& LLInventoryFilter::getFilterText()
 
 	if (isSinceLogoff())
 	{
-		mFilterText += " - Since Logoff";
+		//mFilterText += " - Since Logoff";
+		mFilterText += LLTrans::getString("Since Logoff");
 	}
 	
 	if (getFilterWorn())
 	{
-		mFilterText += " - Worn";
+		//mFilterText += " - Worn";
+		mFilterText += LLTrans::getString("Worn");
 	}
 	
 	return mFilterText;

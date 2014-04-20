@@ -34,6 +34,7 @@
 #define LL_LLSTATUSBAR_H
 
 #include "llpanel.h"
+#include "llpathfindingnavmesh.h"
 
 // "Constants" loaded from settings.xml at start time
 extern S32 STATUS_BAR_HEIGHT;
@@ -47,40 +48,7 @@ class LLUICtrl;
 class LLUUID;
 class LLFrameTimer;
 class LLStatGraph;
-
-// used by LCD screen
-class LLRegionDetails
-{
-public:
-	LLRegionDetails() :
-		mRegionName("Unknown"),
-		mParcelName("Unknown"),
-		mAccessString("Unknown"),
-		mX(0),
-		mY(0),
-		mZ(0),
-		mArea (0),
-		mForSale(FALSE),
-		mOwner("Unknown"),
-		mTraffic(0),
-		mBalance(0),
-		mPing(0)
-	{
-	}
-	std::string mRegionName;
-	std::string	mParcelName;
-	std::string	mAccessString;
-	S32		mX;
-	S32		mY;
-	S32		mZ;
-	S32		mArea;
-	BOOL	mForSale;
-	std::string	mOwner;
-	F32		mTraffic;
-	S32		mBalance;
-	std::string mTime;
-	U32		mPing;
-};
+class LLPathfindingNavMeshStatus;
 
 class LLStatusBar
 :	public LLPanel
@@ -93,6 +61,7 @@ public:
 
 	// MANIPULATORS
 	void		setBalance(S32 balance);
+	void		setUPC(S32 balance);
 	void		debitBalance(S32 debit);
 	void		creditBalance(S32 credit);
 
@@ -116,7 +85,6 @@ public:
 	S32 getSquareMetersCredit() const;
 	S32 getSquareMetersCommitted() const;
 	S32 getSquareMetersLeft() const;
-	LLRegionDetails mRegionDetails;
 
 private:
 	// simple method to setup the part that holds the date
@@ -126,8 +94,13 @@ private:
 	static void onClickSearch(void* data);
 	static void onClickStatGraph(void* data);
 
+	void onRegionBoundaryCrossed();
+	void createNavMeshStatusListenerForCurrentRegion();
+	void onNavMeshStatusChange(const LLPathfindingNavMeshStatus &pNavMeshStatus);
+
 private:
 	LLTextBox	*mTextBalance;
+	LLTextBox	*mTextUPC;
 	LLTextBox	*mTextHealth;
 	LLTextBox	*mTextTime;
 
@@ -139,11 +112,16 @@ private:
 	LLButton	*mBtnBuyCurrency;
 
 	S32				mBalance;
+	S32				mUPC;
 	S32				mHealth;
 	S32				mSquareMetersCredit;
 	S32				mSquareMetersCommitted;
 	LLFrameTimer*	mBalanceTimer;
 	LLFrameTimer*	mHealthTimer;
+	boost::signals2::connection	mRegionCrossingSlot;
+	LLPathfindingNavMesh::navmesh_slot_t mNavMeshSlot;
+	bool mIsNavMeshDirty;
+	bool mUPCSupported;
 	
 	static std::vector<std::string> sDays;
 	static std::vector<std::string> sMonths;

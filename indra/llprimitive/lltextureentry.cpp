@@ -2,43 +2,55 @@
  * @file lltextureentry.cpp
  * @brief LLTextureEntry base class
  *
- * $LicenseInfo:firstyear=2001&license=viewergpl$
- * 
- * Copyright (c) 2001-2009, Linden Research, Inc.
- * 
+ * $LicenseInfo:firstyear=2001&license=viewerlgpl$
  * Second Life Viewer Source Code
- * The source code in this file ("Source Code") is provided by Linden Lab
- * to you under the terms of the GNU General Public License, version 2.0
- * ("GPL"), unless you have obtained a separate licensing agreement
- * ("Other License"), formally executed by you and Linden Lab.  Terms of
- * the GPL can be found in doc/GPL-license.txt in this distribution, or
- * online at http://secondlifegrid.net/programs/open_source/licensing/gplv2
+ * Copyright (C) 2010, Linden Research, Inc.
  * 
- * There are special exceptions to the terms and conditions of the GPL as
- * it is applied to this Source Code. View the full text of the exception
- * in the file doc/FLOSS-exception.txt in this software distribution, or
- * online at
- * http://secondlifegrid.net/programs/open_source/licensing/flossexception
+ * This library is free software; you can redistribute it and/or
+ * modify it under the terms of the GNU Lesser General Public
+ * License as published by the Free Software Foundation;
+ * version 2.1 of the License only.
  * 
- * By copying, modifying or distributing this software, you acknowledge
- * that you have read and understood your obligations described above,
- * and agree to abide by those obligations.
+ * This library is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+ * Lesser General Public License for more details.
  * 
- * ALL LINDEN LAB SOURCE CODE IS PROVIDED "AS IS." LINDEN LAB MAKES NO
- * WARRANTIES, EXPRESS, IMPLIED OR OTHERWISE, REGARDING ITS ACCURACY,
- * COMPLETENESS OR PERFORMANCE.
+ * You should have received a copy of the GNU Lesser General Public
+ * License along with this library; if not, write to the Free Software
+ * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301  USA
+ * 
+ * Linden Research, Inc., 945 Battery Street, San Francisco, CA  94111  USA
  * $/LicenseInfo$
  */
 
 #include "linden_common.h"
 
+#include "lluuid.h"
+#include "llmediaentry.h"
 #include "lltextureentry.h"
+#include "llmaterialid.h"
 #include "llsdutil_math.h"
+#include "v4color.h"
 
 const U8 DEFAULT_BUMP_CODE = 0;  // no bump or shininess
 
 const LLTextureEntry LLTextureEntry::null;
 
+// Some LLSD keys.  Do not change these!
+#define OBJECT_ID_KEY_STR "object_id"
+#define TEXTURE_INDEX_KEY_STR "texture_index"
+#define OBJECT_MEDIA_VERSION_KEY_STR "object_media_version"
+#define OBJECT_MEDIA_DATA_KEY_STR "object_media_data"
+#define TEXTURE_MEDIA_DATA_KEY_STR "media_data"
+
+/*static*/ const char* LLTextureEntry::OBJECT_ID_KEY = OBJECT_ID_KEY_STR;
+/*static*/ const char* LLTextureEntry::OBJECT_MEDIA_DATA_KEY = OBJECT_MEDIA_DATA_KEY_STR;
+/*static*/ const char* LLTextureEntry::MEDIA_VERSION_KEY = OBJECT_MEDIA_VERSION_KEY_STR;
+/*static*/ const char* LLTextureEntry::TEXTURE_INDEX_KEY = TEXTURE_INDEX_KEY_STR;
+/*static*/ const char* LLTextureEntry::TEXTURE_MEDIA_DATA_KEY = TEXTURE_MEDIA_DATA_KEY_STR;
+
+static const std::string MEDIA_VERSION_STRING_PREFIX = "x-mv:";
 
 // static 
 LLTextureEntry* LLTextureEntry::newTextureEntry()
@@ -48,16 +60,25 @@ LLTextureEntry* LLTextureEntry::newTextureEntry()
 
 //===============================================================
 LLTextureEntry::LLTextureEntry()
+  : mMediaEntry(NULL)
+  , mSelected(false)
+  , mMaterialUpdatePending(false)
 {
 	init(LLUUID::null,1.f,1.f,0.f,0.f,0.f,DEFAULT_BUMP_CODE);
 }
 
 LLTextureEntry::LLTextureEntry(const LLUUID& tex_id)
+  : mMediaEntry(NULL)
+  , mSelected(false)
+  , mMaterialUpdatePending(false)
 {
 	init(tex_id,1.f,1.f,0.f,0.f,0.f,DEFAULT_BUMP_CODE);
 }
 
 LLTextureEntry::LLTextureEntry(const LLTextureEntry &rhs)
+  : mMediaEntry(NULL)
+  , mSelected(false)
+  , mMaterialUpdatePending(false)
 {
 	mID = rhs.mID;
 	mScaleS = rhs.mScaleS;
@@ -69,6 +90,12 @@ LLTextureEntry::LLTextureEntry(const LLTextureEntry &rhs)
 	mBump = rhs.mBump;
 	mMediaFlags = rhs.mMediaFlags;
 	mGlow = rhs.mGlow;
+	mMaterialID = rhs.mMaterialID;
+	mMaterial = rhs.mMaterial;
+	if (rhs.mMediaEntry != NULL) {
+		// Make a copy
+		mMediaEntry = new LLMediaEntry(*rhs.mMediaEntry);
+	}
 }
 
 LLTextureEntry &LLTextureEntry::operator=(const LLTextureEntry &rhs)
@@ -85,6 +112,18 @@ LLTextureEntry &LLTextureEntry::operator=(const LLTextureEntry &rhs)
 		mBump = rhs.mBump;
 		mMediaFlags = rhs.mMediaFlags;
 		mGlow = rhs.mGlow;
+		mMaterialID = rhs.mMaterialID;
+		mMaterial = rhs.mMaterial;
+		if (mMediaEntry != NULL) {
+			delete mMediaEntry;
+		}
+		if (rhs.mMediaEntry != NULL) {
+			// Make a copy
+			mMediaEntry = new LLMediaEntry(*rhs.mMediaEntry);
+		}
+		else {
+			mMediaEntry = NULL;
+		}
 	}
 
 	return *this;
@@ -102,12 +141,22 @@ void LLTextureEntry::init(const LLUUID& tex_id, F32 scale_s, F32 scale_t, F32 of
 	mBump = bump;
 	mMediaFlags = 0x0;
     mGlow = 0;
+	mMaterialID.clear();
 	
 	setColor(LLColor4(1.f, 1.f, 1.f, 1.f));
+	if (mMediaEntry != NULL) {
+	    delete mMediaEntry;
+	}
+	mMediaEntry = NULL;
 }
 
 LLTextureEntry::~LLTextureEntry()
 {
+	if(mMediaEntry)
+	{
+		delete mMediaEntry;
+		mMediaEntry = NULL;
+	}
 }
 
 bool LLTextureEntry::operator!=(const LLTextureEntry &rhs) const
@@ -122,6 +171,7 @@ bool LLTextureEntry::operator!=(const LLTextureEntry &rhs) const
 	if (mBump != rhs.mBump) return (true);
 	if (mMediaFlags != rhs.mMediaFlags) return (true);
 	if (mGlow != rhs.mGlow) return (true);
+	if (mMaterialID != rhs.mMaterialID) return (true);
 	return(false);
 }
 
@@ -137,6 +187,7 @@ bool LLTextureEntry::operator==(const LLTextureEntry &rhs) const
 	if (mBump != rhs.mBump) return (false);
 	if (mMediaFlags != rhs.mMediaFlags) return false;
 	if (mGlow != rhs.mGlow) return false;
+	if (mMaterialID != rhs.mMaterialID) return (false);
 	return(true);
 }
 
@@ -159,6 +210,13 @@ void LLTextureEntry::asLLSD(LLSD& sd) const
 	sd["bump"] = getBumpShiny();
 	sd["fullbright"] = getFullbright();
 	sd["media_flags"] = mMediaFlags;
+	if (hasMedia()) {
+		LLSD mediaData;
+        if (NULL != getMediaData()) {
+            getMediaData()->asLLSD(mediaData);
+        }
+		sd[TEXTURE_MEDIA_DATA_KEY] = mediaData;
+	}
 	sd["glow"] = mGlow;
 }
 
@@ -207,6 +265,17 @@ bool LLTextureEntry::fromLLSD(const LLSD& sd)
 	{
 		setMediaTexGen( sd[w].asInteger() );
 	} else goto fail;
+	// If the "has media" flag doesn't match the fact that 
+	// media data exists, updateMediaData will "fix" it
+	// by either clearing or setting the flag
+	w = TEXTURE_MEDIA_DATA_KEY;
+	if (hasMedia() != sd.has(w))
+	{
+		llwarns << "LLTextureEntry::fromLLSD: media_flags (" << hasMedia() <<
+			") does not match presence of media_data (" << sd.has(w) << ").  Fixing." << llendl;
+	}
+	updateMediaData(sd[w]);
+
 	w = "glow";
 	if (sd.has(w))
 	{
@@ -368,12 +437,10 @@ S32 LLTextureEntry::setBumpShinyFullbright(U8 bump)
 
 S32 LLTextureEntry::setMediaTexGen(U8 media)
 {
-	if (mMediaFlags != media)
-	{
-		mMediaFlags = media;
-		return TEM_CHANGE_MEDIA;
-	}
-	return TEM_CHANGE_NONE;
+	S32 result = TEM_CHANGE_NONE;
+	result |= setTexGen(media & TEM_TEX_GEN_MASK);
+	result |= setMediaFlags(media & TEM_MEDIA_MASK);
+	return result;
 }
 
 S32 LLTextureEntry::setBumpmap(U8 bump)
@@ -431,6 +498,18 @@ S32 LLTextureEntry::setMediaFlags(U8 media_flags)
 	{
 		mMediaFlags &= ~TEM_MEDIA_MASK;
 		mMediaFlags |= media_flags;
+        
+		// Special code for media handling
+		if( hasMedia() && mMediaEntry == NULL)
+		{
+			mMediaEntry = new LLMediaEntry;
+		}
+        else if ( ! hasMedia() && mMediaEntry != NULL)
+        {
+            delete mMediaEntry;
+            mMediaEntry = NULL;
+        }
+        
 		return TEM_CHANGE_MEDIA;
 	}
 	return TEM_CHANGE_NONE;
@@ -458,4 +537,140 @@ S32 LLTextureEntry::setGlow(F32 glow)
 	return TEM_CHANGE_NONE;
 }
 
+S32 LLTextureEntry::setMaterialID(const LLMaterialID& pMaterialID)
+{
+	if ( (mMaterialID != pMaterialID) || (mMaterialUpdatePending && !mSelected) )
+	{
+		if (mSelected)
+		{
+			mMaterialUpdatePending = true;
+			mMaterialID = pMaterialID;
+			return TEM_CHANGE_TEXTURE;
+		}
 
+		mMaterialUpdatePending = false;
+		mMaterialID = pMaterialID;
+		return TEM_CHANGE_TEXTURE;
+	}
+	return TEM_CHANGE_NONE;
+}
+
+S32 LLTextureEntry::setMaterialParams(const LLMaterialPtr pMaterialParams)
+{
+	if (mSelected)
+	{
+		mMaterialUpdatePending = true;
+	}
+	mMaterial = pMaterialParams;
+	return TEM_CHANGE_TEXTURE;
+}
+
+void LLTextureEntry::setMediaData(const LLMediaEntry &media_entry)
+{
+    mMediaFlags |= MF_HAS_MEDIA;
+    if (NULL != mMediaEntry)
+    {
+        delete mMediaEntry;
+    }
+    mMediaEntry = new LLMediaEntry(media_entry);
+}
+
+bool LLTextureEntry::updateMediaData(const LLSD& media_data)
+{
+	if (media_data.isUndefined())
+	{
+		// clear the media data
+        clearMediaData();
+		return false;
+	}
+	else {
+		mMediaFlags |= MF_HAS_MEDIA;
+		if (mMediaEntry == NULL)
+		{
+			mMediaEntry = new LLMediaEntry;
+		}
+        // *NOTE: this will *clobber* all of the fields in mMediaEntry 
+        // with whatever fields are present (or not present) in media_data!
+ 		mMediaEntry->fromLLSD(media_data);
+		return true;
+	}
+}
+
+void LLTextureEntry::clearMediaData()
+{
+    mMediaFlags &= ~MF_HAS_MEDIA;
+    if (mMediaEntry != NULL) {
+        delete mMediaEntry;
+    }
+    mMediaEntry = NULL;
+}    
+
+void LLTextureEntry::mergeIntoMediaData(const LLSD& media_fields)
+{
+    mMediaFlags |= MF_HAS_MEDIA;
+    if (mMediaEntry == NULL)
+    {
+        mMediaEntry = new LLMediaEntry;
+    }
+    // *NOTE: this will *merge* the data in media_fields
+    // with the data in our media entry
+    mMediaEntry->mergeFromLLSD(media_fields);
+}
+
+//static
+std::string LLTextureEntry::touchMediaVersionString(const std::string &in_version, const LLUUID &agent_id)
+{
+    // XXX TODO: make media version string binary (base64-encoded?)
+    // Media "URL" is a representation of a version and the last-touched agent
+    // x-mv:nnnnn/agent-id
+    // where "nnnnn" is version number
+    // *NOTE: not the most efficient code in the world...
+    U32 current_version = getVersionFromMediaVersionString(in_version) + 1;
+    const size_t MAX_VERSION_LEN = 10; // 2^32 fits in 10 decimal digits
+    char buf[MAX_VERSION_LEN+1];
+    snprintf(buf, (int)MAX_VERSION_LEN+1, "%0*u", (int)MAX_VERSION_LEN, current_version);  // added int cast to fix warning/breakage on mac.
+    return MEDIA_VERSION_STRING_PREFIX + buf + "/" + agent_id.asString();
+}
+
+//static
+U32 LLTextureEntry::getVersionFromMediaVersionString(const std::string &version_string)
+{
+    U32 version = 0;
+    if (!version_string.empty()) 
+    {
+        size_t found = version_string.find(MEDIA_VERSION_STRING_PREFIX);
+        if (found != std::string::npos) 
+        {
+            found = version_string.find_first_of("/", found);
+            std::string v = version_string.substr(MEDIA_VERSION_STRING_PREFIX.length(), found);
+            version = strtoul(v.c_str(),NULL,10);
+        }
+    }
+    return version;
+}
+
+//static
+LLUUID LLTextureEntry::getAgentIDFromMediaVersionString(const std::string &version_string)
+{
+    LLUUID id;
+    if (!version_string.empty()) 
+    {
+        size_t found = version_string.find(MEDIA_VERSION_STRING_PREFIX);
+        if (found != std::string::npos) 
+        {
+            found = version_string.find_first_of("/", found);
+            if (found != std::string::npos) 
+            {
+                std::string v = version_string.substr(found + 1);
+                id.set(v);
+            }
+        }
+    }
+    return id;
+}
+
+//static
+bool LLTextureEntry::isMediaVersionString(const std::string &version_string)
+{
+	return std::string::npos != version_string.find(MEDIA_VERSION_STRING_PREFIX);
+}

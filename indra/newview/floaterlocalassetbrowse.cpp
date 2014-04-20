@@ -38,7 +38,6 @@ this feature is still a work in progress.
 
 /* basic headers */
 #include "llviewerprecompiledheaders.h"
-#include "lluictrlfactory.h"
 
 /* own class header && upload floater header */
 #include "floaterlocalassetbrowse.h"
@@ -50,6 +49,12 @@ this feature is still a work in progress.
 #include "llimagejpeg.h"
 #include "llimagepng.h"
 
+/* llui headers */
+#include "llcheckboxctrl.h"
+#include "llcombobox.h"
+#include "llscrolllistitem.h"
+#include "lluictrlfactory.h"
+
 /* misc headers */
 #include <time.h>
 #include <ctime>
@@ -60,13 +65,7 @@ this feature is still a work in progress.
 #include "llfloaterimagepreview.h"
 #include "llfile.h"
 
-/* repeated in header */
-#include "lltexturectrl.h"   
-#include "llscrolllistctrl.h"
-#include "llviewercontrol.h"
-
 /* including to force rebakes when needed */
-#include "llagent.h"
 #include "llvoavatarself.h"
 
 /* sculpt refresh */
@@ -800,13 +799,13 @@ FloaterLocalAssetBrowser::FloaterLocalAssetBrowser()
 	mUploadBtn->setClickedCallback(      onClickUpload,      this);
 	
 	// combo callback
-	mTypeComboBox->setCommitCallback(onCommitTypeCombo);
+	mTypeComboBox->setCommitCallback(boost::bind(&FloaterLocalAssetBrowser::onCommitTypeCombo,this));
 
 	// scrolllist callbacks
-	mBitmapList->setCommitCallback(onChooseBitmapList);
+	mBitmapList->setCommitCallback(boost::bind(&FloaterLocalAssetBrowser::onChooseBitmapList,this));
 
 	// checkbox callbacks
-	mUpdateChkBox->setCommitCallback(onClickUpdateChkbox);
+	mUpdateChkBox->setCommitCallback(boost::bind(&FloaterLocalAssetBrowser::onClickUpdateChkbox,this));
 
 }
 
@@ -857,34 +856,33 @@ void FloaterLocalAssetBrowser::onClickUpload(void* userdata)
 	}
 }
 
-void FloaterLocalAssetBrowser::onChooseBitmapList(LLUICtrl* ctrl, void *userdata)
+void FloaterLocalAssetBrowser::onChooseBitmapList()
 {
-	bool button_status = sLFInstance->mBitmapList->isEmpty();
-	sLFInstance->mDelBtn->setEnabled(!button_status);
-	sLFInstance->mUploadBtn->setEnabled(!button_status);
+	bool button_status = mBitmapList->isEmpty();
+	mDelBtn->setEnabled(!button_status);
+	mUploadBtn->setEnabled(!button_status);
 
-	sLFInstance->UpdateRightSide();
+	UpdateRightSide();
 }
 
-void FloaterLocalAssetBrowser::onClickUpdateChkbox(LLUICtrl *ctrl, void *userdata)
+void FloaterLocalAssetBrowser::onClickUpdateChkbox()
 {
-	std::string temp_str = sLFInstance->mBitmapList->getSelectedItemLabel(BITMAPLIST_COL_ID);
+	std::string temp_str = mBitmapList->getSelectedItemLabel(BITMAPLIST_COL_ID);
 	if ( !temp_str.empty() )
 	{
 		gLocalBrowser->onUpdateBool( (LLUUID)temp_str );
-		sLFInstance->UpdateRightSide();
+		UpdateRightSide();
 	}
 }
 
-void FloaterLocalAssetBrowser::onCommitTypeCombo(LLUICtrl* ctrl, void *userdata)
+void FloaterLocalAssetBrowser::onCommitTypeCombo()
 {
-	std::string temp_str = sLFInstance->mBitmapList->getSelectedItemLabel(BITMAPLIST_COL_ID);
+	std::string temp_str = mBitmapList->getSelectedItemLabel(BITMAPLIST_COL_ID);
 
 	if ( !temp_str.empty() )
 	{
 		S32 selection = sLFInstance->mTypeComboBox->getCurrentIndex();
 		gLocalBrowser->onSetType( (LLUUID)temp_str, selection ); 
-
 	}
 }
 

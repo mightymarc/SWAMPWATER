@@ -3,31 +3,25 @@
  * @brief implementation of LLAudioEngine class abstracting the Open
  * AL audio support
  *
- * $LicenseInfo:firstyear=2000&license=viewergpl$
- * 
- * Copyright (c) 2000-2009, Linden Research, Inc.
- * 
+ * $LicenseInfo:firstyear=2000&license=viewerlgpl$
  * Second Life Viewer Source Code
- * The source code in this file ("Source Code") is provided by Linden Lab
- * to you under the terms of the GNU General Public License, version 2.0
- * ("GPL"), unless you have obtained a separate licensing agreement
- * ("Other License"), formally executed by you and Linden Lab.  Terms of
- * the GPL can be found in doc/GPL-license.txt in this distribution, or
- * online at http://secondlifegrid.net/programs/open_source/licensing/gplv2
+ * Copyright (C) 2010, Linden Research, Inc.
  * 
- * There are special exceptions to the terms and conditions of the GPL as
- * it is applied to this Source Code. View the full text of the exception
- * in the file doc/FLOSS-exception.txt in this software distribution, or
- * online at
- * http://secondlifegrid.net/programs/open_source/licensing/flossexception
+ * This library is free software; you can redistribute it and/or
+ * modify it under the terms of the GNU Lesser General Public
+ * License as published by the Free Software Foundation;
+ * version 2.1 of the License only.
  * 
- * By copying, modifying or distributing this software, you acknowledge
- * that you have read and understood your obligations described above,
- * and agree to abide by those obligations.
+ * This library is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+ * Lesser General Public License for more details.
  * 
- * ALL LINDEN LAB SOURCE CODE IS PROVIDED "AS IS." LINDEN LAB MAKES NO
- * WARRANTIES, EXPRESS, IMPLIED OR OTHERWISE, REGARDING ITS ACCURACY,
- * COMPLETENESS OR PERFORMANCE.
+ * You should have received a copy of the GNU Lesser General Public
+ * License along with this library; if not, write to the Free Software
+ * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301  USA
+ * 
+ * Linden Research, Inc., 945 Battery Street, San Francisco, CA  94111  USA
  * $/LicenseInfo$
  */
 
@@ -45,6 +39,9 @@
 #include "lldir.h"
 #include "llaudiodecodemgr.h"
 #include "llassetstorage.h"
+
+#include <queue>
+#include <boost/pool/pool_alloc.hpp>
 
 
 // necessary for grabbing sounds from sim (implemented in viewer)	
@@ -116,6 +113,8 @@ void LLAudioEngine::setDefaults()
 	for (U32 i = 0; i < LLAudioEngine::AUDIO_TYPE_COUNT; i++)
 		mSecondaryGain[i] = 1.0f;
 
+	mCurrentTransfer = NULL;
+
 	mAllowLargeSounds = false;
 }
 
@@ -126,13 +125,11 @@ bool LLAudioEngine::init(const S32 num_channels, void* userdata)
 
 	mNumChannels = num_channels;
 	mUserData = userdata;
-	
-	allocateListener();
 
 	// Initialize the decode manager
 	gAudioDecodeMgrp = new LLAudioDecodeMgr;
 
-	llinfos << "LLAudioEngine::init() AudioEngine successfully initialized" << llendl;
+	LL_INFOS("AudioEngine") << "LLAudioEngine::init() AudioEngine successfully initialized" << LL_ENDL;
 
 	return true;
 }
@@ -234,6 +231,28 @@ std::string LLAudioEngine::getInternetStreamURL()
 	else return std::string();
 }
 
+void LLAudioEngine::checkStates()
+{
+#ifdef SHOW_ASSERT
+	for (S32 i = 0; i < MAX_BUFFERS; i++)
+	{
+		if (mBuffers[i])
+		{
+			bool buf_has_ref = false;
+			for (S32 j = 0; j < MAX_CHANNELS; j++)
+			{
+				if (mChannels[j])
+				{
+					if(mChannels[j]->mCurrentBufferp == mBuffers[i])
+						buf_has_ref = true;
+				}
+			}
+			if(buf_has_ref)
+				llassert(mBuffers[i]->mInUse);
+		}
+	}
+#endif //SHOW_ASSERT
+}
 
 void LLAudioEngine::updateChannels()
 {
@@ -245,9 +264,38 @@ void LLAudioEngine::updateChannels()
 			mChannels[i]->updateBuffer();
 			mChannels[i]->update3DPosition();
 			mChannels[i]->updateLoop();
+#ifdef SHOW_ASSERT
+			if(mChannels[i]->getSource())
+				llassert(mChannels[i]->mCurrentBufferp == mChannels[i]->getSource()->getCurrentBuffer());
+			if(mChannels[i]->mCurrentBufferp)
+			{
+				bool found_buffer = false;
+				for (S32 j = 0; j < MAX_BUFFERS; j++)
+				{
+					if (mBuffers[j])
+					{
+						if(mChannels[i]->mCurrentBufferp == mBuffers[j])
+							found_buffer = true;
+					}
+				}
+				llassert(found_buffer);
+			}
+#endif //SHOW_ASSERT
 		}
 	}
+	checkStates();
 }
+
+struct SourcePriorityComparator
+{
+	bool operator() (const LLAudioSource* lhs, const LLAudioSource* rhs) const
+	{
+		if(rhs->getPriority() != lhs->getPriority())
+			return rhs->getPriority() > lhs->getPriority();
+		else
+			return ((rhs->isSyncMaster() && !lhs->isSyncMaster()) || (rhs->isSyncSlave() && (!lhs->isSyncMaster() && !lhs->isSyncSlave())));
+	}
+};
 
 static const F32 default_max_decode_time = .002f; // 2 ms
 void LLAudioEngine::idle(F32 max_decode_time)
@@ -270,18 +318,34 @@ void LLAudioEngine::idle(F32 max_decode_time)
 		}
 	}
 
-	F32 max_priority = -1.f;
-	LLAudioSource *max_sourcep = NULL; // Maximum priority source without a channel
-	source_map::iterator iter;
-	for (iter = mAllSources.begin(); iter != mAllSources.end();)
+	//Iterate down all queued sources. Remove finished ones, sort active ones by priority. Find highest priority 'master' source if present.
+	LLAudioSource *sync_masterp = NULL;	//Highest priority syncmaster
+	LLAudioSource *sync_slavep = NULL;	//Highest priority syncslave
+
+	//Priority queue that will be filled with soundsources that have a high likeleyhood of being able to start [re]playing this idle tick.
+	//Sort order:  Primary: priority. Secondary: syncmaster. Tertiary: syncslave
+	std::priority_queue<LLAudioSource*,std::vector<LLAudioSource*,boost::pool_allocator<LLAudioSource*> >,SourcePriorityComparator> queue;
+
+	//Have to put syncslaves into a temporary list until the syncmaster state is determined.
+	//If the syncmaster might be started, or just looped, insert all pending/looping syncslaves into the priority queue.
+	//If the there is no active syncmaster, then stop any currently looping syncslaves and add none to the priority queue.
+	//This is necessary as any looping soundsources to be stopped, MUST be stopped before iterating down the priority queue.
+	static std::vector<LLAudioSource*> slave_list;	
+	slave_list.clear();
+
+	//Iterate over all sources. Update their decode or 'done' state, as well as their priorities.
+	//Also add sources that might be able to start playing to the priority queue.
+	//Only sources without channels should be added to priority queue.
+	//Syncslaves must put into the slave list instead of the priority queue.
+	for (source_map::iterator iter = mAllSources.begin(); iter != mAllSources.end();)
 	{
 		LLAudioSource *sourcep = iter->second;
 
-		// Update this source
+		//Load/decode/queue pop
 		sourcep->update();
-		sourcep->updatePriority();
 
-		if (sourcep->isDone())
+		//Done after update, as failure to load might mark source as corrupt, which causes isDone to return true.
+		if (sourcep->isDone())		
 		{
 			// The source is done playing, clean it up.
 			delete sourcep;
@@ -289,193 +353,136 @@ void LLAudioEngine::idle(F32 max_decode_time)
 			continue;
 		}
 
-		if (sourcep->isMuted())
+		// Increment iter here (it is not used anymore), so we can use continue below to move on to the next source.
+		++iter;
+
+		if(!sourcep->isLoop() && sourcep->mPlayedOnce && (!sourcep->mChannelp || !sourcep->mChannelp->isPlaying()))
 		{
-			++iter;
-		  	continue;
+			continue;
 		}
 
-		if (!sourcep->getChannel() && sourcep->getCurrentBuffer())
+		LLAudioData *adp = sourcep->getCurrentData();
+		//If there is no current data at all, or if it hasn't loaded, we must skip this source.
+		if (!adp || !adp->getBuffer())
 		{
-			// We could potentially play this sound if its priority is high enough.
-			if (sourcep->getPriority() > max_priority)
+			continue;
+		}
+
+		sourcep->updatePriority();	//Calculates current priority. 1.f=ambient. 0.f=muted. Otherwise based off of distance.
+
+		if (sourcep->getPriority() < F_APPROXIMATELY_ZERO)
+		{
+			// Muted, or nothing queued, or too far, so we don't care.
+			continue;
+		}
+		else if(sourcep->isSyncMaster())
+		{
+			if(!sync_masterp || sourcep->getPriority() > sync_masterp->getPriority())
 			{
-				max_priority = sourcep->getPriority();
-				max_sourcep = sourcep;
+				if(sync_masterp && !sync_masterp->getChannel())
+					queue.push(sync_masterp);	//Add lower-priority soundmaster to the queue as a normal sound.	
+				sync_masterp = sourcep;
+				//Don't add master to the queue yet.
+				//Add it after highest-priority sound slave is found so we can outrank its priority.
+				continue;	
 			}
+			//Else fall through like a normal sound.
 		}
-
-		// Move on to the next source
-		iter++;
+		else if(sourcep->isSyncSlave())
+		{
+			if(!sync_slavep || sourcep->getPriority() > sync_slavep->getPriority())
+			{
+				sync_slavep = sourcep;
+			}
+			//Don't add to the priority queue quite yet. Best primary syncmaster candidate may not have been determined yet.
+			slave_list.push_back(sourcep);
+			continue;
+		}
+		if(sourcep->getChannel())
+		{
+			//If this is just a regular sound and is currently playing then do nothing special.
+			continue;
+		}
+		//Add to our queue. Highest priority will be at the front.
+		queue.push(sourcep);		
 	}
 
-	// Now, do priority-based organization of audio sources.
-	// All channels used, check priorities.
-	// Find channel with lowest priority
-	if (max_sourcep)
-	{
-		LLAudioChannel *channelp = getFreeChannel(max_priority);
-		if (channelp)
-		{
-			//llinfos << "Replacing source in channel due to priority!" << llendl;
-			max_sourcep->setChannel(channelp);
-			channelp->setSource(max_sourcep);
-			if (max_sourcep->isSyncSlave())
-			{
-				// A sync slave, it doesn't start playing until it's synced up with the master.
-				// Flag this channel as waiting for sync, and return true.
-				channelp->setWaiting(true);
-			}
-			else
-			{
-				channelp->setWaiting(false);
-				channelp->play();
-			}
-		}
-	}
-
-	
 	// Do this BEFORE we update the channels
 	// Update the channels to sync up with any changes that the source made,
 	// such as changing what sound was playing.
 	updateChannels();
 
-	// Update queued sounds (switch to next queued data if the current has finished playing)
-	for (iter = mAllSources.begin(); iter != mAllSources.end(); ++iter)
+	//Loop over all syncsaves. If no syncmaster, stop looping ones, else add ones that need [re]started to the priority queue.
+	//Normally there are zero to one syncslaves, so this loop isn't typically expensive.
+	for(std::vector<LLAudioSource*>::iterator iter=slave_list.begin();iter!=slave_list.end();++iter)
 	{
-		// This is lame, instead of this I could actually iterate through all the sources
-		// attached to each channel, since only those with active channels
-		// can have anything interesting happen with their queue? (Maybe not true)
-		LLAudioSource *sourcep = iter->second;
-		if (!sourcep->mQueuedDatap || sourcep->isMuted())
+		if(!sync_masterp)
 		{
-			// Muted, or nothing queued, so we don't care.
+			//Stop any looping syncslaves. I'm not sure this behavior is correct, but letting looping syncslaves run
+			//off on their own seems wrong. The lsl documentation is unclear.
+			if((*iter)->getChannel() && (*iter)->isLoop())
+			{
+				(*iter)->getChannel()->cleanup();
+			}
+		}
+		//If the syncmaster already has a channel and hasn't looped, then we can skip syncslaves this idle tick (there's nothing to do).
+		else if((!sync_masterp->getChannel() || sync_masterp->getChannel()->mLoopedThisFrame))
+		{
+			//Add syncslaves that we might want to [re]start.
+			if(!(*iter)->getChannel() || (*iter)->isLoop())
+				queue.push((*iter));		
+		}
+	}
+
+	if(sync_masterp)	
+	{
+		//Syncmaster must have priority greater than or equal to priority of highest priority syncslave.
+		//The case of slave priority equaling master priority is handled in the comparator (SourcePriorityComparator).
+		if(sync_slavep)
+			sync_masterp->setPriority(sync_slavep->getPriority());
+		if(!sync_masterp->getChannel())
+		{
+			queue.push(sync_masterp);
+		}
+	}
+
+	// Dispatch all soundsources.
+	bool syncmaster_started = sync_masterp && sync_masterp->getChannel() && sync_masterp->getChannel()->mLoopedThisFrame;
+	while(!queue.empty())
+	{
+		LLAudioSource *sourcep = queue.top();
+		queue.pop();
+
+		//If the syncmaster hasn't just started playing, or hasn't just looped then skip this soundslave,
+		//as there's nothing to do with it yet.
+		if (sourcep->isSyncSlave() && !syncmaster_started)
+		{
 			continue;
 		}
 
 		LLAudioChannel *channelp = sourcep->getChannel();
+
 		if (!channelp)
 		{
-			// This sound isn't playing, so we just process move the queue
-			sourcep->mCurrentDatap = sourcep->mQueuedDatap;
-			sourcep->mQueuedDatap = NULL;
-
-			// Reset the timer so the source doesn't die.
-			sourcep->mAgeTimer.reset();
-			// Make sure we have the buffer set up if we just decoded the data
-			if (sourcep->mCurrentDatap)
+			//No more channels. We can break here, as in theory, any lower priority sounds should have had their 
+			//channel already stolen. There should be nothing playing, nor playable, when iterating beyond this point.
+			if(!(channelp = getFreeChannel(sourcep->getPriority())))
 			{
-				updateBufferForData(sourcep->mCurrentDatap);
+				break;
 			}
 
-			// Actually play the associated data.
-			sourcep->setupChannel();
-			channelp = sourcep->getChannel();
-			if (channelp)
-			{
-				channelp->updateBuffer();
-				sourcep->getChannel()->play();
-			}
-			continue;
+			//If this is the primary syncmaster that we just started, then [re]start syncslaves further down in the priority queue.
+			//Due to sorting and priority fudgery, the syncmaster is ALWAYS before any syncslaves in this loop.
+			syncmaster_started |= (sourcep == sync_masterp);
+
+			//setSource calls updateBuffer and update3DPosition, and resets the source mAgeTimer
+			channelp->setSource(sourcep);	
 		}
+
+		if(sourcep->isSyncSlave())
+			channelp->playSynced(sync_masterp->getChannel());
 		else
-		{
-			// Check to see if the current sound is done playing, or looped.
-			if (!channelp->isPlaying())
-			{
-				sourcep->mCurrentDatap = sourcep->mQueuedDatap;
-				sourcep->mQueuedDatap = NULL;
-
-				// Reset the timer so the source doesn't die.
-				sourcep->mAgeTimer.reset();
-
-				// Make sure we have the buffer set up if we just decoded the data
-				if (sourcep->mCurrentDatap)
-				{
-					updateBufferForData(sourcep->mCurrentDatap);
-				}
-
-				// Actually play the associated data.
-				sourcep->setupChannel();
-				channelp->updateBuffer();
-				sourcep->getChannel()->play();
-			}
-			else if (sourcep->isLoop())
-			{
-				// It's a loop, we need to check and see if we're done with it.
-				if (channelp->mLoopedThisFrame)
-				{
-					sourcep->mCurrentDatap = sourcep->mQueuedDatap;
-					sourcep->mQueuedDatap = NULL;
-
-					// Actually, should do a time sync so if we're a loop master/slave
-					// we don't drift away.
-					sourcep->setupChannel();
-					sourcep->getChannel()->play();
-				}
-			}
-		}
-	}
-
-	// Lame, update the channels AGAIN.
-	// Update the channels to sync up with any changes that the source made,
-	// such as changing what sound was playing.
-	updateChannels();
-	
-	// Hack!  For now, just use a global sync master;
-	LLAudioSource *sync_masterp = NULL;
-	LLAudioChannel *master_channelp = NULL;
-	F32 max_sm_priority = -1.f;
-	for (iter = mAllSources.begin(); iter != mAllSources.end(); ++iter)
-	{
-		LLAudioSource *sourcep = iter->second;
-		if (sourcep->isMuted())
-		{
-			continue;
-		}
-		if (sourcep->isSyncMaster())
-		{
-			if (sourcep->getPriority() > max_sm_priority)
-			{
-				sync_masterp = sourcep;
-				master_channelp = sync_masterp->getChannel();
-				max_sm_priority = sourcep->getPriority();
-			}
-		}
-	}
-
-	if (master_channelp && master_channelp->mLoopedThisFrame)
-	{
-		// Synchronize loop slaves with their masters
-		// Update queued sounds (switch to next queued data if the current has finished playing)
-		for (iter = mAllSources.begin(); iter != mAllSources.end(); ++iter)
-		{
-			LLAudioSource *sourcep = iter->second;
-
-			if (!sourcep->isSyncSlave())
-			{
-				// Not a loop slave, we don't need to do anything
-				continue;
-			}
-
-			LLAudioChannel *channelp = sourcep->getChannel();
-			if (!channelp)
-			{
-				// Not playing, don't need to bother.
-				continue;
-			}
-
-			if (!channelp->isPlaying())
-			{
-				// Now we need to check if our loop master has just looped, and
-				// start playback if that's the case.
-				if (sync_masterp->getChannel())
-				{
-					channelp->playSynced(master_channelp);
-					channelp->setWaiting(false);
-				}
-			}
-		}
+			channelp->play();
 	}
 
 	// Sync up everything that the audio engine needs done.
@@ -488,7 +495,7 @@ void LLAudioEngine::idle(F32 max_decode_time)
 		{
 			if (!mBuffers[i]->mInUse && mBuffers[i]->mLastUseTimer.getElapsedTimeF32() > 30.f)
 			{
-				//llinfos << "Flushing unused buffer!" << llendl;
+				LL_DEBUGS("AudioEngine") << "Flushing unused buffer!" << LL_ENDL;
 				mBuffers[i]->mAudioDatap->mBufferp = NULL;
 				delete mBuffers[i];
 				mBuffers[i] = NULL;
@@ -509,49 +516,12 @@ void LLAudioEngine::idle(F32 max_decode_time)
 	// Decode audio files
 	gAudioDecodeMgrp->processQueue(max_decode_time);
 	
-	// Call this every frame, just in case we somehow
-	// missed picking it up in all the places that can add
-	// or request new data.
+	// Just call here every frame. It makes little sense to call elsewhere,
+	// as it's throttled to one active preloading loading sound at a time anyhow
 	startNextTransfer();
 
 	updateInternetStream();
 }
-
-
-
-bool LLAudioEngine::updateBufferForData(LLAudioData *adp, const LLUUID &audio_uuid)
-{
-	if (!adp)
-	{
-		return false;
-	}
-
-	// Update the audio buffer first - load a sound if we have it.
-	// Note that this could potentially cause us to waste time updating buffers
-	// for sounds that actually aren't playing, although this should be mitigated
-	// by the fact that we limit the number of buffers, and we flush buffers based
-	// on priority.
-	if (!adp->getBuffer())
-	{
-		if (adp->hasDecodedData())
-		{
-			adp->load();
-		}
-		else if (adp->hasLocalData())
-		{
-			if (audio_uuid.notNull())
-			{
-				gAudioDecodeMgrp->addDecodeRequest(audio_uuid);
-			}
-		}
-		else
-		{
-			return false;
-		}
-	}
-	return true;
-}
-
 
 void LLAudioEngine::enableWind(bool enable)
 {
@@ -569,6 +539,8 @@ void LLAudioEngine::enableWind(bool enable)
 
 LLAudioBuffer * LLAudioEngine::getFreeBuffer()
 {
+	//checkStates();	//Fails
+
 	S32 i;
 	for (i = 0; i < MAX_BUFFERS; i++)
 	{
@@ -579,6 +551,7 @@ LLAudioBuffer * LLAudioEngine::getFreeBuffer()
 		}
 	}
 
+	//checkStates();	// Fails
 
 	// Grab the oldest unused buffer
 	F32 max_age = -1.f;
@@ -598,15 +571,27 @@ LLAudioBuffer * LLAudioEngine::getFreeBuffer()
 		}
 	}
 
+	//checkStates();	//Fails
+
 	if (buffer_id >= 0)
 	{
-		lldebugs << "Taking over unused buffer " << buffer_id << llendl;
-		//llinfos << "Flushing unused buffer!" << llendl;
+		LL_DEBUGS("AudioEngine") << "Taking over unused buffer! max_age=" << max_age << LL_ENDL;
 		mBuffers[buffer_id]->mAudioDatap->mBufferp = NULL;
+		for (U32 i = 0; i < MAX_CHANNELS; i++)
+		{
+			LLAudioChannel* channelp = mChannels[i];
+			if(channelp && channelp->mCurrentBufferp == mBuffers[buffer_id])
+			{
+				channelp->cleanup();
+				llassert(channelp->mCurrentBufferp == NULL);
+			}
+		}
 		delete mBuffers[buffer_id];
 		mBuffers[buffer_id] = createBuffer();
 		return mBuffers[buffer_id];
 	}
+
+	//checkStates();	//Fails
 	return NULL;
 }
 
@@ -625,13 +610,9 @@ LLAudioChannel * LLAudioEngine::getFreeChannel(const F32 priority)
 		else
 		{
 			// Channel is allocated but not playing right now, use it.
-			if (!mChannels[i]->isPlaying() && !mChannels[i]->isWaiting())
+			if (mChannels[i]->isFree())
 			{
-				mChannels[i]->cleanup();
-				if (mChannels[i]->getSource())
-				{
-					mChannels[i]->getSource()->setChannel(NULL);
-				}
+				LL_DEBUGS("AudioEngine") << "Replacing unused channel" << LL_ENDL;
 				return mChannels[i];
 			}
 		}
@@ -653,15 +634,15 @@ LLAudioChannel * LLAudioEngine::getFreeChannel(const F32 priority)
 		}
 	}
 
-	if (min_priority > priority || !min_channelp)
+	if (!min_channelp || min_priority >= priority)
 	{
 		// All playing channels have higher priority, return.
 		return NULL;
 	}
 
+	LL_DEBUGS("AudioEngine") << "Flushing min channel" << LL_ENDL;
 	// Flush the minimum priority channel, and return it.
 	min_channelp->cleanup();
-	min_channelp->getSource()->setChannel(NULL);
 	return min_channelp;
 }
 
@@ -682,19 +663,22 @@ void LLAudioEngine::cleanupBuffer(LLAudioBuffer *bufferp)
 
 bool LLAudioEngine::preloadSound(const LLUUID &uuid)
 {
-	gAudiop->getAudioData(uuid);	// We don't care about the return value, this is just to make sure
-									// that we have an entry, which will mean that the audio engine knows about this
+	if(uuid.isNull())
+		return false;
 
-	if (gAudioDecodeMgrp->addDecodeRequest(uuid))
+	if(getAudioData(uuid)->getLoadState() >= LLAudioData::STATE_LOAD_DECODING)
 	{
 		// This means that we do have a local copy, and we're working on decoding it.
 		return true;
 	}
 
+	LL_INFOS("AudioEngine") << "Preloading system sound " << uuid << LL_ENDL;
+	mPreloadSystemList.push_back(uuid);
+
 	// At some point we need to have the audio/asset system check the static VFS
 	// before it goes off and fetches stuff from the server.
-	//llwarns << "Used internal preload for non-local sound" << llendl;
-	return false;
+	//LL_INFOS("AudioEngine") << "Used internal preload for non-local sound" << LL_ENDL;
+	return true;
 }
 
 
@@ -826,8 +810,10 @@ void LLAudioEngine::triggerSound(const LLUUID &audio_uuid, const LLUUID& owner_i
 								 const S32 type, const LLVector3d &pos_global, const LLUUID source_object)
 								 // </edit>
 {
+	if(!mListenerp)
+		return;
 	// Create a new source (since this can't be associated with an existing source.
-	//llinfos << "Localized: " << audio_uuid << llendl;
+	//LL_INFOS("AudioEngine") << "Localized: " << audio_uuid << LL_ENDL;
 
 	if (mMuted || gain < FLT_EPSILON*2)
 	{
@@ -857,7 +843,10 @@ void LLAudioEngine::triggerSound(const LLUUID &audio_uuid, const LLUUID& owner_i
 
 void LLAudioEngine::setListenerPos(LLVector3 aVec)
 {
-	mListenerp->setPosition(aVec);  
+	if (mListenerp)
+	{
+		mListenerp->setPosition(aVec);
+	}
 }
 
 
@@ -865,7 +854,7 @@ LLVector3 LLAudioEngine::getListenerPos()
 {
 	if (mListenerp)
 	{
-		return(mListenerp->getPosition());  
+		return mListenerp->getPosition();  
 	}
 	else
 	{
@@ -876,24 +865,37 @@ LLVector3 LLAudioEngine::getListenerPos()
 
 void LLAudioEngine::setListenerVelocity(LLVector3 aVec)
 {
-	mListenerp->setVelocity(aVec);  
+	if (mListenerp)
+	{
+		mListenerp->setVelocity(aVec);
+	}
 }
 
 
 void LLAudioEngine::translateListener(LLVector3 aVec)
 {
-	mListenerp->translate(aVec);	
+	if (mListenerp)
+	{
+		mListenerp->translate(aVec);
+	}
 }
 
 
 void LLAudioEngine::orientListener(LLVector3 up, LLVector3 at)
 {
-	mListenerp->orient(up, at);  
+	if (mListenerp)
+	{
+		mListenerp->orient(up, at);  
+	}
 }
 
 
 void LLAudioEngine::setListener(LLVector3 pos, LLVector3 vel, LLVector3 up, LLVector3 at)
 {
+	if(!mListenerp)
+	{
+		allocateListener();
+	}
 	mListenerp->set(pos,vel,up,at);  
 }
 
@@ -944,7 +946,10 @@ F32 LLAudioEngine::getRolloffFactor()
 
 void LLAudioEngine::commitDeferredChanges()
 {
-	mListenerp->commitDeferredChanges();  
+	if(mListenerp)
+	{
+		mListenerp->commitDeferredChanges();  
+	}
 }
 
 
@@ -995,10 +1000,13 @@ LLAudioData * LLAudioEngine::getAudioData(const LLUUID &audio_uuid)
 			if(	sourcep && sourcep->getCurrentData() && sourcep->getCurrentData()->getID() == audio_uuid )
 			{
 				LLAudioChannel* chan=sourcep->getChannel();
-				delete sourcep;
 				if(chan)
+				{
+					LL_DEBUGS("AudioEngine") << "removeAudioData" << LL_ENDL;
 					chan->cleanup();
-				 mAllSources.erase(iter2++);
+				}
+				delete sourcep;
+				mAllSources.erase(iter2++);
 			}
 			else
 				++iter2;
@@ -1032,7 +1040,7 @@ void LLAudioEngine::cleanupAudioSource(LLAudioSource *asp)
 	iter = mAllSources.find(asp->getID());
 	if (iter == mAllSources.end())
 	{
-		llwarns << "Cleaning up unknown audio source!" << llendl;
+		LL_WARNS("AudioEngine") << "Cleaning up unknown audio source!" << LL_ENDL;
 		return;
 	}
 	delete asp;
@@ -1059,29 +1067,39 @@ bool LLAudioEngine::hasDecodedFile(const LLUUID &uuid)
 	}
 }
 
-
-bool LLAudioEngine::hasLocalFile(const LLUUID &uuid)
-{
-	// See if it's in the VFS.
-	return gVFS->getExists(uuid, LLAssetType::AT_SOUND);
-}
-
-
 void LLAudioEngine::startNextTransfer()
 {
-	//llinfos << "LLAudioEngine::startNextTransfer()" << llendl;
-	if (mCurrentTransfer.notNull() || getMuted())
+	//LL_INFOS("AudioEngine") << "LLAudioEngine::startNextTransfer()" << LL_ENDL;
+	if (getMuted())
 	{
-		//llinfos << "Transfer in progress, aborting" << llendl;
 		return;
 	}
+	else if(mCurrentTransferTimer.getElapsedTimeF32() <= .1f)
+	{
+		return;
+	}
+	else if(mCurrentTransfer && mCurrentTransfer->isInPreload())
+	{
+		//Keep updating until it either errors out or completes.
+		mCurrentTransfer->updateLoadState();	
+		return;
+	}
+	else
+	{
+		mCurrentTransfer = NULL;
+	}
+
+	//Technically, mCurrentTransfer could end up pointing to an audiodata object that's already
+	//being transmitted/decoded if such was spawned via needing it for playback immediately.
+	//This will effectively block us from choosing a lower priority audiodata object until the
+	//immediate ones are done, but it's not a real problem.
 
 	// Get the ID for the next asset that we want to transfer.
 	// Pick one in the following order:
-	LLUUID asset_id;
 	S32 i;
 	LLAudioSource *asp = NULL;
 	LLAudioData *adp = NULL;
+	LLAudioData *cur_adp = NULL;
 	data_map::iterator data_iter;
 
 	// Check all channels for currently playing sounds.
@@ -1114,15 +1132,15 @@ void LLAudioEngine::startNextTransfer()
 			continue;
 		}
 
-		if (!adp->hasLocalData() && adp->hasValidData())
+		if (adp->isInPreload())
 		{
-			asset_id = adp->getID();
 			max_pri = asp->getPriority();
+			cur_adp = adp;
 		}
 	}
 
 	// Check all channels for currently queued sounds.
-	if (asset_id.isNull())
+	if (!cur_adp)
 	{
 		max_pri = -1.f;
 		for (i = 0; i < MAX_CHANNELS; i++)
@@ -1150,16 +1168,16 @@ void LLAudioEngine::startNextTransfer()
 				continue;
 			}
 
-			if (!adp->hasLocalData() && adp->hasValidData())
+			if (adp->isInPreload())
 			{
-				asset_id = adp->getID();
 				max_pri = asp->getPriority();
+				cur_adp = adp;
 			}
 		}
 	}
 
 	// Check all live channels for other sounds (preloads).
-	if (asset_id.isNull())
+	if (!cur_adp)
 	{
 		max_pri = -1.f;
 		for (i = 0; i < MAX_CHANNELS; i++)
@@ -1190,17 +1208,17 @@ void LLAudioEngine::startNextTransfer()
 					continue;
 				}
 
-				if (!adp->hasLocalData() && adp->hasValidData())
+				if (adp->isInPreload())
 				{
-					asset_id = adp->getID();
 					max_pri = asp->getPriority();
+					cur_adp = adp;
 				}
 			}
 		}
 	}
 
 	// Check all sources
-	if (asset_id.isNull())
+	if (!cur_adp)
 	{
 		max_pri = -1.f;
 		source_map::iterator source_iter;
@@ -1218,18 +1236,18 @@ void LLAudioEngine::startNextTransfer()
 			}
 
 			adp = asp->getCurrentData();
-			if (adp && !adp->hasLocalData() && adp->hasValidData())
+			if (adp && adp->isInPreload())
 			{
-				asset_id = adp->getID();
 				max_pri = asp->getPriority();
+				cur_adp = adp;
 				continue;
 			}
 
 			adp = asp->getQueuedData();
-			if (adp && !adp->hasLocalData() && adp->hasValidData())
+			if (adp && adp->isInPreload())
 			{
-				asset_id = adp->getID();
 				max_pri = asp->getPriority();
+				cur_adp = adp;
 				continue;
 			}
 
@@ -1241,27 +1259,45 @@ void LLAudioEngine::startNextTransfer()
 					continue;
 				}
 
-				if (!adp->hasLocalData() && adp->hasValidData())
+				if (adp->isInPreload())
 				{
-					asset_id = adp->getID();
 					max_pri = asp->getPriority();
+					cur_adp = adp;
 					break;
 				}
 			}
 		}
 	}
 
-	if (asset_id.notNull())
+	if (!cur_adp)
 	{
-		llinfos << "Getting asset data for: " << asset_id << llendl;
-		gAudiop->mCurrentTransfer = asset_id;
-		gAudiop->mCurrentTransferTimer.reset();
-		gAssetStorage->getAssetData(asset_id, LLAssetType::AT_SOUND,
-									assetCallback, NULL);
+		while(!mPreloadSystemList.empty())
+		{
+			adp = getAudioData(mPreloadSystemList.front());
+			mPreloadSystemList.pop_front();
+			if(adp->isInPreload())
+			{
+				cur_adp = adp;
+				break;
+			}
+		}
+	}
+	else if(cur_adp)
+	{
+		std::list<LLUUID>::iterator it = std::find(mPreloadSystemList.begin(),mPreloadSystemList.end(),cur_adp->getID());
+		if(it != mPreloadSystemList.end())
+			mPreloadSystemList.erase(it);
+	}
+
+	if (cur_adp)
+	{
+		mCurrentTransfer = cur_adp;
+		mCurrentTransferTimer.reset();
+		mCurrentTransfer->updateLoadState();
 	}
 	else
 	{
-		//llinfos << "No pending transfers?" << llendl;
+		//LL_INFOS("AudioEngine") << "No pending transfers?" << LL_ENDL;
 	}
 }
 
@@ -1269,37 +1305,36 @@ void LLAudioEngine::startNextTransfer()
 // static
 void LLAudioEngine::assetCallback(LLVFS *vfs, const LLUUID &uuid, LLAssetType::EType type, void *user_data, S32 result_code, LLExtStat ext_status)
 {
+	if(!gAudiop)
+		return;
+
+	LLAudioData *adp = gAudiop->getAudioData(uuid);
+
 	if (result_code)
 	{
-		llinfos << "Boom, error in audio file transfer: " << LLAssetStorage::getErrorString( result_code ) << " (" << result_code << ")" << llendl;
+		LL_INFOS("AudioEngine") << "Boom, error in audio file transfer: " << LLAssetStorage::getErrorString( result_code ) << " (" << result_code << ")" << LL_ENDL;
 		// Need to mark data as bad to avoid constant rerequests.
-		LLAudioData *adp = gAudiop->getAudioData(uuid);
+		
 		if (adp)
-		{	// Make sure everything is cleared
-			adp->setHasValidData(false);
-			adp->setHasLocalData(false);
-			adp->setHasDecodedData(false);
-			adp->setHasCompletedDecode(true);
+		{	
+			adp->setLoadState(LLAudioData::STATE_LOAD_ERROR);
 		}
 	}
 	else
 	{
-		LLAudioData *adp = gAudiop->getAudioData(uuid);
 		if (!adp)
         {
 			// Should never happen
-			llwarns << "Got asset callback without audio data for " << uuid << llendl;
+			LL_WARNS("AudioEngine") << "Got asset callback without audio data for " << uuid << LL_ENDL;
         }
 		else
 		{
-			// llinfos << "Got asset callback with good audio data for " << uuid << ", making decode request" << llendl;
-			adp->setHasValidData(true);
-			adp->setHasLocalData(true);
-			gAudioDecodeMgrp->addDecodeRequest(uuid);
+			// LL_INFOS("AudioEngine") << "Got asset callback with good audio data for " << uuid << ", making decode request" << LL_ENDL;
+			adp->setLoadState(LLAudioData::STATE_LOAD_REQ_DECODE);
+			//Immediate decode.
+			adp->updateLoadState();
 		}
 	}
-	gAudiop->mCurrentTransfer = LLUUID::null;
-	gAudiop->startNextTransfer();
 }
 
 
@@ -1349,8 +1384,7 @@ LLAudioSource::~LLAudioSource()
 	if (mChannelp)
 	{
 		// Stop playback of this sound
-		mChannelp->setSource(NULL);
-		setChannel(NULL);
+		mChannelp->cleanup();
 	}
 }
 
@@ -1361,6 +1395,9 @@ void LLAudioSource::setChannel(LLAudioChannel *channelp)
 	{
 		return;
 	}
+
+	//Either this channel just finished playing, or just started. Either way, reset the age timer.
+	mAgeTimer.reset();	
 
 	// <edit>
 	if (!channelp)
@@ -1380,22 +1417,38 @@ void LLAudioSource::update()
 		return ; //no need to update
 	}
 
-	if (!getCurrentBuffer())
+	// If data is queued up and we aren't playing it, shuffle it to current and try to load it.
+	if(isQueueSounds() && mPlayedOnce && mQueuedDatap && !mChannelp)	
 	{
-		LLAudioData *adp = getCurrentData();
-		if (adp)
+		mCurrentDatap = mQueuedDatap;
+		mQueuedDatap = NULL;
+
+		//Make sure this source looks like its brand new again to prevent removal.
+		mPlayedOnce = false;
+		mAgeTimer.reset();	
+	}
+
+	LLAudioData *adp = getCurrentData();
+	if (adp && !adp->getBuffer())
+	{
+		if(adp->getLoadState() == LLAudioData::STATE_LOAD_ERROR)
 		{
-			// Hack - try and load the sound.  Will do this as a callback
-			// on decode later.
-			if (adp->load() && adp->getBuffer())
-			{
-				play(adp->getID());
-			}
-			else if (adp->hasCompletedDecode())		// Only mark corrupted after decode is done
-			{
-				llwarns << "Marking LLAudioSource corrupted for " << adp->getID() << llendl;
-				mCorrupted = true ;
-			}
+			LL_WARNS("AudioEngine") << "Marking LLAudioSource corrupted for " << adp->getID() << LL_ENDL;
+			mCorrupted = true ;
+		}
+		else if(adp->getLoadState() == LLAudioData::STATE_LOAD_READY)
+		{
+			// Update the audio buffer first - load a sound if we have it.
+			// Note that this could potentially cause us to waste time updating buffers
+			// for sounds that actually aren't playing, although this should be mitigated
+			// by the fact that we limit the number of buffers, and we flush buffers based
+			// on priority.
+			adp->load();	//If it fails, just try again next update.
+		}
+		else
+		{
+			//The sound wasn't preloaded yet... so we must kick off the process.
+			adp->updateLoadState();
 		}
 	}
 }
@@ -1404,11 +1457,11 @@ void LLAudioSource::updatePriority()
 {
 	if (isAmbient())
 	{
-		mPriority = 1.f;
+		setPriority(1.f);
 	}
 	else if (isMuted())
 	{
-		mPriority = 0.f;
+		setPriority(0.f);
 	}
 	else
 	{
@@ -1418,43 +1471,9 @@ void LLAudioSource::updatePriority()
 		dist_vec -= gAudiop->getListenerPos();
 		F32 dist_squared = llmax(1.f, dist_vec.magVecSquared());
 
-		mPriority = mGain / dist_squared;
+		setPriority(mGain / dist_squared);
 	}
 }
-
-bool LLAudioSource::setupChannel()
-{
-	LLAudioData *adp = getCurrentData();
-
-	if (!adp->getBuffer())
-	{
-		// We're not ready to play back the sound yet, so don't try and allocate a channel for it.
-		//llwarns << "Aborting, no buffer" << llendl;
-		return false;
-	}
-
-
-	if (!mChannelp)
-	{
-		// Update the priority, in case we need to push out another channel.
-		updatePriority();
-
-		setChannel(gAudiop->getFreeChannel(getPriority()));
-	}
-
-	if (!mChannelp)
-	{
-		// Ugh, we don't have any free channels.
-		// Now we have to reprioritize.
-		// For now, just don't play the sound.
-		//llwarns << "Aborting, no free channels" << llendl;
-		return false;
-	}
-
-	mChannelp->setSource(this);
-	return true;
-}
-
 
 bool LLAudioSource::play(const LLUUID &audio_uuid)
 {
@@ -1463,8 +1482,8 @@ bool LLAudioSource::play(const LLUUID &audio_uuid)
 	{
 		if (getChannel())
 		{
-			getChannel()->setSource(NULL);
-			setChannel(NULL);
+			llassert(this == getChannel()->getSource());
+			getChannel()->cleanup();
 			if (!isMuted())
 			{
 				mCurrentDatap = NULL;
@@ -1482,172 +1501,112 @@ bool LLAudioSource::play(const LLUUID &audio_uuid)
 	mAgeTimer.reset();
 
 	LLAudioData *adp = gAudiop->getAudioData(audio_uuid);
-	addAudioData(adp);
 
-	if (isMuted())
+	if (isQueueSounds())
 	{
-		return false;
+		if(mQueuedDatap)
+		{
+			// We already have a sound queued up. Ignore new request.
+			return false;
+		}
+		else if (adp == mCurrentDatap && isLoop())
+		{
+			// No point in queuing the same sound if
+			// we're looping.
+			return true;
+		}
+		else if(mCurrentDatap)
+		{
+			mQueuedDatap = adp;
+			return true;
+		}
 	}
-
-	bool has_buffer = gAudiop->updateBufferForData(adp, audio_uuid);
-	if (!has_buffer)
+	else if(mCurrentDatap == adp)	//Desired sound did not change. Just re-play it.
 	{
-		// Don't bother trying to set up a channel or anything, we don't have an audio buffer.
-		return false;
-	}
-
-	if (!setupChannel())
-	{
-		return false;
-	}
-
-	if (isSyncSlave())
-	{
-		// A sync slave, it doesn't start playing until it's synced up with the master.
-		// Flag this channel as waiting for sync, and return true.
-		getChannel()->setWaiting(true);
+		if(getChannel() && getChannel()->isPlaying())
+			getChannel()->play();
 		return true;
 	}
+	else							//Desired sound did change. Release the old channel if set.
+	{
+		if(getChannel())
+			getChannel()->cleanup();
+		mPlayedOnce = false;		//Reset the played flag so the new sound is actually started up.
+	}
 
-	getChannel()->play();
+	mCurrentDatap = adp;
+
 	return true;
 }
 
 
 bool LLAudioSource::isDone() const
 {
+	static const F32 MAX_AGE = 60.f;
+	static const F32 MAX_UNPLAYED_AGE = 15.f;
+	static const F32 MAX_MUTED_AGE = 11.f;
 	if(mCorrupted)
 	{
-		return true ;
+		// If we decode bad data then just kill this source entirely.
+		return true;
 	}
-
-	const F32 MAX_AGE = 60.f;
-	const F32 MAX_UNPLAYED_AGE = 15.f;
-	const F32 MAX_MUTED_AGE = 11.f;
-
-	if (isLoop())
+	else if (isLoop())
 	{
 		// Looped sources never die on their own.
 		return false;
 	}
-
-	if (hasPendingPreloads())
+	else if (hasPendingPreloads())
 	{
+		// If there are pending preload requests then keep it alive.
 		return false;
 	}
-
-	if (mQueuedDatap)
+	else if (mQueuedDatap)
 	{
 		// Don't kill this sound if we've got something queued up to play.
 		return false;
 	}
+	else if(mPlayedOnce && (!mChannelp || !mChannelp->isPlaying()))
+	{
+		// This is a single-play source and it already did its thing.
+		return true;
+	}
 
 	F32 elapsed = mAgeTimer.getElapsedTimeF32();
 
-	// This is a single-play source
 	if (!mChannelp)
 	{
-		if ((elapsed > (mSourceMuted ? MAX_MUTED_AGE : MAX_UNPLAYED_AGE)) || mPlayedOnce)
-		{
-			// We don't have a channel assigned, and it's been
-			// over 15 seconds since we tried to play it.  Don't bother.
-			//llinfos << "No channel assigned, source is done" << llendl;
-			return true;
-		}
-		else
-		{
-			return false;
-		}
-	}
+		LLAudioData* adp = mCurrentDatap;
 
-	if (mChannelp->isPlaying())
-	{
-		if (elapsed > MAX_AGE)
-		{
-			// Arbitarily cut off non-looped sounds when they're old.
-			return true;
-		}
-		else
-		{
-			// Sound is still playing and we haven't timed out, don't kill it.
+		//Still decoding.
+		if(adp && adp->isInPreload())
 			return false;
-		}
-	}
 
-	if ((elapsed > MAX_UNPLAYED_AGE) || mPlayedOnce)
+		// We don't have a channel assigned, and it's been
+		// over 15 seconds since we tried to play it.  Don't bother.
+		return (elapsed > (mSourceMuted ? MAX_MUTED_AGE : MAX_UNPLAYED_AGE));
+	}
+	else if (mChannelp->isPlaying())
 	{
-		// The sound isn't playing back after 15 seconds or we're already done playing it, kill it.
-		return true;
+		// Arbitarily cut off non-looped sounds when they're old.
+		return elapsed > MAX_AGE;
+	}
+	else if(!isSyncSlave())
+	{
+		// The sound isn't playing back after 15 seconds, kill it.
+		// This might happen if all channels are in use and this source is low-priority
+		return elapsed > MAX_UNPLAYED_AGE;
 	}
 
 	return false;
 }
 
 
-void LLAudioSource::addAudioData(LLAudioData *adp, const bool set_current)
+void LLAudioSource::preload(const LLUUID &audio_id)
 {
-	// Only handle a single piece of audio data associated with a source right now,
-	// until I implement prefetch.
-	if (set_current)
-	{
-		if (!mCurrentDatap)
-		{
-			mCurrentDatap = adp;
-			if (mChannelp)
-			{
-				mChannelp->updateBuffer();
-				mChannelp->play();
-			}
-
-			// Make sure the audio engine knows that we want to request this sound.
-			gAudiop->startNextTransfer();
-			return;
-		}
-		else if (mQueueSounds)
-		{
-			// If we have current data, and we're queuing, put
-			// the object onto the queue.
-			if (mQueuedDatap)
-			{
-				// We only queue one sound at a time, and it's a FIFO.
-				// Don't put it onto the queue.
-				return;
-			}
-
-			if (adp == mCurrentDatap && isLoop())
-			{
-				// No point in queueing the same sound if
-				// we're looping.
-				return;
-			}
-			mQueuedDatap = adp;
-
-			// Make sure the audio engine knows that we want to request this sound.
-			gAudiop->startNextTransfer();
-		}
-		else
-		{
-			if (mCurrentDatap != adp)
-			{
-				// Right now, if we're currently playing this sound in a channel, we
-				// update the buffer that the channel's associated with
-				// and play it.  This may not be the correct behavior.
-				mCurrentDatap = adp;
-				if (mChannelp)
-				{
-					mChannelp->updateBuffer();
-					mChannelp->play();
-				}
-				// Make sure the audio engine knows that we want to request this sound.
-				gAudiop->startNextTransfer();
-			}
-		}
-	}
-	else
+	if(audio_id.notNull())
 	{
 		// Add it to the preload list.
-		mPreloadMap[adp->getID()] = adp;
-		gAudiop->startNextTransfer();
+		mPreloadMap[audio_id] = gAudiop->getAudioData(audio_id);
 	}
 }
 
@@ -1665,7 +1624,7 @@ bool LLAudioSource::hasPendingPreloads() const
 		{
 			continue;
 		}
-		if (!adp->hasDecodedData() && adp->hasValidData())
+		if (adp->isInPreload())
 		{
 			// This source is still waiting for a preload
 			return true;
@@ -1708,47 +1667,36 @@ LLAudioChannel::LLAudioChannel() :
 	mCurrentSourcep(NULL),
 	mCurrentBufferp(NULL),
 	mLoopedThisFrame(false),
-	mWaiting(false),
 	mSecondaryGain(1.0f)
 {
 }
 
-
 LLAudioChannel::~LLAudioChannel()
 {
+	llassert(mCurrentBufferp == NULL);
+	
 	// Need to disconnect any sources which are using this channel.
-	//llinfos << "Cleaning up audio channel" << llendl;
-	if (mCurrentSourcep)
-	{
+	//LL_INFOS("AudioEngine") << "Cleaning up audio channel" << LL_ENDL;
+	cleanup();
+}
+
+void LLAudioChannel::cleanup()
+{
+	if(mCurrentSourcep)
 		mCurrentSourcep->setChannel(NULL);
-	}
 	mCurrentBufferp = NULL;
+	mCurrentSourcep = NULL;
 }
 
 
 void LLAudioChannel::setSource(LLAudioSource *sourcep)
 {
-	//llinfos << this << ": setSource(" << sourcep << ")" << llendl;
-
-	if (!sourcep)
-	{
-		// Clearing the source for this channel, don't need to do anything.
-		//llinfos << "Clearing source for channel" << llendl;
-		cleanup();
-		mCurrentSourcep = NULL;
-		mWaiting = false;
-		return;
-	}
-
-	if (sourcep == mCurrentSourcep)
-	{
-		// Don't reallocate the channel, this will make FMOD goofy.
-		//llinfos << "Calling setSource with same source!" << llendl;
-	}
+	llassert_always(sourcep);
+	llassert_always(!mCurrentSourcep);
 
 	mCurrentSourcep = sourcep;
-
-
+	mCurrentSourcep->setChannel(this);
+	
 	updateBuffer();
 	update3DPosition();
 }
@@ -1770,37 +1718,16 @@ bool LLAudioChannel::updateBuffer()
 	}
 
 	LLAudioBuffer *bufferp = mCurrentSourcep->getCurrentBuffer();
-	if (bufferp == mCurrentBufferp)
-	{
-		if (bufferp)
-		{
-			// The source hasn't changed what buffer it's playing
-			bufferp->mLastUseTimer.reset();
-			bufferp->mInUse = true;
-		}
-		return false;
-	}
 
-	//
-	// The source changed what buffer it's playing.  We need to clean up
-	// the existing channel
-	//
-	cleanup();
-
-	mCurrentBufferp = bufferp;
+	//This buffer is still in use, so mark it as such, and reset the use timer.
 	if (bufferp)
 	{
 		bufferp->mLastUseTimer.reset();
 		bufferp->mInUse = true;
 	}
 
-	if (!mCurrentBufferp)
-	{
-		// There's no new buffer to be played, so we just abort.
-		return false;
-	}
-
-	return true;
+	//Return true if the buffer changed and is not null.
+	return bufferp != mCurrentBufferp && !!(mCurrentBufferp = bufferp);
 }
 
 
@@ -1814,27 +1741,42 @@ bool LLAudioChannel::updateBuffer()
 LLAudioData::LLAudioData(const LLUUID &uuid) :
 	mID(uuid),
 	mBufferp(NULL),
-	mHasLocalData(false),
-	mHasDecodedData(false),
-	mHasCompletedDecode(false),
-	mHasValidData(true)
+	mLoadState(STATE_LOAD_ERROR)
 {
 	if (uuid.isNull())
 	{
 		// This is a null sound.
 		return;
 	}
-	
-	if (gAudiop && gAudiop->hasDecodedFile(uuid))
+
+	if(gAudiop->hasDecodedFile(getID()))
+		mLoadState = STATE_LOAD_READY;
+	else if(gAssetStorage && gAssetStorage->hasLocalAsset(getID(), LLAssetType::AT_SOUND))
+		mLoadState = STATE_LOAD_REQ_DECODE;
+	else
+		mLoadState = STATE_LOAD_REQ_FETCH;
+}
+
+void LLAudioData::updateLoadState()
+{
+	if(mLoadState == STATE_LOAD_REQ_DECODE && gAudioDecodeMgrp)
 	{
-		// Already have a decoded version, don't need to decode it.
-		setHasLocalData(true);
-		setHasDecodedData(true);
-		setHasCompletedDecode(true);
+		if(	gAudioDecodeMgrp->addDecodeRequest(getID()) )
+		{
+			setLoadState(STATE_LOAD_DECODING);
+			LL_INFOS("AudioEngine") << "Decoding asset data for: " << getID() << LL_ENDL;
+		}
+		else
+		{
+			setLoadState(STATE_LOAD_ERROR);
+		}
 	}
-	else if (gAssetStorage && gAssetStorage->hasLocalAsset(uuid, LLAssetType::AT_SOUND))
+	else if(mLoadState == STATE_LOAD_REQ_FETCH && gAssetStorage && gAssetStorage->isUpstreamOK())
 	{
-		setHasLocalData(true);
+		LL_INFOS("AudioEngine") << "Fetching asset data for: " << getID() << LL_ENDL;
+		setLoadState(STATE_LOAD_FETCHING);
+
+		gAssetStorage->getAssetData(getID(), LLAssetType::AT_SOUND, LLAudioEngine::assetCallback, NULL);
 	}
 }
 
@@ -1845,7 +1787,7 @@ bool LLAudioData::load()
 	if (mBufferp)
 	{
 		// We already have this sound in a buffer, don't do anything.
-		llinfos << "Already have a buffer for this sound, don't bother loading!" << llendl;
+		LL_INFOS("AudioEngine") << "Already have a buffer for this sound, don't bother loading!" << LL_ENDL;
 		return true;
 	}
 	
@@ -1853,8 +1795,8 @@ bool LLAudioData::load()
 	if (!mBufferp)
 	{
 		// No free buffers, abort.
-		llinfos << "Not able to allocate a new audio buffer, aborting." << llendl;
-		return true;
+		LL_DEBUGS("AudioEngine") << "Not able to allocate a new audio buffer, aborting." << LL_ENDL;
+		return false;
 	}
 
 	std::string uuid_str;

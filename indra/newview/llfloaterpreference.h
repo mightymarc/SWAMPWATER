@@ -40,15 +40,12 @@
 #define LL_LLFLOATERPREFERENCE_H
 
 #include "llfloater.h"
-#include "lltabcontainervertical.h"
 
 class HippoPanelGrids;
 class LLPanelGeneral;
 class LLPanelInput;
-class LLPanelLCD;
 class LLPanelDisplay;
 class LLPanelAudioPrefs;
-class LLPanelDebug;
 class LLPanelNetwork;
 class LLPanelWeb;
 class LLMessageSystem;
@@ -92,13 +89,11 @@ private:
 	LLPanelNetwork	        *mNetworkPanel;
 	LLPanelDisplay	        *mDisplayPanel;
 	LLPanelAudioPrefs		*mAudioPanel;
-//	LLPanelDebug			*mDebugPanel;
 	LLPrefsChat				*mPrefsChat;
 	LLPrefsVoice			*mPrefsVoice;
 	LLPrefsIM				*mPrefsIM;
 	LLPanelWeb				*mWebPanel;
 	LLPanelMsgs				*mMsgPanel;
-	LLPanelLCD				*mLCDPanel;
 	LLPrefsAscentChat		*mPrefsAscentChat;
 	LLPrefsAscentSys		*mPrefsAscentSys;
 	LLPrefsAscentVan		*mPrefsAscentVan;
@@ -129,6 +124,7 @@ public:
 	static void closeWithoutSaving();
 
 protected:
+	friend class LLPanelNearByMedia;
 	LLPreferenceCore		*mPreferenceCore;
 
 	/*virtual*/ void		onClose(bool app_quitting);

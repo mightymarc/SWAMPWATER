@@ -2,31 +2,25 @@
  * @file llwindow.h
  * @brief Basic graphical window class
  *
- * $LicenseInfo:firstyear=2001&license=viewergpl$
- * 
- * Copyright (c) 2001-2009, Linden Research, Inc.
- * 
+ * $LicenseInfo:firstyear=2001&license=viewerlgpl$
  * Second Life Viewer Source Code
- * The source code in this file ("Source Code") is provided by Linden Lab
- * to you under the terms of the GNU General Public License, version 2.0
- * ("GPL"), unless you have obtained a separate licensing agreement
- * ("Other License"), formally executed by you and Linden Lab.  Terms of
- * the GPL can be found in doc/GPL-license.txt in this distribution, or
- * online at http://secondlifegrid.net/programs/open_source/licensing/gplv2
+ * Copyright (C) 2010, Linden Research, Inc.
  * 
- * There are special exceptions to the terms and conditions of the GPL as
- * it is applied to this Source Code. View the full text of the exception
- * in the file doc/FLOSS-exception.txt in this software distribution, or
- * online at
- * http://secondlifegrid.net/programs/open_source/licensing/flossexception
+ * This library is free software; you can redistribute it and/or
+ * modify it under the terms of the GNU Lesser General Public
+ * License as published by the Free Software Foundation;
+ * version 2.1 of the License only.
  * 
- * By copying, modifying or distributing this software, you acknowledge
- * that you have read and understood your obligations described above,
- * and agree to abide by those obligations.
+ * This library is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+ * Lesser General Public License for more details.
  * 
- * ALL LINDEN LAB SOURCE CODE IS PROVIDED "AS IS." LINDEN LAB MAKES NO
- * WARRANTIES, EXPRESS, IMPLIED OR OTHERWISE, REGARDING ITS ACCURACY,
- * COMPLETENESS OR PERFORMANCE.
+ * You should have received a copy of the GNU Lesser General Public
+ * License along with this library; if not, write to the Free Software
+ * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301  USA
+ * 
+ * Linden Research, Inc., 945 Battery Street, San Francisco, CA  94111  USA
  * $/LicenseInfo$
  */
 
@@ -47,12 +41,12 @@ class LLPreeditor;
 class LLWindowCallbacks;
 
 
-static const S32 MIN_WINDOW_WIDTH = 864;
-static const S32 MIN_WINDOW_HEIGHT = 472;
+const S32 MIN_WINDOW_WIDTH = 256;
+const S32 MIN_WINDOW_HEIGHT = 256;
 
 // Refer to llwindow_test in test/common/llwindow for usage example
 
-class LLWindow
+class LLWindow : public LLInstanceTracker<LLWindow>
 {
 public:
 	struct LLWindowResolution
@@ -85,7 +79,9 @@ public:
 	virtual BOOL getSize(LLCoordScreen *size) = 0;
 	virtual BOOL getSize(LLCoordWindow *size) = 0;
 	virtual BOOL setPosition(LLCoordScreen position) = 0;
-	virtual BOOL setSize(LLCoordScreen size) = 0;
+	BOOL setSize(LLCoordScreen size);
+	BOOL setSize(LLCoordWindow size);
+	virtual void setMinSize(U32 min_width, U32 min_height, bool enforce_immediately = true);
 	virtual BOOL switchContext(BOOL fullscreen, const LLCoordScreen &size, BOOL disable_vsync, const LLCoordScreen * const posp = NULL) = 0;
 	virtual BOOL setCursorPosition(LLCoordWindow position) = 0;
 	virtual BOOL getCursorPosition(LLCoordWindow *position) = 0;
@@ -104,12 +100,14 @@ public:
 	virtual S32 getBusyCount() const;
 
 	// Sets cursor, may set to arrow+hourglass
-	virtual void setCursor(ECursorType cursor) = 0;
+	virtual void setCursor(ECursorType cursor) { mNextCursor = cursor; };
 	virtual ECursorType getCursor() const;
+	virtual void updateCursor() = 0;
 
 	virtual void captureMouse() = 0;
 	virtual void releaseMouse() = 0;
 	virtual void setMouseClipping( BOOL b ) = 0;
+
 	virtual BOOL isClipboardTextAvailable() = 0;
 	virtual BOOL pasteTextFromClipboard(LLWString &dst) = 0;
 	virtual BOOL copyTextToClipboard(const LLWString &src) = 0;
@@ -177,12 +175,15 @@ public:
 	virtual void setTitle(const std::string &title){};
 
 protected:
-LLWindow(LLWindowCallbacks* callbacks, BOOL fullscreen, U32 flags);
+	LLWindow(LLWindowCallbacks* callbacks, BOOL fullscreen, U32 flags);
 	virtual ~LLWindow();
 	// Defaults to true
 	virtual BOOL isValid();
 	// Defaults to true
 	virtual BOOL canDelete();
+
+	virtual BOOL setSizeImpl(LLCoordScreen size) = 0;
+	virtual BOOL setSizeImpl(LLCoordWindow size) = 0;
 
 protected:
 	LLWindowCallbacks*	mCallbacks;
@@ -196,6 +197,7 @@ protected:
 	LLWindowResolution* mSupportedResolutions;
 	S32			mNumSupportedResolutions;
 	ECursorType	mCurrentCursor;
+	ECursorType	mNextCursor;
 	BOOL		mCursorHidden;
 	S32			mBusyCount;	// how deep is the "cursor busy" stack?
 	BOOL		mIsMouseClipping;  // Is this window currently clipping the mouse
@@ -203,6 +205,8 @@ protected:
 	BOOL		mHideCursorPermanent;
 	U32			mFlags;
 	U16			mHighSurrogate;
+	S32			mMinWindowWidth;
+	S32			mMinWindowHeight;
 
  	// Handle a UTF-16 encoding unit received from keyboard.
  	// Converting the series of UTF-16 encoding units to UTF-32 data,
@@ -286,7 +290,7 @@ extern BOOL gDebugWindowProc;
 // Protocols, like "http" and "https" we support in URLs
 extern const S32 gURLProtocolWhitelistCount;
 extern const std::string gURLProtocolWhitelist[];
-extern const std::string gURLProtocolWhitelistHandler[];
+//extern const std::string gURLProtocolWhitelistHandler[];
 
 void simpleEscapeString ( std::string& stringIn  );
 

@@ -2,31 +2,25 @@
  * @file llprocessor.cpp
  * @brief Code to figure out the processor. Originally by Benjamin Jurke.
  *
- * $LicenseInfo:firstyear=2002&license=viewergpl$
- * 
- * Copyright (c) 2002-2009, Linden Research, Inc.
- * 
+ * $LicenseInfo:firstyear=2002&license=viewerlgpl$
  * Second Life Viewer Source Code
- * The source code in this file ("Source Code") is provided by Linden Lab
- * to you under the terms of the GNU General Public License, version 2.0
- * ("GPL"), unless you have obtained a separate licensing agreement
- * ("Other License"), formally executed by you and Linden Lab.  Terms of
- * the GPL can be found in doc/GPL-license.txt in this distribution, or
- * online at http://secondlifegrid.net/programs/open_source/licensing/gplv2
+ * Copyright (C) 2010, Linden Research, Inc.
  * 
- * There are special exceptions to the terms and conditions of the GPL as
- * it is applied to this Source Code. View the full text of the exception
- * in the file doc/FLOSS-exception.txt in this software distribution, or
- * online at
- * http://secondlifegrid.net/programs/open_source/licensing/flossexception
+ * This library is free software; you can redistribute it and/or
+ * modify it under the terms of the GNU Lesser General Public
+ * License as published by the Free Software Foundation;
+ * version 2.1 of the License only.
  * 
- * By copying, modifying or distributing this software, you acknowledge
- * that you have read and understood your obligations described above,
- * and agree to abide by those obligations.
+ * This library is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+ * Lesser General Public License for more details.
  * 
- * ALL LINDEN LAB SOURCE CODE IS PROVIDED "AS IS." LINDEN LAB MAKES NO
- * WARRANTIES, EXPRESS, IMPLIED OR OTHERWISE, REGARDING ITS ACCURACY,
- * COMPLETENESS OR PERFORMANCE.
+ * You should have received a copy of the GNU Lesser General Public
+ * License along with this library; if not, write to the Free Software
+ * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301  USA
+ * 
+ * Linden Research, Inc., 945 Battery Street, San Francisco, CA  94111  USA
  * $/LicenseInfo$
  */
 
@@ -55,10 +49,10 @@
 #      define LL_X86 1
 #elif LL_MSVC && _M_IX86
 #      define LL_X86 1
-#elif LL_GNUC && ( defined(__amd64__) || defined(__x86_64__) )
+#elif LL_GNUC || LL_ICC || LL_CLANG && ( defined(__amd64__) || defined(__x86_64__) )
 #      define LL_X86_64 1
 #      define LL_X86 1
-#elif LL_GNUC && ( defined(__i386__) )
+#elif LL_GNUC || LL_ICC || LL_CLANG && ( defined(__i386__) )
 #      define LL_X86 1
 #elif LL_GNUC && ( defined(__powerpc__) || defined(__ppc__) )
 #      define LL_PPC 1
@@ -376,24 +370,24 @@ private:
 // uses the MSVC compiler intrinsics __cpuid() and __rdtsc().
 
 // Delays for the specified amount of milliseconds
-static	void	_Delay(unsigned int ms)
+static void _Delay(unsigned int ms)
 {
-   LARGE_INTEGER	freq, c1, c2;
-	__int64		x;
+	LARGE_INTEGER freq, c1, c2;
+	__int64 x;
 
-   // Get High-Res Timer frequency
+	// Get High-Res Timer frequency
 	if (!QueryPerformanceFrequency(&freq))	
 		return;
-		
+
 	// Convert ms to High-Res Timer value
 	x = freq.QuadPart/1000*ms;		
 
-   // Get first snapshot of High-Res Timer value
+	// Get first snapshot of High-Res Timer value
 	QueryPerformanceCounter(&c1);		
 	do
 	{
-            // Get second snapshot
-	    QueryPerformanceCounter(&c2);	
+		// Get second snapshot
+		QueryPerformanceCounter(&c2);	
 	}while(c2.QuadPart-c1.QuadPart < x);
 	// Loop while (second-first < x)	
 }
@@ -422,7 +416,7 @@ static F64 calculate_cpu_frequency(U32 measure_msecs)
 	unsigned long dwCurPriorityClass = GetPriorityClass(hProcess);
 	int iCurThreadPriority = GetThreadPriority(hThread);
 	unsigned long dwProcessMask, dwSystemMask, dwNewMask = 1;
-	GetProcessAffinityMask(hProcess, &dwProcessMask, &dwSystemMask);
+	GetProcessAffinityMask(hProcess, (PDWORD_PTR)&dwProcessMask, (PDWORD_PTR)&dwSystemMask);
 
 	SetPriorityClass(hProcess, REALTIME_PRIORITY_CLASS);
 	SetThreadPriority(hThread, THREAD_PRIORITY_TIME_CRITICAL);
@@ -794,7 +788,7 @@ private:
 		LLPI_SET_INFO_INT(eModel, "model");
 
 		
-		S32 family;							 
+		S32 family = 0;							 
 		if (!cpuinfo["cpu family"].empty() 
 			&& LLStringUtil::convertToS32(cpuinfo["cpu family"], family))	
 		{ 

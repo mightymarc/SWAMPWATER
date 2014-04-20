@@ -45,6 +45,7 @@
 #include "llappviewer.h"
 //#include "llfirstuse.h"
 #include "llfloaterinventory.h"
+#include "llfloateroutbox.h"
 #include "llfocusmgr.h"
 #include "llfolderview.h"
 #include "llgesturemgr.h"
@@ -94,7 +95,7 @@ LLUUID LLInventoryState::sWearNewClothingTransactionID;
 void append_path(const LLUUID& id, std::string& path)
 {
 	std::string temp;
-	LLInventoryObject* obj = gInventory.getObject(id);
+	const LLInventoryObject* obj = gInventory.getObject(id);
 	LLUUID parent_id;
 	if(obj) parent_id = obj->getParentUUID();
 	std::string forward_slash("/");
@@ -108,6 +109,37 @@ void append_path(const LLUUID& id, std::string& path)
 		}
 	}
 	path.append(temp);
+}
+
+// Path should already end on '/' if it is not empty.
+void append_path_short(LLUUID const& id, std::string& path)
+{
+	LLInventoryObject const* obj = gInventory.getObject(id);
+	if (!obj) return;
+
+	LLUUID const root_id = gInventory.getRootFolderID();
+	std::string const forward_slash("/");
+
+	std::string result;
+	while(1)
+	{
+		LLUUID parent_id = obj->getParentUUID();
+		if (parent_id == root_id ||
+			!(obj = gInventory.getCategory(parent_id)))
+		{
+			break;
+		}
+		std::string temp;
+		temp.swap(result);
+		result = obj->getName();
+		if (!temp.empty())
+		{
+			result.append(forward_slash);
+			result.append(temp);
+		}
+	}
+
+	path.append(result);
 }
 
 void rename_category(LLInventoryModel* model, const LLUUID& cat_id, const std::string& new_name)
@@ -128,6 +160,49 @@ void rename_category(LLInventoryModel* model, const LLUUID& cat_id, const std::s
 	model->updateCategory(new_cat);
 
 	model->notifyObservers();
+}
+
+void copy_inventory_category(LLInventoryModel* model,
+							 LLViewerInventoryCategory* cat,
+							 const LLUUID& parent_id,
+							 const LLUUID& root_copy_id)
+{
+	// Create the initial folder
+	LLUUID new_cat_uuid = gInventory.createNewCategory(parent_id, LLFolderType::FT_NONE, cat->getName());
+	model->notifyObservers();
+
+	// We need to exclude the initial root of the copy to avoid recursively copying the copy, etc...
+	LLUUID root_id = (root_copy_id.isNull() ? new_cat_uuid : root_copy_id);
+
+	// Get the content of the folder
+	LLInventoryModel::cat_array_t* cat_array;
+	LLInventoryModel::item_array_t* item_array;
+	gInventory.getDirectDescendentsOf(cat->getUUID(),cat_array,item_array);
+
+	// Copy all the items
+	LLInventoryModel::item_array_t item_array_copy = *item_array;
+	for (LLInventoryModel::item_array_t::iterator iter = item_array_copy.begin(); iter != item_array_copy.end(); iter++)
+	{
+		LLInventoryItem* item = *iter;
+		copy_inventory_item(
+							gAgent.getID(),
+							item->getPermissions().getOwner(),
+							item->getUUID(),
+							new_cat_uuid,
+							std::string(),
+							LLPointer<LLInventoryCallback>(NULL));
+	}
+
+	// Copy all the folders
+	LLInventoryModel::cat_array_t cat_array_copy = *cat_array;
+	for (LLInventoryModel::cat_array_t::iterator iter = cat_array_copy.begin(); iter != cat_array_copy.end(); iter++)
+	{
+		LLViewerInventoryCategory* category = *iter;
+		if (category->getUUID() != root_id)
+		{
+			copy_inventory_category(model, category, new_cat_uuid, root_id);
+		}
+	}
 }
 
 class LLInventoryCollectAllItems : public LLInventoryCollectFunctor
@@ -365,10 +440,12 @@ BOOL get_is_category_removable(const LLInventoryModel* model, const LLUUID& id)
 
 	const LLFolderType::EType folder_type = category->getPreferredType();
 	
+#ifndef DELETE_SYSTEM_FOLDERS
 	if (LLFolderType::lookupIsProtectedType(folder_type))
 	{
 		return FALSE;
 	}
+#endif
 
 	// Can't delete the outfit that is currently being worn.
 	if (folder_type == LLFolderType::FT_OUTFIT)
@@ -430,7 +507,7 @@ void show_item_profile(const LLUUID& item_uuid)
 
 void open_outbox()
 {
-	//LLFloaterReg::showInstance("outbox");
+	LLFloaterOutbox::showInstance();
 }
 
 LLUUID create_folder_in_outbox_for_item(LLInventoryItem* item, const LLUUID& destFolderId, S32 operation_id)

@@ -82,11 +82,16 @@
 //
 // Globals
 //
+const char* LLPanelContents::TENTATIVE_SUFFIX = "_tentative";
+const char* LLPanelContents::PERMS_OWNER_INTERACT_KEY = "perms_owner_interact";
+const char* LLPanelContents::PERMS_OWNER_CONTROL_KEY = "perms_owner_control";
+const char* LLPanelContents::PERMS_GROUP_INTERACT_KEY = "perms_group_interact";
+const char* LLPanelContents::PERMS_GROUP_CONTROL_KEY = "perms_group_control";
+const char* LLPanelContents::PERMS_ANYONE_INTERACT_KEY = "perms_anyone_interact";
+const char* LLPanelContents::PERMS_ANYONE_CONTROL_KEY = "perms_anyone_control";
 
 BOOL LLPanelContents::postBuild()
 {
-	LLRect rect = this->getRect();
-
 	setMouseOpaque(FALSE);
 
 	childSetAction("button new script",&LLPanelContents::onClickNewScript, this);
@@ -121,7 +126,7 @@ void LLPanelContents::getState(LLViewerObject *objectp )
 
 	// BUG? Check for all objects being editable?
 	bool editable = gAgent.isGodlike()
-					|| (objectp->permModify()
+					|| (objectp->permModify() && !objectp->isPermanentEnforced()
 					       && ( objectp->permYouOwner() || ( !group_id.isNull() && gAgent.isInGroup(group_id) )));  // solves SL-23488
 	BOOL all_volume = LLSelectMgr::getInstance()->selectionAllPCode( LL_PCODE_VOLUME );
 
@@ -150,6 +155,9 @@ void LLPanelContents::getState(LLViewerObject *objectp )
 		all_volume &&
 		((LLSelectMgr::getInstance()->getSelection()->getRootObjectCount() == 1)
 			|| (LLSelectMgr::getInstance()->getSelection()->getObjectCount() == 1)));
+
+	getChildView("button permissions")->setEnabled(!objectp->isPermanentEnforced());
+	mPanelInventory->setEnabled(!objectp->isPermanentEnforced());
 }
 
 

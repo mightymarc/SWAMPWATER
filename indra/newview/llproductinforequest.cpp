@@ -39,21 +39,27 @@
 #include "lltrans.h"
 #include "llviewerregion.h"
 
-class LLProductInfoRequestResponder : public LLHTTPClient::Responder
+class AIHTTPTimeoutPolicy;
+extern AIHTTPTimeoutPolicy productInfoRequestResponder_timeout;
+
+class LLProductInfoRequestResponder : public LLHTTPClient::ResponderWithResult
 {
 public:
 	//If we get back a normal response, handle it here
-	virtual void result(const LLSD& content)
+	/*virtual*/ void result(const LLSD& content)
 	{
 		LLProductInfoRequestManager::instance().setSkuDescriptions(content);
 	}
 
 	//If we get back an error (not found, etc...), handle it here
-	virtual void error(U32 status, const std::string& reason)
+	/*virtual*/ void error(U32 status, const std::string& reason)
 	{
 		llwarns << "LLProductInfoRequest::error("
 		<< status << ": " << reason << ")" << llendl;
 	}
+
+	/*virtual*/ AIHTTPTimeoutPolicy const& getHTTPTimeoutPolicy(void) const { return productInfoRequestResponder_timeout; }
+	/*virtual*/ char const* getName(void) const { return "LLProductInfoRequestResponder"; }
 };
 
 LLProductInfoRequestManager::LLProductInfoRequestManager() : mSkuDescriptions()

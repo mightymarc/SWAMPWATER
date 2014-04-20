@@ -38,59 +38,66 @@
 class LLPrefsAscentVan : public LLPanel
 {
 public:
-    LLPrefsAscentVan();
-    ~LLPrefsAscentVan();
+	LLPrefsAscentVan();
+	~LLPrefsAscentVan();
 
-    void apply();
-    void cancel();
-    void refresh();
-    void refreshValues();
+	void apply();
+	void cancel();
+	void refresh();
+	void refreshValues();
 
 protected:
-    static void onCommitClientTag(LLUICtrl* ctrl, void* userdata);
-    static void onCommitUpdateAvatarOffsets(LLUICtrl* ctrl, void* userdata);
-    static void onCommitCheckBox(LLUICtrl* ctrl, void* user_data);
-    static void onCommitTextModified(LLUICtrl* ctrl, void* userdata);
-    static void onManualClientUpdate(void* data);
-    //General
-    BOOL mUseAccountSettings;
-    BOOL mShowTPScreen;
-    BOOL mPlayTPSound;
-    BOOL mShowLogScreens;
-	bool mDisableChatAnimation;
-    //Tags\Colors
-    BOOL mAscentUseTag;
-    std::string mReportClientUUID;
-    U32 mSelectedClient;
-    BOOL mShowSelfClientTag;
-    BOOL mShowSelfClientTagColor;
-    BOOL mShowFriendsTag;
-    BOOL mCustomTagOn;
-    std::string mCustomTagLabel;
-    LLColor4 mCustomTagColor;
-    BOOL mShowOthersTag;
-    BOOL mShowOthersTagColor;
-    BOOL mShowIdleTime;
-    BOOL mUseStatusColors;
-    BOOL mUpdateTagsOnLoad;
-    LLColor4 mEffectColor;
-    LLColor4 mFriendColor;
-    LLColor4 mEstateOwnerColor;
-    LLColor4 mLindenColor;
-    LLColor4 mMutedColor;
-    //Body Dynamics
-    BOOL mBreastPhysicsToggle;
-    F32 mBoobMass;
-    F32 mBoobHardness;
-    F32 mBoobVelMax;
-    F32 mBoobFriction;
-    F32 mBoobVelMin;
-    F32 mAvatarXModifier;
-    F32 mAvatarYModifier;
-    F32 mAvatarZModifier;
+	void onCommitClientTag(LLUICtrl* ctrl);
+	void onCommitCheckBox(LLUICtrl* ctrl, const LLSD& value);
+	void onCommitTextModified(LLUICtrl* ctrl, const LLSD& value);
+	static void onManualClientUpdate();
 
 private:
+	//Main
+	bool mUseAccountSettings;
+	bool mShowTPScreen;
+	bool mPlayTPSound;
+	bool mShowLogScreens;
+	bool mDisableChatAnimation;
+	bool mAddNotReplace;
+	bool mTurnAround;
+	bool mAnnounceSnapshots;
+	bool mAnnounceStreamMetadata;
+	bool mUnfocusedFloatersOpaque;
+	bool mCompleteNameProfiles;
+	bool mScriptErrorsStealFocus;
+	//Tags\Colors
+	bool mAscentBroadcastTag;
+	std::string mReportClientUUID;
+	U32 mSelectedClient;
+	bool mShowSelfClientTag;
+	bool mShowSelfClientTagColor;
+	bool mShowFriendsTag;
+	bool mDisplayClientTagOnNewLine;
+	bool mCustomTagOn;
+	std::string mCustomTagLabel;
+	LLColor4 mCustomTagColor;
+	bool mShowOthersTag;
+	bool mShowOthersTagColor;
+	bool mShowIdleTime;
+	bool mUseStatusColors;
+	bool mUpdateTagsOnLoad;
+	LLColor4 mEffectColor;
+	LLColor4 mFriendColor;
+	LLColor4 mEstateOwnerColor;
+	LLColor4 mLindenColor;
+	LLColor4 mMutedColor;
+	LLColor4 mMapAvatarColor;
+	LLColor4 mCustomColor;
+	bool mColorFriendChat;
+	bool mColorEOChat;
+	bool mColorLindenChat;
+	bool mColorMutedChat;
+	//	bool mColorCustomChat;
 
+	F32 mAvatarXModifier;
+	F32 mAvatarYModifier;
+	F32 mAvatarZModifier;
 };
 
 #endif

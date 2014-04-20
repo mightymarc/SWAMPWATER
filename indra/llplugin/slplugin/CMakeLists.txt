@@ -6,7 +6,6 @@ include(LLPlugin)
 include(Linking)
 include(PluginAPI)
 include(LLMessage)
-include(GooglePerfTools)
 
 include_directories(
     ${LLPLUGIN_INCLUDE_DIRS}
@@ -52,10 +51,16 @@ add_executable(SLPlugin
 set_target_properties(SLPlugin
   PROPERTIES
   MACOSX_BUNDLE_INFO_PLIST ${CMAKE_CURRENT_SOURCE_DIR}/slplugin_info.plist
+)
+
+if (WINDOWS)
+  set_target_properties(SLPlugin
+    PROPERTIES
+    LINK_FLAGS "/OPT:NOREF"
   )
+endif()
 
 target_link_libraries(SLPlugin
-  ${GOOGLE_PERFTOOLS_LIBRARIES}
   ${LLPLUGIN_LIBRARIES}
   ${LLMESSAGE_LIBRARIES}
   ${LLCOMMON_LIBRARIES}
@@ -81,12 +86,5 @@ if (DARWIN)
       ${CMAKE_CURRENT_BINARY_DIR}/${CMAKE_CFG_INTDIR}/SLPlugin.app/Contents/Resources
   )
 endif (DARWIN)
-
-if (WINDOWS)
-    set_target_properties(SLPlugin
-      PROPERTIES
-        LINK_FLAGS "${GOOGLE_PERFTOOLS_LINKER_FLAGS}"
-        )
-endif (WINDOWS)
 
 #ll_deploy_sharedlibs_command(SLPlugin)

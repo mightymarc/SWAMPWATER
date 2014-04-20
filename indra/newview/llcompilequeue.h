@@ -79,7 +79,7 @@ protected:
 								  LLInventoryObject::object_list_t* inv,
 								 S32 serial_num,
 								 void* queue);
-	
+
 	// This is called by inventoryChanged
 	virtual void handleInventory(LLViewerObject* viewer_obj,
 								 LLInventoryObject::object_list_t* inv) = 0;
@@ -105,7 +105,7 @@ protected:
 	// Object Queue
 	LLDynamicArray<LLUUID> mObjectIDs;
 	LLUUID mCurrentObjectID;
-	BOOL mDone;
+	bool mDone;
 
 	LLUUID mID;
 	static LLMap<LLUUID, LLFloaterScriptQueue*> sInstances;
@@ -136,12 +136,10 @@ public:
 	// will be responsible for it's own destruction.
 	static LLFloaterCompileQueue* create(BOOL mono);
 
-	static void onSaveBytecodeComplete(const LLUUID& asset_id,
-									void* user_data,
-									S32 status);
-									
 	// remove any object in mScriptScripts with the matching uuid.
 	void removeItemByItemID(const LLUUID& item_id);
+
+	LLAssetUploadQueue* getUploadQueue() { return mUploadQueue; }
 
 protected:
 	LLFloaterCompileQueue(const std::string& name, const LLRect& rect);
@@ -156,6 +154,7 @@ protected:
 								LLAssetType::EType type,
 								void* user_data, S32 status, LLExtStat ext_status);
 
+#if 0 //Client side compiling disabled.
 	static void onSaveTextComplete(const LLUUID& asset_id, void* user_data, S32 status, LLExtStat ext_status);
 
 	static void onSaveBytecodeComplete(const LLUUID& asset_id,
@@ -164,6 +163,7 @@ protected:
 
 	// compile the file given and save it out.
 	void compile(const std::string& filename, const LLUUID& asset_id);
+#endif
 	
 	// remove any object in mScriptScripts with the matching uuid.
 	void removeItemByAssetID(const LLUUID& asset_id);
@@ -198,12 +198,10 @@ public:
 protected:
 	LLFloaterResetQueue(const std::string& name, const LLRect& rect);
 	virtual ~LLFloaterResetQueue();
-	
+
 	// This is called by inventoryChanged
 	virtual void handleInventory(LLViewerObject* viewer_obj,
-								 LLInventoryObject::object_list_t* inv);
-
-protected:
+								 LLInventoryObject::object_list_t* inv);	
 };
 
 //~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -222,12 +220,10 @@ public:
 protected:
 	LLFloaterRunQueue(const std::string& name, const LLRect& rect);
 	virtual ~LLFloaterRunQueue();
-	
+
 	// This is called by inventoryChanged
 	virtual void handleInventory(LLViewerObject* viewer_obj,
 								 LLInventoryObject::object_list_t* inv);
-
-protected:
 };
 
 //~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -250,8 +246,6 @@ protected:
 	// This is called by inventoryChanged
 	virtual void handleInventory(LLViewerObject* viewer_obj,
 								 LLInventoryObject::object_list_t* inv);
-
-protected:
 };
 
 #endif // LL_LLCOMPILEQUEUE_H

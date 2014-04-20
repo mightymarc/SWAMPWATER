@@ -46,12 +46,14 @@
 #include "llcombobox.h"
 #include "lllineeditor.h"
 #include "llnotificationsutil.h"
+#include "llscrolllistcolumn.h"
 #include "llscrolllistctrl.h"
 #include "llstatusbar.h"
 #include "lluiconstants.h"
 #include "lltextbox.h"
 #include "llviewercontrol.h"
 #include "llviewermessage.h"
+#include "llviewerregion.h"
 
 #include "hippogridmanager.h"
 
@@ -89,20 +91,19 @@ BOOL LLPanelDirLand::postBuild()
 		childDisable("incadult");
 	}
 
-	childSetCommitCallback("pricecheck", onCommitPrice, this);
-	childSetCommitCallback("areacheck", onCommitArea, this);
+	getChild<LLUICtrl>("pricecheck")->setCommitCallback(boost::bind(&LLPanelDirLand::onCommitPrice,this,_2));
+	getChild<LLUICtrl>("areacheck")->setCommitCallback(boost::bind(&LLPanelDirLand::onCommitArea, this,_2));
 
 	childSetValue("priceedit", gStatusBar->getBalance());
 	childSetEnabled("priceedit", gSavedSettings.getBOOL("FindLandPrice"));
-	childSetPrevalidate("priceedit", LLLineEditor::prevalidateNonNegativeS32);
+	getChild<LLLineEditor>("priceedit")->setPrevalidate(LLLineEditor::prevalidateNonNegativeS32);
 	
 	childSetEnabled("areaedit", gSavedSettings.getBOOL("FindLandArea"));
-	childSetPrevalidate("areaedit", LLLineEditor::prevalidateNonNegativeS32);
+	getChild<LLLineEditor>("areaedit")->setPrevalidate(LLLineEditor::prevalidateNonNegativeS32);
 
-	childSetAction("Search", onClickSearchCore, this);
+	getChild<LLButton>("Search")->setClickedCallback(boost::bind(&LLPanelDirBrowser::onClickSearchCore,this));
 	setDefaultBtn("Search");
 
-	childSetTextArg("land", "[CURRENCY]", gHippoGridManager->getConnectedGrid()->getCurrencySymbol());
 	childSetTextArg("pricecheck_symbol", "[CURRENCY]", gHippoGridManager->getConnectedGrid()->getCurrencySymbol());
 	childSetLabelArg("pricecheck", "[CURRENCY]", gHippoGridManager->getConnectedGrid()->getCurrencySymbol());
 
@@ -111,7 +112,7 @@ BOOL LLPanelDirLand::postBuild()
 	LLScrollListCtrl* results = getChild<LLScrollListCtrl>("results");
 	if (results)
 	{
-		results->setSortChangedCallback(onClickSort);
+		results->setSortChangedCallback(boost::bind(&LLPanelDirLand::performQuery,this));
 		results->sortByColumn(mCurrentSortColumn,mCurrentSortAscending);
 		
 		LLStringUtil::format_map_t args;
@@ -124,6 +125,8 @@ BOOL LLPanelDirLand::postBuild()
 			results->setColumnLabel(col->mName, label);
 		}
 	}
+
+	childSetVisible("filter_gaming", (gAgent.getRegion()->getGamingFlags() & REGION_GAMING_PRESENT) && !(gAgent.getRegion()->getGamingFlags() & REGION_GAMING_HIDE_FIND_LAND));
 
 	return TRUE;
 }
@@ -141,31 +144,14 @@ void LLPanelDirLand::draw()
 	LLPanelDirBrowser::draw();
 }
 
-void LLPanelDirLand::onClickSort(void* data)
+void LLPanelDirLand::onCommitPrice(const LLSD& value)
 {
-	LLPanelDirLand* self = (LLPanelDirLand*)data;
-	if (!self) return;
-	self->performQuery();
+	childSetEnabled("priceedit", value.asBoolean());
 }
 
-// static 
-void LLPanelDirLand::onCommitPrice(LLUICtrl* ctrl, void* data)
+void LLPanelDirLand::onCommitArea(const LLSD& value)
 {
-	LLPanelDirLand* self = (LLPanelDirLand*)data;
-	LLCheckBoxCtrl* check = (LLCheckBoxCtrl*)ctrl;
-
-	if (!self || !check) return;
-	self->childSetEnabled("priceedit", check->get());
-}
-
-// static 
-void LLPanelDirLand::onCommitArea(LLUICtrl* ctrl, void* data)
-{
-	LLPanelDirLand* self = (LLPanelDirLand*)data;
-	LLCheckBoxCtrl* check = (LLCheckBoxCtrl*)ctrl;
-
-	if (!self || !check) return;
-	self->childSetEnabled("areaedit", check->get());
+	childSetEnabled("areaedit", value.asBoolean());
 }
 
 void LLPanelDirLand::performQuery()
@@ -212,6 +198,11 @@ void LLPanelDirLand::performQuery()
 	if (inc_adult && adult_enabled)
 	{
 		query_flags |= DFQ_INC_ADULT;
+	}
+
+	if (childGetValue("filter_gaming").asBoolean())
+	{
+		query_flags |= DFQ_FILTER_GAMING;
 	}
 	
 	// Add old flags in case we are talking to an old dataserver

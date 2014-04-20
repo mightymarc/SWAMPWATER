@@ -35,72 +35,100 @@
 
 #include "llpanel.h"
 
-
 class LLPrefsAscentChat : public LLPanel
 {
 public:
-    LLPrefsAscentChat();
-    ~LLPrefsAscentChat();
+	LLPrefsAscentChat();
+	~LLPrefsAscentChat();
 
-    void apply();
-    void cancel();
-    void refresh();
-    void refreshValues();
+	void apply();
+	void cancel();
+	void refresh();
+	void refreshValues();
 
 protected:
-    static void onSpellAdd(void* data);
-    static void onSpellRemove(void* data);
-    static void onSpellGetMore(void* data);
-    static void onSpellEditCustom(void* data);
-    static void onSpellBaseComboBoxCommit(LLUICtrl* ctrl, void* userdata);
-    static void onCommitTimeDate(LLUICtrl* ctrl, void *userdata);
-    static void onCommitAutoResponse(LLUICtrl* ctrl, void* user_data);
-    static void onCommitKeywords(LLUICtrl* ctrl, void* user_data);
+	void onSpellAdd();
+	void onSpellRemove();
+	void onSpellEditCustom();
+	void onSpellBaseComboBoxCommit(const LLSD& value);
+	void onCommitTimeDate(LLUICtrl* ctrl);
+	void onCommitEnableAS(const LLSD& value);
+	void onCommitDialogBlock(LLUICtrl* ctrl, const LLSD& value);
+	void onCommitKeywords(LLUICtrl* ctrl);
 
-    //Chat/IM -----------------------------------------------------------------------------
-    BOOL mWoLfVerticalIMTabs;
-    BOOL mIMAnnounceIncoming;
-    BOOL mHideTypingNotification;
-    BOOL mShowGroupNameInChatIM;
-    BOOL mPlayTypingSound;
-    BOOL mHideNotificationsInChat;
-    BOOL mEnableMUPose;
-    BOOL mEnableOOCAutoClose;
-    U32 mLinksForChattingObjects;
-    U32 mTimeFormat;
-    U32 mDateFormat;
-        U32 tempTimeFormat;
-        U32 tempDateFormat;
-    BOOL mSecondsInChatAndIMs;
+private:
+	//Chat/IM -----------------------------------------------------------------------------
+	bool mIMAnnounceIncoming;
+	bool mHideTypingNotification;
+	bool mInstantMessagesFriendsOnly;
+	bool mShowGroupNameInChatIM;
+	bool mShowDisplayNameChanges;
+	bool mUseTypingBubbles;
+	bool mPlayTypingSound;
+	bool mHideNotificationsInChat;
+	bool mEnableMUPose;
+	bool mEnableOOCAutoClose;
+	U32 mLinksForChattingObjects;
+	U32 mTimeFormat;
+	U32 mDateFormat;
+	U32 tempTimeFormat;
+	U32 tempDateFormat;
+	bool mSecondsInChatAndIMs;
+	bool mSecondsInLog;
 
-    BOOL mIMResponseAnyone;
-    BOOL mIMResponseFriends;
-    BOOL mIMResponseMuted;
-    BOOL mIMShowOnTyping;
-    BOOL mIMShowResponded;
-    BOOL mIMResponseRepeat;
-    BOOL mIMResponseItem;
-    std::string mIMResponseText;
+	//Chat UI -----------------------------------------------------------------------------
+	bool mWoLfVerticalIMTabs;
+	bool mOtherChatsTornOff;
+	bool mIMAnnounceStealFocus;
+	bool mShowLocalChatFloaterBar;
+	bool mHorizButt;
+	bool mOneLineIMButt;
+	bool mOneLineGroupButt;
+	bool mOneLineConfButt;
+	bool mOnlyComm;
+	bool mItalicizeActions;
+	bool mLegacySpeakerNames;
+	bool mLegacyLogLaunch;
 
-    //Spam --------------------------------------------------------------------------------
-    BOOL mBlockChatSpam;
-    U32  mChatSpamCount;
-    F32  mChatSpamTime;
-    BOOL mBlockDialogSpam;
-    BOOL mBlockCardSpam;
-    U32  mSpamCount;
-    F32  mSpamTime;
+	//Autoresponse ------------------------------------------------------------------------
+	std::string mIMResponseAnyoneItemID;
+	std::string mIMResponseNonFriendsItemID;
+	std::string mIMResponseMutedItemID;
+	std::string mIMResponseBusyItemID;
 
-    //Text Options ------------------------------------------------------------------------
-    BOOL mSpellDisplay;
-    BOOL mKeywordsOn;
-    std::string mKeywordsList;
-    BOOL mKeywordsInChat;
-    BOOL mKeywordsInIM;
-    BOOL mKeywordsChangeColor;
-    LLColor4 mKeywordsColor;
-    BOOL mKeywordsPlaySound;
-    LLUUID mKeywordsSound;
+	//Spam --------------------------------------------------------------------------------
+	bool mEnableAS;
+	bool mGlobalQueue;
+	U32  mChatSpamCount;
+	U32  mChatSpamTime;
+	bool mBlockDialogSpam;
+	bool mBlockAlertSpam;
+	bool mBlockFriendSpam;
+	bool mBlockGroupNoticeSpam;
+	bool mBlockGroupInviteSpam;
+	bool mBlockGroupFeeInviteSpam;
+	bool mBlockItemOfferSpam;
+	bool mBlockNotMineSpam;
+	bool mBlockNotFriendSpam;
+	bool mBlockScriptSpam;
+	bool mBlockTeleportSpam;
+	bool mBlockTeleportRequestSpam;
+	bool mNotifyOnSpam;
+	bool mSoundMulti;
+	U32  mNewLines;
+	U32  mPreloadMulti;
+	bool mEnableGestureSounds;
+
+	//Text Options ------------------------------------------------------------------------
+	bool mSpellDisplay;
+	bool mKeywordsOn;
+	std::string mKeywordsList;
+	bool mKeywordsInChat;
+	bool mKeywordsInIM;
+	bool mKeywordsChangeColor;
+	LLColor4 mKeywordsColor;
+	bool mKeywordsPlaySound;
+	LLUUID mKeywordsSound;
 };
 
 #endif

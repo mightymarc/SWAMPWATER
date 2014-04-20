@@ -57,7 +57,7 @@ public:
 	class URLLoader
 	{
 	public:
-		virtual void load(const std::string& url) = 0;
+		virtual void load(const std::string& url, bool force_open_externally) = 0;
 		virtual ~URLLoader() {}
 	};
 	
@@ -87,8 +87,8 @@ public:
 	//statics
 	static void initClass();
 	static bool onNewNotification(const LLSD& notify, bool is_modal);
-	static void	onButtonPressed(void* userdata);
-	static void onClickIgnore(LLUICtrl* ctrl, void* user_data);
+	void onButtonPressed( LLUICtrl* ctrl, const std::string url );
+	void onClickIgnore( LLUICtrl* ctrl );
 
 private:
 	LLNotificationPtr mNote;
@@ -102,18 +102,18 @@ private:
 	BOOL hasTitleBar() const;
 
 private:
+	struct ButtonData
+	{
+		std::string mName;
+		std::string mText;
+		bool mDefault;
+		std::string mUrl;
+	};
+
 	static URLLoader* sURLLoader;
 	static LLControlGroup* sSettings;
 
-	struct ButtonData
-	{
-		LLAlertDialog* mSelf;
-		LLButton* mButton;
-		std::string mURL;
-	};
-	std::vector<ButtonData> mButtonData;
-
-	S32				mDefaultOption;
+	LLButton*		mDefaultButton;
 	LLCheckBoxCtrl* mCheck;
 	BOOL			mCaution;
 	BOOL			mUnique;

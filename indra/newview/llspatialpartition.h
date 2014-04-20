@@ -73,6 +73,16 @@ protected:
 	~LLDrawInfo();	
 	
 public:
+	void* operator new(size_t size)
+	{
+		return ll_aligned_malloc_16(size);
+	}
+
+	void operator delete(void* ptr)
+	{
+		ll_aligned_free_16(ptr);
+	}
+
 
 	LLDrawInfo(const LLDrawInfo& rhs)
 	{
@@ -107,13 +117,29 @@ public:
 	U32 mOffset;
 	BOOL mFullbright;
 	U8 mBump;
+	U8 mShiny;
 	BOOL mParticle;
 	F32 mPartSize;
 	F32 mVSize;
 	LLSpatialGroup* mGroup;
-	LLFace* mFace; //associated face
+	LL_ALIGN_16(LLFace* mFace); //associated face
 	F32 mDistance;
 	U32 mDrawMode;
+	LLMaterialPtr mMaterial; // If this is null, the following parameters are unused.
+	LLMaterialID mMaterialID;
+	U32 mShaderMask;
+	U32 mBlendFuncSrc;
+	U32 mBlendFuncDst;
+	BOOL mHasGlow;
+	LLPointer<LLViewerTexture> mSpecularMap;
+	const LLMatrix4* mSpecularMapMatrix;
+	LLPointer<LLViewerTexture> mNormalMap;
+	const LLMatrix4* mNormalMapMatrix;
+	LLVector4 mSpecColor; // XYZ = Specular RGB, W = Specular Exponent
+	F32  mEnvIntensity;
+	F32  mAlphaMaskCutoff;
+	U8   mDiffuseAlphaMode;
+
 
 	struct CompareTexture
 	{
@@ -196,6 +222,16 @@ public:
 	LLSpatialGroup(const LLSpatialGroup& rhs)
 	{
 		*this = rhs;
+	}
+
+	void* operator new(size_t size)
+	{
+		return ll_aligned_malloc_16(size);
+	}
+
+	void operator delete(void* ptr)
+	{
+		ll_aligned_free_16(ptr);
 	}
 
 	const LLSpatialGroup& operator=(const LLSpatialGroup& rhs)
@@ -330,8 +366,14 @@ public:
 
 	void dirtyGeom() { setState(GEOM_DIRTY); }
 	void dirtyMesh() { setState(MESH_DIRTY); }
-	element_list& getData() { return mOctreeNode->getData(); }
+
+	//octree wrappers to make code more readable
+	//element_list& getData() { return mOctreeNode->getData(); }	//unused
+	element_iter getDataBegin() { return mOctreeNode->getDataBegin(); }
+	element_iter getDataEnd() { return mOctreeNode->getDataEnd(); }
+	bool hasElement(LLDrawable* drawablep) { return std::find(mOctreeNode->getDataBegin(), mOctreeNode->getDataEnd(), drawablep) != mOctreeNode->getDataEnd(); }
 	U32 getElementCount() const { return mOctreeNode->getElementCount(); }
+	bool isEmpty() const { return mOctreeNode->isEmpty(); }
 
 	void drawObjectBox(LLColor4 col);
 
@@ -354,12 +396,12 @@ public:
 		V4_COUNT = 10
 	} eV4Index;
 
-	LLVector4a mBounds[2]; // bounding box (center, size) of this node and all its children (tight fit to objects)
-	LLVector4a mExtents[2]; // extents (min, max) of this node and all its children
-	LLVector4a mObjectExtents[2]; // extents (min, max) of objects in this node
-	LLVector4a mObjectBounds[2]; // bounding box (center, size) of objects in this node
-	LLVector4a mViewAngle;
-	LLVector4a mLastUpdateViewAngle;
+	LL_ALIGN_16(LLVector4a mBounds[2]); // bounding box (center, size) of this node and all its children (tight fit to objects)
+	LL_ALIGN_16(LLVector4a mExtents[2]); // extents (min, max) of this node and all its children
+	LL_ALIGN_16(LLVector4a mObjectExtents[2]); // extents (min, max) of objects in this node
+	LL_ALIGN_16(LLVector4a mObjectBounds[2]); // bounding box (center, size) of objects in this node
+	LL_ALIGN_16(LLVector4a mViewAngle);
+	LL_ALIGN_16(LLVector4a mLastUpdateViewAngle);
 
 	F32 mObjectBoxSize; //cached mObjectBounds[1].getLength3()
 		
@@ -431,13 +473,13 @@ public:
 	LLSpatialGroup *put(LLDrawable *drawablep, BOOL was_visible = FALSE);
 	BOOL remove(LLDrawable *drawablep, LLSpatialGroup *curp);
 	
-	LLDrawable* lineSegmentIntersect(const LLVector3& start, const LLVector3& end,
+	LLDrawable* lineSegmentIntersect(const LLVector4a& start, const LLVector4a& end,
 									 BOOL pick_transparent, 
 									 S32* face_hit,                          // return the face hit
-									 LLVector3* intersection = NULL,         // return the intersection point
+									 LLVector4a* intersection = NULL,         // return the intersection point
 									 LLVector2* tex_coord = NULL,            // return the texture coordinates of the intersection point
-									 LLVector3* normal = NULL,               // return the surface normal at the intersection point
-									 LLVector3* bi_normal = NULL             // return the surface bi-normal at the intersection point
+									 LLVector4a* normal = NULL,               // return the surface normal at the intersection point
+									 LLVector4a* tangent = NULL             // return the surface tangent at the intersection point
 		);
 	
 	
@@ -520,77 +562,63 @@ public:
 class LLCullResult 
 {
 public:
-	LLCullResult();
+	LLCullResult() {}
 
 	typedef std::vector<LLSpatialGroup*> sg_list_t;
 	typedef std::vector<LLDrawable*> drawable_list_t;
 	typedef std::vector<LLSpatialBridge*> bridge_list_t;
 	typedef std::vector<LLDrawInfo*> drawinfo_list_t;
 
+	typedef sg_list_t::const_iterator sg_iterator;
+	typedef bridge_list_t::const_iterator bridge_iterator;
+	typedef drawinfo_list_t::const_iterator drawinfo_iterator;
+	typedef drawable_list_t::const_iterator drawable_iterator;
+
 	void clear();
 	
-	sg_list_t::iterator beginVisibleGroups();
-	sg_list_t::iterator endVisibleGroups();
+	const sg_iterator beginVisibleGroups()			const { return mVisibleGroups.begin(); }
+	const sg_iterator endVisibleGroups()			const { return mVisibleGroups.end(); }
 
-	sg_list_t::iterator beginAlphaGroups();
-	sg_list_t::iterator endAlphaGroups();
+	const sg_iterator beginAlphaGroups()			const { return mAlphaGroups.begin(); }
+	const sg_iterator endAlphaGroups()				const { return mAlphaGroups.end(); }
+	const sg_list_t::iterator beginAlphaGroups()		  { return mAlphaGroups.begin(); }
+	const sg_list_t::iterator endAlphaGroups()			  { return mAlphaGroups.end(); }
 
-	bool hasOcclusionGroups() { return mOcclusionGroupsSize > 0; }
-	sg_list_t::iterator beginOcclusionGroups();
-	sg_list_t::iterator endOcclusionGroups();
+	bool hasOcclusionGroups()						const {  return !mOcclusionGroups.empty(); }
+	const sg_iterator beginOcclusionGroups()		const { return mOcclusionGroups.begin(); }
+	const sg_iterator endOcclusionGroups()			const { return mOcclusionGroups.end(); }
 
-	sg_list_t::iterator beginDrawableGroups();
-	sg_list_t::iterator endDrawableGroups();
+	const sg_iterator beginDrawableGroups()			const { return mDrawableGroups.begin(); }
+	const sg_iterator endDrawableGroups()			const { return mDrawableGroups.end(); }
 
-	drawable_list_t::iterator beginVisibleList();
-	drawable_list_t::iterator endVisibleList();
+	const drawable_iterator beginVisibleList()		const { return mVisibleList.begin(); }
+	const drawable_iterator endVisibleList()		const { return mVisibleList.end(); }
 
-	bridge_list_t::iterator beginVisibleBridge();
-	bridge_list_t::iterator endVisibleBridge();
+	const bridge_iterator beginVisibleBridge()		const { return mVisibleBridge.begin(); }
+	const bridge_iterator endVisibleBridge()		const { return mVisibleBridge.end(); }
 
-	drawinfo_list_t::iterator beginRenderMap(U32 type);
-	drawinfo_list_t::iterator endRenderMap(U32 type);
+	bool hasRenderMap(U32 type)						const { return !mRenderMap[type].empty(); }
+	const drawinfo_iterator beginRenderMap(U32 type)const { return mRenderMap[type].begin(); }
+	const drawinfo_iterator endRenderMap(U32 type)	const { return mRenderMap[type].end(); }
 
-	void pushVisibleGroup(LLSpatialGroup* group);
-	void pushAlphaGroup(LLSpatialGroup* group);
-	void pushOcclusionGroup(LLSpatialGroup* group);
-	void pushDrawableGroup(LLSpatialGroup* group);
-	void pushDrawable(LLDrawable* drawable);
-	void pushBridge(LLSpatialBridge* bridge);
-	void pushDrawInfo(U32 type, LLDrawInfo* draw_info);
-	
-	U32 getVisibleGroupsSize()		{ return mVisibleGroupsSize; }
-	U32	getAlphaGroupsSize()		{ return mAlphaGroupsSize; }
-	U32	getDrawableGroupsSize()		{ return mDrawableGroupsSize; }
-	U32	getVisibleListSize()		{ return mVisibleListSize; }
-	U32	getVisibleBridgeSize()		{ return mVisibleBridgeSize; }
-	U32	getRenderMapSize(U32 type)	{ return mRenderMapSize[type]; }
+	void pushVisibleGroup(LLSpatialGroup* group)		  {  mVisibleGroups.push_back(group); }
+	void pushAlphaGroup(LLSpatialGroup* group)			  {  mAlphaGroups.push_back(group); }
+	void pushOcclusionGroup(LLSpatialGroup* group)		  {  mOcclusionGroups.push_back(group); }
+	void pushDrawableGroup(LLSpatialGroup* group)		  {  mDrawableGroups.push_back(group); }
+	void pushDrawable(LLDrawable* drawable)				  {  mVisibleList.push_back(drawable); }
+	void pushBridge(LLSpatialBridge* bridge)			  {  mVisibleBridge.push_back(bridge); }
+	void pushDrawInfo(U32 type, LLDrawInfo* draw_info)	  {  mRenderMap[type].push_back(draw_info); }
 
 	void assertDrawMapsEmpty();
 
 private:
-	U32					mVisibleGroupsSize;
-	U32					mAlphaGroupsSize;
-	U32					mOcclusionGroupsSize;
-	U32					mDrawableGroupsSize;
-	U32					mVisibleListSize;
-	U32					mVisibleBridgeSize;
-	U32					mRenderMapSize[LLRenderPass::NUM_RENDER_TYPES];
-
 	sg_list_t			mVisibleGroups;
-	sg_list_t::iterator mVisibleGroupsEnd;
 	sg_list_t			mAlphaGroups;
-	sg_list_t::iterator mAlphaGroupsEnd;
 	sg_list_t			mOcclusionGroups;
-	sg_list_t::iterator	mOcclusionGroupsEnd;
 	sg_list_t			mDrawableGroups;
-	sg_list_t::iterator mDrawableGroupsEnd;
 	drawable_list_t		mVisibleList;
-	drawable_list_t::iterator mVisibleListEnd;
 	bridge_list_t		mVisibleBridge;
-	bridge_list_t::iterator mVisibleBridgeEnd;
 	drawinfo_list_t		mRenderMap[LLRenderPass::NUM_RENDER_TYPES];
-	drawinfo_list_t::iterator mRenderMapEnd[LLRenderPass::NUM_RENDER_TYPES];
 };
 
 
@@ -683,7 +711,7 @@ class LLVolumeGeometryManager: public LLGeometryManager
 	virtual void rebuildGeom(LLSpatialGroup* group);
 	virtual void rebuildMesh(LLSpatialGroup* group);
 	virtual void getGeometry(LLSpatialGroup* group);
-	void genDrawInfo(LLSpatialGroup* group, U32 mask, std::vector<LLFace*>& faces, BOOL distance_sort = FALSE, BOOL batch_textures = FALSE);
+	void genDrawInfo(LLSpatialGroup* group, U32 mask, LLFace** faces, U32 face_count, BOOL distance_sort = FALSE, BOOL batch_textures = FALSE, BOOL no_materials = FALSE);
 	void registerFace(LLSpatialGroup* group, LLFace* facep, U32 type);
 };
 

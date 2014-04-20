@@ -67,10 +67,13 @@
 #include "llresmgr.h"
 #include "pipeline.h"
 #include "llspatialpartition.h"
- 
+
 // [RLVa:KB]
 #include "rlvhandler.h"
 // [/RLVa:KB]
+
+// Height of the yellow selection highlight posts for land
+const F32 PARCEL_POST_HEIGHT = 0.666f;
 
 // Returns true if you got at least one object
 void LLToolSelectRect::handleRectangleSelection(S32 x, S32 y, MASK mask)
@@ -97,10 +100,10 @@ void LLToolSelectRect::handleRectangleSelection(S32 x, S32 y, MASK mask)
 	S32 top =	llmax(y, mDragStartY);
 	S32 bottom =llmin(y, mDragStartY);
 
-	left = llround((F32) left * LLUI::sGLScaleFactor.mV[VX]);
-	right = llround((F32) right * LLUI::sGLScaleFactor.mV[VX]);
-	top = llround((F32) top * LLUI::sGLScaleFactor.mV[VY]);
-	bottom = llround((F32) bottom * LLUI::sGLScaleFactor.mV[VY]);
+	left = llround((F32) left * LLUI::getScaleFactor().mV[VX]);
+	right = llround((F32) right * LLUI::getScaleFactor().mV[VX]);
+	top = llround((F32) top * LLUI::getScaleFactor().mV[VY]);
+	bottom = llround((F32) bottom * LLUI::getScaleFactor().mV[VY]);
 
 	F32 old_far_plane = LLViewerCamera::getInstance()->getFar();
 	F32 old_near_plane = LLViewerCamera::getInstance()->getNear();
@@ -294,7 +297,10 @@ void LLWind::renderVectors()
 	S32 i,j;
 	F32 x,y;
 
-	F32 region_width_meters = LLWorld::getInstance()->getRegionWidthInMeters();
+// <FS:CR> Aurora Sim
+	//F32 region_width_meters = LLWorld::getInstance()->getRegionWidthInMeters();
+	F32 region_width_meters = gAgent.getRegion()->getWidth();
+// </FS:CR> Aurora Sim
 
 	gGL.getTexUnit(0)->unbind(LLTexUnit::TT_TEXTURE);
 	gGL.pushMatrix();
@@ -502,7 +508,10 @@ void LLViewerParcelMgr::renderOneSegment(F32 x1, F32 y1, F32 x2, F32 y2, F32 hei
 		return;
 	// HACK: At edge of last region of world, we need to make sure the region
 	// resolves correctly so we can get a height value.
-	const F32 BORDER = REGION_WIDTH_METERS - 0.1f;
+// <FS:CR> Aurora Sim
+	//const F32 BORDER = REGION_WIDTH_METERS - 0.1f;
+	const F32 BORDER = regionp->getWidth() - 0.1f;
+// </FS:CR> Aurora Sim
 
 	F32 clamped_x1 = x1;
 	F32 clamped_y1 = y1;
@@ -708,29 +717,27 @@ void LLViewerParcelMgr::renderCollisionSegments(U8* segments, BOOL use_pass, LLV
 				x2 = x1 + PARCEL_GRID_STEP_METERS;
 				y2 = y1;
 
-				{
-					dy = (pos_y - y1) + DIST_OFFSET;
-					
-					if (pos_x < x1)
-						dx = pos_x - x1;
-					else if (pos_x > x2)
-						dx = pos_x - x2;
-					else 
-						dx = 0;
-					
-					dist = dx*dx+dy*dy;
+				dy = (pos_y - y1) + DIST_OFFSET;
 
-					if (dist < MIN_DIST_SQ)
-						alpha = MAX_ALPHA;
-					else if (dist > MAX_DIST_SQ)
-						alpha = 0.0f;
-					else
-						alpha = 30/dist;
+				if (pos_x < x1)
+					dx = pos_x - x1;
+				else if (pos_x > x2)
+					dx = pos_x - x2;
+				else
+					dx = 0;
 
-					alpha = llclamp(alpha, 0.0f, MAX_ALPHA);
+				dist = dx*dx+dy*dy;
 
-					gGL.color4f(1.f, 1.f, 1.f, alpha);
-				}
+				if (dist < MIN_DIST_SQ)
+					alpha = MAX_ALPHA;
+				else if (dist > MAX_DIST_SQ)
+					alpha = 0.0f;
+				else
+					alpha = 30/dist;
+
+				alpha = llclamp(alpha, 0.0f, MAX_ALPHA);
+
+				gGL.color4f(1.f, 1.f, 1.f, alpha);
 
 				if ((pos_y - y1) < 0) direction = SOUTH_MASK;
 				else 		direction = NORTH_MASK;
@@ -748,29 +755,27 @@ void LLViewerParcelMgr::renderCollisionSegments(U8* segments, BOOL use_pass, LLV
 				x2 = x1;
 				y2 = y1 + PARCEL_GRID_STEP_METERS;
 
-				{					
-					dx = (pos_x - x1) + DIST_OFFSET;
-		
-					if (pos_y < y1) 
-						dy = pos_y - y1;
-					else if (pos_y > y2)
-						dy = pos_y - y2;
-					else 
-						dy = 0;
+				dx = (pos_x - x1) + DIST_OFFSET;
 
-					dist = dx*dx+dy*dy;
-					
-					if (dist < MIN_DIST_SQ) 
-						alpha = MAX_ALPHA;
-					else if (dist > MAX_DIST_SQ)
-						alpha = 0.0f;
-					else
-						alpha = 30/dist;
+				if (pos_y < y1)
+					dy = pos_y - y1;
+				else if (pos_y > y2)
+					dy = pos_y - y2;
+				else
+					dy = 0;
 
-					alpha = llclamp(alpha, 0.0f, MAX_ALPHA);
+				dist = dx*dx+dy*dy;
 
-					gGL.color4f(1.f, 1.f, 1.f, alpha);
-				}
+				if (dist < MIN_DIST_SQ)
+					alpha = MAX_ALPHA;
+				else if (dist > MAX_DIST_SQ)
+					alpha = 0.0f;
+				else
+					alpha = 30/dist;
+
+				alpha = llclamp(alpha, 0.0f, MAX_ALPHA);
+
+				gGL.color4f(1.f, 1.f, 1.f, alpha);
 
 				if ((pos_x - x1) > 0) direction = WEST_MASK;
 				else 		direction = EAST_MASK;
@@ -927,4 +932,3 @@ void LLViewerObjectList::renderObjectBeacons()
 }
 
 
-	

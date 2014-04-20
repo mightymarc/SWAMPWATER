@@ -5,11 +5,10 @@ project(statemachine)
 include(00-Common)
 include(LLCommon)
 include(LLPlugin)
-include(LLMessage)		# This is needed by LLPlugin.
+include(LLMessage)
 include(LLMath)
 include(LLVFS)
 include(LLXML)
-include(LLXUIXML)
 include(LLWindow)
 include(LLUI)
 include(LLRender)
@@ -17,6 +16,7 @@ include(LLImage)
 include(LLCharacter)
 include(LLInventory)
 include(LLPrimitive)
+include(LLAppearance)
 
 include_directories(
 	${CMAKE_SOURCE_DIR}/newview
@@ -26,7 +26,6 @@ include_directories(
 	${LLMATH_INCLUDE_DIRS}
 	${LLVFS_INCLUDE_DIRS}
 	${LLXML_INCLUDE_DIRS}
-	${LLXUIXML_INCLUDE_DIRS}
 	${LLWINDOW_INCLUDE_DIRS}
 	${LLUI_INCLUDE_DIRS}
 	${LLRENDER_INCLUDE_DIRS}
@@ -34,24 +33,21 @@ include_directories(
 	${LLCHARACTER_INCLUDE_DIRS}
 	${LLINVENTORY_INCLUDE_DIRS}
 	${LLPRIMITIVE_INCLUDE_DIRS}
+	${LLAPPEARANCE_INCLUDE_DIRS}
     )
 
 set(statemachine_SOURCE_FILES
-    aistatemachine.cpp
     aifilepicker.cpp
     aifetchinventoryfolder.cpp
     aievent.cpp
-    aitimer.cpp
     )
 
 set(statemachine_HEADER_FILES
     CMakeLists.txt
-    aistatemachine.h
     aifilepicker.h
     aidirpicker.h
     aifetchinventoryfolder.h
     aievent.h
-    aitimer.h
     )
 
 set_source_files_properties(${statemachine_HEADER_FILES}

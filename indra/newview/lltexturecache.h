@@ -24,7 +24,7 @@
  * $/LicenseInfo$
  */
 
-#ifndef LL_LLTEXTURECACHE_
+#ifndef LL_LLTEXTURECACHE_H
 #define LL_LLTEXTURECACHE_H
 
 #include "lldir.h"
@@ -146,6 +146,7 @@ private:
 	void setDirNames(ELLPath location);
 	void readHeaderCache();
 	void clearCorruptedCache();
+	void performDelayedPurge();
 	void purgeAllTextures(bool purge_directories);
 	void purgeTextures(bool validate);
 	LLAPRFile* openHeaderEntriesFile(bool readonly, S32 offset);

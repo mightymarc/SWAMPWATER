@@ -58,8 +58,12 @@ class AIFetchInventoryFolder : public AIStateMachine {
 	bool mNeedNotifyObservers;
 
   public:
-	AIFetchInventoryFolder(void) : mCreate(false), mFetchContents(false), mExists(false), mCreated(false)
-        { Dout(dc::statemachine, "Calling AIFetchInventoryFolder constructor [" << (void*)this << "]"); }
+	AIFetchInventoryFolder(CWD_ONLY(bool debug = false)) :
+#if defined(CWDEBUG) || defined(DEBUG_CURLIO)
+		AIStateMachine(debug),
+#endif
+		mCreate(false), mFetchContents(false), mExists(false), mCreated(false)
+        { Dout(dc::statemachine(mSMDebug), "Calling AIFetchInventoryFolder constructor [" << (void*)this << "]"); }
 
 	/**
 	 * @brief Fetch an inventory folder by name, optionally creating it.
@@ -132,16 +136,13 @@ class AIFetchInventoryFolder : public AIStateMachine {
 
   protected:
 	// Call finish() (or abort()), not delete.
-	/*virtual*/ ~AIFetchInventoryFolder() { Dout(dc::statemachine, "Calling ~AIFetchInventoryFolder() [" << (void*)this << "]"); }
+	/*virtual*/ ~AIFetchInventoryFolder() { Dout(dc::statemachine(mSMDebug), "Calling ~AIFetchInventoryFolder() [" << (void*)this << "]"); }
 
 	// Handle initializing the object.
 	/*virtual*/ void initialize_impl(void);
 
 	// Handle mRunState.
-	/*virtual*/ void multiplex_impl(void);
-
-	// Handle aborting from current bs_run state.
-	/*virtual*/ void abort_impl(void);
+	/*virtual*/ void multiplex_impl(state_type run_state);
 
 	// Handle cleaning up from initialization (or post abort) state.
 	/*virtual*/ void finish_impl(void);

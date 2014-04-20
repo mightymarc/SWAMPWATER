@@ -11,6 +11,7 @@
 /bin-release
 /indra/viewer-*
 /indra/newview/vivox-runtime/
+/indra/newview/dbghelp.dll
 /libraries/
 /lib/
 *.pyc
@@ -22,3 +23,9 @@
 /LICENSES/
 /edited-files.txt
 qtcreator-build/
+/.pc
+/build-*
+/viewer-*
+/indra/newview/res/viewerRes.rc
+/indra/newview/res/viewerRes_bc.rc
+/indra/newview/English.lproj/InfoPlist.strings

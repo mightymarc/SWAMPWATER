@@ -37,6 +37,7 @@
 #include "llviewerregion.h"
 #include "llviewerparcelmgr.h"
 #include "llvoavatarself.h"
+#include "llslurl.h"
 // [RLVa:KB] - Checked: 2010-04-04 (RLVa-1.2.0d)
 #include "rlvhandler.h"
 // [/RLVa:KB]
@@ -48,18 +49,18 @@ void LLAgentUI::buildFullname(std::string& name)
 		name = gAgentAvatarp->getFullname();
 }
 
-/*
 //static
-void LLAgentUI::buildSLURL(LLSLURL& slurl, const bool escaped /= true/ )
+void LLAgentUI::buildSLURL(LLSLURL& slurl, const bool escaped /*= true*/)
 {
       LLSLURL return_slurl;
       LLViewerRegion *regionp = gAgent.getRegion();
       if (regionp)
       {
-		  return_slurl = LLSLURL(regionp->getName(), gAgent.getPositionGlobal());
+		// Singu Note: Not Global, get correct SLURL for Variable Regions
+		return_slurl = LLSLURL(regionp->getName(), gAgent.getPositionAgent());
       }
 	slurl = return_slurl;
-}*/
+}
 
 //static
 BOOL LLAgentUI::checkAgentDistance(const LLVector3& pole, F32 radius)
@@ -172,12 +173,25 @@ BOOL LLAgentUI::buildLocationString(std::string& str, ELocationFormat fmt,const 
 							  sim_access_string.c_str());
 				break;
 		case LOCATION_FORMAT_FULL:
+			static LLCachedControl<bool> position_before_parcel("StatusBarPositionBeforeParcel");
+			if (!position_before_parcel)
+			{
 			buffer = llformat("%s, %s (%d, %d, %d)%s%s",
 				parcel_name.c_str(),
 				region_name.c_str(),
 				pos_x, pos_y, pos_z,
 				sim_access_string.empty() ? "" : " - ",
 				sim_access_string.c_str());
+			}
+			else
+			{
+				buffer = llformat("%s (%d, %d, %d) - %s%s%s",
+					region_name.c_str(),
+					pos_x, pos_y, pos_z,
+					parcel_name.c_str(),
+					sim_access_string.empty() ? "" : " - ",
+					sim_access_string.c_str());
+			}
 			break;
 		}
 	}

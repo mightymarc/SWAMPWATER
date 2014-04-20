@@ -195,6 +195,7 @@
 			     halign="center" height="20" label="Buy Land..."
 			     label_selected="Buy Land..." left="155" mouse_opaque="true"
 			     name="Buy Land..." scale_image="true" width="100" />
+            <button name="Scripts..." label="Script Info" bottom="-372" follows="left|top" height="20" left="10" width="140"/>
 			<button bottom="-372" enabled="false" follows="left|top" font="SansSerif"
 			     halign="center" height="20" label="Buy For Group..."
 			     label_selected="Buy For Group..." left="260" mouse_opaque="true"
@@ -640,9 +641,6 @@ Only large parcels can be listed in search.
 			<string name="search_disabled_permissions_tooltip">
 				This option is disabled because you cannot modify this parcel&apos;s options.
 			</string>
-			<string name="see_avs_text">
-				See and chat with residents on this parcel
-			</string>
 			<combo_box allow_text_entry="false" bottom="-140" enabled="false" follows="left|top"
 			     height="18" left="255" max_chars="20" mouse_opaque="true"
 			     name="land category with adult" width="130" visible="false">
@@ -744,6 +742,7 @@ Only large parcels can be listed in search.
 			     mouse_opaque="true" name="MatureCheck" radio_style="false"
 			     tool_tip=" "
 			     width="107" />
+			<check_box name="GamingCheck" label="This parcel is used for gaming" bottom_delta="0" left="178" follows="left|top" height="16"/>
 			<string name="mature_check_mature">
 				Mature Content
 			</string>
@@ -763,7 +762,7 @@ Only large parcels can be listed in search.
 				Allow Residents on other parcels to:
 			</text>
 			<check_box bottom="-196" enabled="false" follows="left|top" font="SansSerifSmall"
-			     height="16" initial_value="false" label="See Avatars" left="14"
+			     height="16" initial_value="false" label="See and chat with residents on this parcel" left="14"
 			     mouse_opaque="true" name="SeeAvatarsCheck" radio_style="false"
 			     tool_tip="Allows residents on other parcels to see and chat with residents on this parcel, and you to see and chat with them."
 			     width="107" />
@@ -773,7 +772,7 @@ Only large parcels can be listed in search.
 			     mouse_opaque="true" name="Snapshot:" v_pad="0" width="278">
 				Snapshot:
 			</text>
-			<texture_picker allow_no_texture="false" bottom="-349" can_apply_immediately="false"
+			<texture_picker allow_no_texture="true" bottom="-349" can_apply_immediately="false"
 			     default_image_name="" enabled="true" follows="left|top" height="135"
 			     label="" left="10" mouse_opaque="true" name="snapshot_ctrl"
 			     tool_tip="Click to choose a picture" width="180" />
@@ -1345,6 +1344,11 @@ Select the thumbnail to choose a different texture.
 			<string name="estate_override">
 				One or more of these options is set at the estate level
 			</string>
+			<string name="minutes">minutes</string>
+			<string name="1_minute">1 minute</string>
+			<string name="1_second">1 second</string>
+			<string name="seconds">seconds</string>
+			<string name="remaining">remaining</string>
 			<check_box bottom_delta="-20" enabled="true" follows="left|top" font="SansSerifSmall"
 			     height="16" initial_value="false" label="Allow Group Access: [GROUP]"
 			     left="8" mouse_opaque="true" name="GroupCheck" radio_style="false"
@@ -1379,7 +1383,7 @@ Select the thumbnail to choose a different texture.
 			     column_padding="0" draw_border="true" draw_heading="false" enabled="true"
 			     follows="top|bottom" heading_font="SansSerifSmall" heading_height="14"
 			     height="80" left="20" mouse_opaque="true" multi_select="true"
-			     name="AccessList" tool_tip="([LISTED] listed, [MAX] max)" width="195" />
+			     name="AccessList" tool_tip="([LISTED] listed, [MAX] max)" width="195" menu_file="menu_avs_list.xml"/>
 			<button bottom_delta="-20" enabled="true" follows="bottom" font="SansSerifSmall"
 			     halign="center" height="16" label="Add..." label_selected="Add..."
 			     left_delta="5" mouse_opaque="true" name="add_allowed" scale_image="true"
@@ -1399,7 +1403,7 @@ Select the thumbnail to choose a different texture.
 			     follows="top|bottom" heading_font="SansSerifSmall"
 			     heading_height="14" height="80" left_delta="0" mouse_opaque="true"
 			     multi_select="true" name="BannedList"
-			     tool_tip="([LISTED] listed, [MAX] max)" width="195" />
+			     tool_tip="([LISTED] listed, [MAX] max)" width="195" menu_file="menu_avs_list.xml"/>
 			<button bottom_delta="-20" enabled="true" follows="bottom" font="SansSerifSmall"
 			     halign="center" height="16" label="Add..." label_selected="Add..."
 			     left_delta="5" mouse_opaque="true" name="add_banned" scale_image="true"

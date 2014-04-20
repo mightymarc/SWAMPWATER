@@ -3,10 +3,9 @@
  * @brief Processes responses received for asset upload requests.
  *
  * $LicenseInfo:firstyear=2007&license=viewergpl$
- * 
+ * Second Life Viewer Source Code
  * Copyright (c) 2007-2009, Linden Research, Inc.
  * 
- * Second Life Viewer Source Code
  * The source code in this file ("Source Code") is provided by Linden Lab
  * to you under the terms of the GNU General Public License, version 2.0
  * ("GPL"), unless you have obtained a separate licensing agreement
@@ -53,9 +52,8 @@
 #include "llviewerobject.h"
 #include "llviewercontrol.h"
 #include "llviewerobjectlist.h"
-#include "llviewermenufile.h"
+#include "llviewertexlayer.h"
 #include "llviewerwindow.h"
-#include "lltexlayer.h"
 #include "lltrans.h"
 
 // library includes
@@ -192,8 +190,7 @@ void on_new_single_inventory_upload_complete(
 LLAssetUploadResponder::LLAssetUploadResponder(const LLSD &post_data,
 											   const LLUUID& vfile_id,
 											   LLAssetType::EType asset_type)
-:	LLHTTPClient::Responder(),
-	mPostData(post_data),
+:	mPostData(post_data),
 	mVFileID(vfile_id),
 	mAssetType(asset_type)
 {
@@ -210,8 +207,7 @@ LLAssetUploadResponder::LLAssetUploadResponder(
 	const LLSD &post_data,
 											   const std::string& file_name, 
 											   LLAssetType::EType asset_type)
-:	LLHTTPClient::Responder(),
-	mPostData(post_data),
+:	mPostData(post_data),
 	mFileName(file_name),
 	mAssetType(asset_type)
 {
@@ -257,6 +253,7 @@ void LLAssetUploadResponder::result(const LLSD& content)
 	lldebugs << "LLAssetUploadResponder::result from capabilities" << llendl;
 
 	std::string state = content["state"];
+
 	if (state == "upload")
 	{
 		uploadUpload(content);
@@ -319,8 +316,10 @@ void LLAssetUploadResponder::uploadComplete(const LLSD& content)
 LLNewAgentInventoryResponder::LLNewAgentInventoryResponder(
 	const LLSD& post_data,
 	const LLUUID& vfile_id,
-	LLAssetType::EType asset_type)
-	: LLAssetUploadResponder(post_data, vfile_id, asset_type)
+	LLAssetType::EType asset_type,
+	void (*callback)(bool, void*),
+	void* user_data)
+	: LLAssetUploadResponder(post_data, vfile_id, asset_type), mCallBack(callback), mUserData(user_data)
 {
 }
 
@@ -328,21 +327,31 @@ LLNewAgentInventoryResponder::LLNewAgentInventoryResponder(
 	const LLSD& post_data,
 	const std::string& file_name,
 	LLAssetType::EType asset_type)
-	: LLAssetUploadResponder(post_data, file_name, asset_type)
+	: LLAssetUploadResponder(post_data, file_name, asset_type), mCallBack(NULL), mUserData(NULL)
 {
 }
 
 // virtual
 void LLNewAgentInventoryResponder::error(U32 statusNum, const std::string& reason)
 {
+	if (mCallBack)
+	{
+		(*mCallBack)(false, mUserData);
+	}
 	LLAssetUploadResponder::error(statusNum, reason);
 	//LLImportColladaAssetCache::getInstance()->assetUploaded(mVFileID, LLUUID(), FALSE);
 }
 
+
 //virtual 
 void LLNewAgentInventoryResponder::uploadFailure(const LLSD& content)
 {
+	if (mCallBack)
+	{
+		(*mCallBack)(false, mUserData);
+	}
 	LLAssetUploadResponder::uploadFailure(content);
+
 	//LLImportColladaAssetCache::getInstance()->assetUploaded(mVFileID, content["new_asset"], FALSE);
 }
 
@@ -350,6 +359,11 @@ void LLNewAgentInventoryResponder::uploadFailure(const LLSD& content)
 void LLNewAgentInventoryResponder::uploadComplete(const LLSD& content)
 {
 	lldebugs << "LLNewAgentInventoryResponder::result from capabilities" << llendl;
+
+	if (mCallBack)
+	{
+		(*mCallBack)(true, mUserData);
+	}
 
 	//std::ostringstream llsdxml;
 	//LLSDSerialize::toXML(content, llsdxml);
@@ -384,10 +398,14 @@ void LLNewAgentInventoryResponder::uploadComplete(const LLSD& content)
 
 	// continue uploading for bulk uploads
 	
-		if (!gUploadQueue.empty())
+	/* Singu Note: sUploadQueue was never getting populated, anywhere! Therefore, this entire block never was reached.
+	** I have condensed it to here in the hopes it may one day see use.  Apparently, it came in with Siana's prep work
+	** for mesh upload (697dd7e9298282590f8cf858a58335f70302532b), but we never needed it.
+	static std::deque<std::string> sUploadQueue;
+	if (!sUploadQueue.empty())
 	{
-		std::string next_file = gUploadQueue.front();
-		gUploadQueue.pop_front();
+		std::string next_file = sUploadQueue.front();
+		sUploadQueue.pop_front();
 		if (next_file.empty()) return;
 		std::string name = gDirUtilp->getBaseFileName(next_file, true);
 
@@ -435,6 +453,7 @@ void LLNewAgentInventoryResponder::uploadComplete(const LLSD& content)
 			expected_upload_cost,
 			userdata);
 	}
+	*/
 }
 
 LLSendTexLayerResponder::LLSendTexLayerResponder(const LLSD& post_data,
@@ -448,7 +467,7 @@ LLSendTexLayerResponder::LLSendTexLayerResponder(const LLSD& post_data,
 
 LLSendTexLayerResponder::~LLSendTexLayerResponder()
 {
-	// mBakedUploadData is normally deleted by calls to LLTexLayerSetBuffer::onTextureUploadComplete() below
+	// mBakedUploadData is normally deleted by calls to LLViewerTexLayerSetBuffer::onTextureUploadComplete() below
 	if (mBakedUploadData)
 	{	// ...but delete it in the case where uploadComplete() is never called
 		delete mBakedUploadData;
@@ -469,12 +488,12 @@ void LLSendTexLayerResponder::uploadComplete(const LLSD& content)
 	if (result == "complete"
 		&& mBakedUploadData != NULL)
 	{	// Invoke 
-		LLTexLayerSetBuffer::onTextureUploadComplete(new_id, (void*) mBakedUploadData, 0, LL_EXSTAT_NONE);
+		LLViewerTexLayerSetBuffer::onTextureUploadComplete(new_id, (void*) mBakedUploadData, 0, LL_EXSTAT_NONE);
 		mBakedUploadData = NULL;	// deleted in onTextureUploadComplete()
 	}
 	else
 	{	// Invoke the original callback with an error result
-		LLTexLayerSetBuffer::onTextureUploadComplete(new_id, (void*) mBakedUploadData, -1, LL_EXSTAT_NONE);
+		LLViewerTexLayerSetBuffer::onTextureUploadComplete(new_id, (void*) mBakedUploadData, -1, LL_EXSTAT_NONE);
 		mBakedUploadData = NULL;	// deleted in onTextureUploadComplete()
 	}
 }
@@ -484,7 +503,7 @@ void LLSendTexLayerResponder::error(U32 statusNum, const std::string& reason)
 	llinfos << "status: " << statusNum << " reason: " << reason << llendl;
 	
 	// Invoke the original callback with an error result
-	LLTexLayerSetBuffer::onTextureUploadComplete(LLUUID(), (void*) mBakedUploadData, -1, LL_EXSTAT_NONE);
+	LLViewerTexLayerSetBuffer::onTextureUploadComplete(LLUUID(), (void*) mBakedUploadData, -1, LL_EXSTAT_NONE);
 	mBakedUploadData = NULL;	// deleted in onTextureUploadComplete()
 }
 
@@ -664,7 +683,7 @@ void LLUpdateTaskInventoryResponder::uploadComplete(const LLSD& content)
 			}
 			else
 			{
-				LLLiveLSLEditor* preview = LLLiveLSLEditor::find(item_id, task_id);
+				LLLiveLSLEditor* preview = static_cast<LLLiveLSLEditor*>(LLPreview::find(item_id));
 				if (preview)
 				{
 					// Bytecode save completed
@@ -684,6 +703,7 @@ void LLUpdateTaskInventoryResponder::uploadComplete(const LLSD& content)
 			break;
 	}
 }
+
 
 /////////////////////////////////////////////////////
 // LLNewAgentInventoryVariablePriceResponder::Impl //
@@ -1152,3 +1172,4 @@ void LLNewAgentInventoryVariablePriceResponder::showConfirmationDialog(
 				boost::intrusive_ptr<LLNewAgentInventoryVariablePriceResponder>(this)));
 	}
 }
+

@@ -39,7 +39,6 @@
 #include "llcolorswatch.h"
 #include "llcombobox.h"
 #include "lluictrlfactory.h"
-#include "llurlsimstring.h"
 #include "llviewercontrol.h"
 
 #include "llagent.h"
@@ -48,6 +47,7 @@
 #include "llavatarnamecache.h"
 #include "llvoavatar.h"
 #include "llcallingcard.h"
+#include "llnotifications.h"
 
 LLPanelGeneral::LLPanelGeneral()
 {
@@ -62,7 +62,13 @@ BOOL LLPanelGeneral::postBuild()
 	LLComboBox* namesystem_combobox = getChild<LLComboBox>("namesystem_combobox");
 	namesystem_combobox->setCurrentByIndex(gSavedSettings.getS32("PhoenixNameSystem"));
 
-	childSetValue("default_start_location", gSavedSettings.getBOOL("LoginLastLocation") ? "MyLastLocation" : "MyHome");
+	getChild<LLUICtrl>("show_resident_checkbox")->setValue(gSavedSettings.getBOOL("LiruShowLastNameResident"));
+
+	std::string login_location = gSavedSettings.getString("LoginLocation");
+	if(login_location != "last" && login_location != "home")
+		login_location = "last";
+
+	childSetValue("default_start_location", login_location);
 	childSetValue("show_location_checkbox", gSavedSettings.getBOOL("ShowStartLocation"));
 	childSetValue("show_all_title_checkbox", gSavedSettings.getBOOL("RenderHideGroupTitleAll"));
 	childSetValue("language_is_public", gSavedSettings.getBOOL("LanguageIsPublic"));
@@ -70,8 +76,10 @@ BOOL LLPanelGeneral::postBuild()
 	childSetValue("show_my_name_checkbox", gSavedSettings.getBOOL("RenderNameHideSelf"));
 	childSetValue("small_avatar_names_checkbox", gSavedSettings.getBOOL("SmallAvatarNames"));
 	childSetValue("show_my_title_checkbox", gSavedSettings.getBOOL("RenderHideGroupTitle"));
+	childSetValue("away_when_idle_checkbox", gSavedSettings.getBOOL("AllowIdleAFK"));
 	childSetValue("afk_timeout_spinner", gSavedSettings.getF32("AFKTimeout"));
 	childSetValue("notify_money_change_checkbox", gSavedSettings.getBOOL("NotifyMoneyChange"));
+	childSetValue("no_transaction_clutter_checkbox", gSavedSettings.getBOOL("LiruNoTransactionClutter"));
 
 	
 
@@ -79,7 +87,7 @@ BOOL LLPanelGeneral::postBuild()
 	childSetValue("ui_auto_scale", gSavedSettings.getBOOL("UIAutoScale"));
 
 	LLComboBox* crash_behavior_combobox = getChild<LLComboBox>("crash_behavior_combobox");
-	crash_behavior_combobox->setCurrentByIndex(gCrashSettings.getS32(CRASH_BEHAVIOR_SETTING));
+	crash_behavior_combobox->setCurrentByIndex(gSavedSettings.getS32(CRASH_BEHAVIOR_SETTING));
 	
 	childSetValue("language_combobox", 	gSavedSettings.getString("Language"));
 
@@ -111,6 +119,14 @@ BOOL LLPanelGeneral::postBuild()
 	childSetVisible("maturity_desired_combobox", can_choose);
 	childSetVisible("maturity_desired_textbox",	!can_choose);
 
+	bool allow_idle = gSavedSettings.getBOOL("AllowIdleAFK");
+	childSetEnabled("afk_timeout_spinner", allow_idle);
+	childSetEnabled("seconds_textbox", allow_idle);
+	childSetCommitCallback("away_when_idle_checkbox", &onClickCheckbox, this);
+
+	childSetEnabled("no_transaction_clutter_checkbox", gSavedSettings.getBOOL("NotifyMoneyChange"));
+	childSetCommitCallback("notify_money_change_checkbox", &onClickCheckbox, this);
+
 	childSetAction("clear_settings", &onClickClearSettings, this);
 			
 	return TRUE;
@@ -126,11 +142,13 @@ void LLPanelGeneral::apply()
 	LLComboBox* fade_out_combobox = getChild<LLComboBox>("fade_out_combobox");
 	gSavedSettings.setS32("RenderName", fade_out_combobox->getCurrentIndex());
 	
-	LLComboBox* namesystem_combobox = getChild<LLComboBox>("namesystem_combobox");
-	if(gSavedSettings.getS32("PhoenixNameSystem")!=namesystem_combobox->getCurrentIndex()){
-		gSavedSettings.setS32("PhoenixNameSystem", namesystem_combobox->getCurrentIndex());
+	S32 namesystem_combobox_index = getChild<LLComboBox>("namesystem_combobox")->getCurrentIndex();
+	BOOL show_resident = getChild<LLUICtrl>("show_resident_checkbox")->getValue();
+	if(gSavedSettings.getS32("PhoenixNameSystem")!=namesystem_combobox_index || gSavedSettings.getBOOL("LiruShowLastNameResident")!=show_resident){
+		gSavedSettings.setS32("PhoenixNameSystem", namesystem_combobox_index);
+		gSavedSettings.setBOOL("LiruShowLastNameResident", show_resident);
 		if(gAgent.getRegion()){
-			if(namesystem_combobox->getCurrentIndex()<=0 || namesystem_combobox->getCurrentIndex()>2) LLAvatarNameCache::setUseDisplayNames(false);
+			if(namesystem_combobox_index<=0 || namesystem_combobox_index>2) LLAvatarNameCache::setUseDisplayNames(false);
 			else LLAvatarNameCache::setUseDisplayNames(true);
 			LLVOAvatar::invalidateNameTags(); // Remove all clienttags to get them updated
 
@@ -138,29 +156,43 @@ void LLPanelGeneral::apply()
 		}
 	}
 
-	gSavedSettings.setBOOL("LoginLastLocation", childGetValue("default_start_location").asString() == "MyLastLocation");
+	gSavedSettings.setString("LoginLocation", childGetValue("default_start_location").asString());
 	gSavedSettings.setBOOL("ShowStartLocation", childGetValue("show_location_checkbox"));
 	gSavedSettings.setBOOL("RenderHideGroupTitleAll", childGetValue("show_all_title_checkbox"));
 	gSavedSettings.setBOOL("LanguageIsPublic", childGetValue("language_is_public"));
 	gSavedSettings.setBOOL("RenderNameHideSelf", childGetValue("show_my_name_checkbox"));
 	gSavedSettings.setBOOL("SmallAvatarNames", childGetValue("small_avatar_names_checkbox"));
 	gSavedSettings.setBOOL("RenderHideGroupTitle", childGetValue("show_my_title_checkbox"));
+	gSavedSettings.setBOOL("AllowIdleAFK", childGetValue("away_when_idle_checkbox"));
 	gSavedSettings.setF32("AFKTimeout", childGetValue("afk_timeout_spinner").asReal());
 	gSavedSettings.setBOOL("NotifyMoneyChange", childGetValue("notify_money_change_checkbox"));
+	gSavedSettings.setBOOL("LiruNoTransactionClutter", childGetValue("no_transaction_clutter_checkbox"));
 
 	
 	gSavedSettings.setF32("UIScaleFactor", childGetValue("ui_scale_slider").asReal());
 	gSavedSettings.setBOOL("UIAutoScale", childGetValue("ui_auto_scale"));
 	gSavedSettings.setString("Language", childGetValue("language_combobox"));
 
-	LLURLSimString::setString(childGetValue("location_combobox"));
-
 	LLComboBox* crash_behavior_combobox = getChild<LLComboBox>("crash_behavior_combobox");
-	gCrashSettings.setS32(CRASH_BEHAVIOR_SETTING, crash_behavior_combobox->getCurrentIndex());
+	gSavedSettings.setS32(CRASH_BEHAVIOR_SETTING, crash_behavior_combobox->getCurrentIndex());
 }
 
 void LLPanelGeneral::cancel()
 {
+}
+
+// static
+void LLPanelGeneral::onClickCheckbox(LLUICtrl* ctrl, void* data)
+{
+	LLPanelGeneral* self = (LLPanelGeneral*)data;
+	bool enabled = ctrl->getValue().asBoolean();
+	if(ctrl->getName() == "away_when_idle_checkbox")
+	{
+		self->childSetEnabled("afk_timeout_spinner", enabled);
+		self->childSetEnabled("seconds_textbox", enabled);
+	}
+	else if(ctrl->getName() == "notify_money_change_checkbox")
+		self->childSetEnabled("no_transaction_clutter_checkbox", enabled);
 }
 
 // static

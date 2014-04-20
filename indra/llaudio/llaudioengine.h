@@ -2,31 +2,25 @@
  * @file audioengine.h
  * @brief Definition of LLAudioEngine base class abstracting the audio support
  *
- * $LicenseInfo:firstyear=2000&license=viewergpl$
- * 
- * Copyright (c) 2000-2009, Linden Research, Inc.
- * 
+ * $LicenseInfo:firstyear=2000&license=viewerlgpl$
  * Second Life Viewer Source Code
- * The source code in this file ("Source Code") is provided by Linden Lab
- * to you under the terms of the GNU General Public License, version 2.0
- * ("GPL"), unless you have obtained a separate licensing agreement
- * ("Other License"), formally executed by you and Linden Lab.  Terms of
- * the GPL can be found in doc/GPL-license.txt in this distribution, or
- * online at http://secondlifegrid.net/programs/open_source/licensing/gplv2
+ * Copyright (C) 2010, Linden Research, Inc.
  * 
- * There are special exceptions to the terms and conditions of the GPL as
- * it is applied to this Source Code. View the full text of the exception
- * in the file doc/FLOSS-exception.txt in this software distribution, or
- * online at
- * http://secondlifegrid.net/programs/open_source/licensing/flossexception
+ * This library is free software; you can redistribute it and/or
+ * modify it under the terms of the GNU Lesser General Public
+ * License as published by the Free Software Foundation;
+ * version 2.1 of the License only.
  * 
- * By copying, modifying or distributing this software, you acknowledge
- * that you have read and understood your obligations described above,
- * and agree to abide by those obligations.
+ * This library is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+ * Lesser General Public License for more details.
  * 
- * ALL LINDEN LAB SOURCE CODE IS PROVIDED "AS IS." LINDEN LAB MAKES NO
- * WARRANTIES, EXPRESS, IMPLIED OR OTHERWISE, REGARDING ITS ACCURACY,
- * COMPLETENESS OR PERFORMANCE.
+ * You should have received a copy of the GNU Lesser General Public
+ * License along with this library; if not, write to the Free Software
+ * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301  USA
+ * 
+ * Linden Research, Inc., 945 Battery Street, San Francisco, CA  94111  USA
  * $/LicenseInfo$
  */
 
@@ -43,11 +37,11 @@
 #include "lluuid.h"
 #include "llframetimer.h"
 #include "llassettype.h"
+#include "llextendedstatus.h"
 
 #include "lllistener.h"
 
 const F32 LL_WIND_UPDATE_INTERVAL = 0.1f;
-const F32 LL_ROLLOFF_MULTIPLIER_UNDER_WATER = 5.f;			//  How much sounds are weaker under water
 const F32 LL_WIND_UNDERWATER_CENTER_FREQ = 20.f;
 
 const F32 ATTACHED_OBJECT_TIMEOUT = 5.0f;
@@ -153,7 +147,7 @@ public:
 					  const LLVector3d &pos_global = LLVector3d::zero,
 					  const LLUUID source_object = LLUUID::null);
 					  // </edit>
-	bool preloadSound(const LLUUID &id);
+	bool preloadSound(const LLUUID &id);	//Preloads sounds without requiring a source.
 
 	void addAudioSource(LLAudioSource *asp);
 	void cleanupAudioSource(LLAudioSource *asp);
@@ -183,9 +177,6 @@ public:
 	void cleanupBuffer(LLAudioBuffer *bufferp);
 
 	bool hasDecodedFile(const LLUUID &uuid);
-	bool hasLocalFile(const LLUUID &uuid);
-
-	bool updateBufferForData(LLAudioData *adp, const LLUUID &audio_uuid = LLUUID::null);
 
 	void setAllowLargeSounds(bool allow) { mAllowLargeSounds = allow ;}
 	bool getAllowLargeSounds() const {return mAllowLargeSounds;}
@@ -195,6 +186,8 @@ public:
 	static void assetCallback(LLVFS *vfs, const LLUUID &uuid, LLAssetType::EType type, void *user_data, S32 result_code, LLExtStat ext_status);
 
 	friend class LLPipeline; // For debugging
+
+	void checkStates();
 public:
 	F32 mMaxWindGain; // Hack.  Public to set before fade in?
 
@@ -233,7 +226,7 @@ protected:
 	S32 mNumChannels;
 	bool mEnableWind;
 
-	LLUUID mCurrentTransfer; // Audio file currently being transferred by the system
+	LLAudioData* mCurrentTransfer; // Audio file currently being transferred by the system
 	LLFrameTimer mCurrentTransferTimer;
 
 	// A list of all audio sources that are known to the viewer at this time.
@@ -248,6 +241,7 @@ public://Jay: IDGAF
 	source_map mAllSources;
 protected:
 	data_map mAllData;
+	std::list<LLUUID> mPreloadSystemList;
 	LLAudioChannel *mChannels[MAX_CHANNELS];
 
 	// Buffers needs to change into a different data structure, as the number of buffers
@@ -291,9 +285,7 @@ public:
 	virtual void update();						// Update this audio source
 	void updatePriority();
 
-	void preload(const LLUUID &audio_id); // Only used for preloading UI sounds, now.
-
-	void addAudioData(LLAudioData *adp, bool set_current = TRUE);
+	void preload(const LLUUID &audio_id);
 
 	void setAmbient(const bool ambient)						{ mAmbient = ambient; }
 	bool isAmbient() const									{ return mAmbient; }
@@ -323,6 +315,7 @@ public:
 	LLVector3d getPositionGlobal() const							{ return mPositionGlobal; }
 	LLVector3 getVelocity()	const									{ return mVelocity; }				
 	F32 getPriority() const											{ return mPriority; }
+	void setPriority(F32 priority)									{ mPriority = priority; }
 
 	// Gain should always be clamped between 0 and 1.
 	F32 getGain() const												{ return mGain; }
@@ -406,25 +399,27 @@ public:
 	LLUUID getID() const				{ return mID; }
 	LLAudioBuffer *getBuffer() const	{ return mBufferp; }
 
-	bool	hasLocalData() const		{ return mHasLocalData; }
-	bool	hasDecodedData() const		{ return mHasDecodedData; }
-	bool	hasCompletedDecode() const	{ return mHasCompletedDecode; }
-	bool	hasValidData() const		{ return mHasValidData; }
+	enum ELoadState
+	{
+		STATE_LOAD_ERROR,
+		STATE_LOAD_REQ_FETCH,
+		STATE_LOAD_FETCHING,
+		STATE_LOAD_REQ_DECODE,
+		STATE_LOAD_DECODING,
+		STATE_LOAD_READY
+	};
+	ELoadState	getLoadState() const			{ return mLoadState; }
+	ELoadState	setLoadState(ELoadState state)	{ return mLoadState = state; }
+	bool		isInPreload() const				{ return mLoadState > STATE_LOAD_ERROR && mLoadState < STATE_LOAD_READY; }
 
-	void	setHasLocalData(const bool hld)		{ mHasLocalData = hld; }
-	void	setHasDecodedData(const bool hdd)	{ mHasDecodedData = hdd; }
-	void	setHasCompletedDecode(const bool hcd)	{ mHasCompletedDecode = hcd; }
-	void	setHasValidData(const bool hvd)		{ mHasValidData = hvd; }
+	void updateLoadState();
 
 	friend class LLAudioEngine; // Severe laziness, bad.
 
 protected:
 	LLUUID mID;
 	LLAudioBuffer *mBufferp;	// If this data is being used by the audio system, a pointer to the buffer will be set here.
-	bool mHasLocalData;			// Set true if the sound asset file is available locally
-	bool mHasDecodedData;		// Set true if the sound file has been decoded
-	bool mHasCompletedDecode;	// Set true when the sound is decoded
-	bool mHasValidData;			// Set false if decoding failed, meaning the sound asset is bad
+	ELoadState mLoadState;
 };
 
 
@@ -453,12 +448,11 @@ public:
 protected:
 	virtual void play() = 0;
 	virtual void playSynced(LLAudioChannel *channelp) = 0;
-	virtual void cleanup() = 0;
-	void setWaiting(bool waiting)               { mWaiting = waiting; }
+	virtual void cleanup();
 
 public:
 	virtual bool isPlaying() = 0;
-	bool isWaiting() const						{ return mWaiting; }
+	bool isFree() const							{ return mCurrentSourcep==NULL; }
 
 protected:
 	virtual bool updateBuffer(); // Check to see if the buffer associated with the source changed, and update if necessary.
@@ -469,7 +463,6 @@ protected:
 	LLAudioSource	*mCurrentSourcep;
 	LLAudioBuffer	*mCurrentBufferp;
 	bool			mLoopedThisFrame;
-	bool			mWaiting;	// Waiting for sync.
 	F32             mSecondaryGain;
 };
 
@@ -484,6 +477,7 @@ protected:
 class LLAudioBuffer
 {
 public:
+	LLAudioBuffer() : mInUse(true), mAudioDatap(NULL) { mLastUseTimer.reset(); }
 	virtual ~LLAudioBuffer() {};
 	virtual bool loadWAV(const std::string& filename) = 0;
 	virtual U32 getLength() = 0;

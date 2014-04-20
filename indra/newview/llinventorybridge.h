@@ -33,7 +33,7 @@
 #include "llinventorymodel.h"
 #include "llinventoryobserver.h"
 #include "llviewercontrol.h"
-#include "llwearable.h"
+#include "llviewerwearable.h"
 
 class LLInventoryPanel;
 class LLInventoryModel;
@@ -45,7 +45,7 @@ class LLViewerJointAttachment;
 typedef std::vector<std::string> menuentry_vec_t;
 
 //~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-// Class LLInvFVBridge (& it's derived classes)
+// Class LLInvFVBridge (& its derived classes)
 //
 // Short for Inventory-Folder-View-Bridge. This is an
 // implementation class to be able to view inventory items.
@@ -105,11 +105,12 @@ public:
 	virtual void removeBatch(LLDynamicArray<LLFolderViewEventListener*>& batch);
 	virtual void move(LLFolderViewEventListener* new_parent_bridge) {}
 	virtual BOOL isItemCopyable() const { return FALSE; }
-	virtual BOOL copyToClipboard() const { return FALSE; }
+	virtual BOOL copyToClipboard() const;
 	virtual void cutToClipboard();
 	virtual BOOL isClipboardPasteable() const;
+	bool isClipboardPasteableAsCopy() const;
 	virtual BOOL isClipboardPasteableAsLink() const;
-	virtual void pasteFromClipboard() {}
+	virtual void pasteFromClipboard(bool only_copies = false) {}
 	virtual void pasteLinkFromClipboard() {}
 	void getClipboardEntries(bool show_asset_id, menuentry_vec_t &items, 
 							 menuentry_vec_t &disabled_items, U32 flags);
@@ -160,7 +161,7 @@ protected:
 									 BOOL restamp);
 	void removeBatchNoCheck(LLDynamicArray<LLFolderViewEventListener*>& batch);
 protected:
-	LLHandle<LLPanel> mInventoryPanel;
+	LLHandle<LLInventoryPanel> mInventoryPanel;
 	LLFolderView* mRoot;
 	const LLUUID mUUID;	// item id
 	LLInventoryType::EType mInvType;
@@ -212,11 +213,10 @@ public:
 	virtual BOOL renameItem(const std::string& new_name);
 	virtual BOOL removeItem();
 	virtual BOOL isItemCopyable() const;
-	virtual BOOL copyToClipboard() const;
 	virtual BOOL hasChildren() const { return FALSE; }
 	virtual BOOL isUpToDate() const { return TRUE; }
 
-    static void showFloaterImagePreview(LLInventoryItem* item, AIFilePicker* filepicker);
+	static void showFloaterImagePreview(LLInventoryItem* item, AIFilePicker* filepicker);
 
 	/*virtual*/ void clearDisplayName() { mDisplayName.clear(); }
 
@@ -240,8 +240,10 @@ public:
 		mCallingCards(FALSE),
 		mWearables(FALSE)
 	{}
+
 	BOOL dragItemIntoFolder(LLInventoryItem* inv_item, BOOL drop);
 	BOOL dragCategoryIntoFolder(LLInventoryCategory* inv_category, BOOL drop);
+
 	virtual void performAction(LLInventoryModel* model, std::string action);
 	virtual void openItem();
 	virtual void closeItem();
@@ -260,7 +262,7 @@ public:
 	BOOL removeSystemFolder();
 	bool removeItemResponse(const LLSD& notification, const LLSD& response);
 
-	virtual void pasteFromClipboard();
+	virtual void pasteFromClipboard(bool only_copies = false);
 	virtual void pasteLinkFromClipboard();
 	virtual void buildContextMenu(LLMenuGL& menu, U32 flags);
 	virtual BOOL hasChildren() const;
@@ -274,7 +276,6 @@ public:
 	virtual BOOL isItemCopyable() const;
 	virtual BOOL isClipboardPasteable() const;
 	virtual BOOL isClipboardPasteableAsLink() const;
-	virtual BOOL copyToClipboard() const;
 	
 	static void createWearable(LLFolderBridge* bridge, LLWearableType::EType type);
 
@@ -498,14 +499,15 @@ public:
 	virtual void	buildContextMenu(LLMenuGL& menu, U32 flags);
 	virtual std::string getLabelSuffix() const;
 	virtual BOOL renameItem(const std::string& new_name);
+	virtual void nameOrDescriptionChanged(void) const;
 	virtual LLWearableType::EType getWearableType() const { return mWearableType; }
 
 	static void		onWearOnAvatar( void* userdata );	// Access to wearOnAvatar() from menu
 	static BOOL		canWearOnAvatar( void* userdata );
-	static void		onWearOnAvatarArrived( LLWearable* wearable, void* userdata );
+	static void		onWearOnAvatarArrived( LLViewerWearable* wearable, void* userdata );
 	void			wearOnAvatar();
 
-	static void		onWearAddOnAvatarArrived( LLWearable* wearable, void* userdata );
+	static void		onWearAddOnAvatarArrived( LLViewerWearable* wearable, void* userdata );
 	void			wearAddOnAvatar();
 
 	static BOOL		canEditOnAvatar( void* userdata );	// Access to editOnAvatar() from menu
@@ -513,10 +515,9 @@ public:
 	void			editOnAvatar();
 
 	static BOOL		canRemoveFromAvatar( void* userdata );
-	static void		onRemoveFromAvatar( void* userdata );
-	static void		onRemoveFromAvatarArrived( LLWearable* wearable, 	void* userdata );
-	static void 	removeItemFromAvatar(LLViewerInventoryItem *item);
-	static void 	removeAllClothesFromAvatar();
+	//static void		onRemoveFromAvatar( void* userdata );
+	//static void		onRemoveFromAvatarArrived( LLViewerWearable* wearable, 	void* userdata );
+	//static void 	removeAllClothesFromAvatar();
 	void			removeFromAvatar();
 protected:
 	LLAssetType::EType mAssetType;
@@ -639,6 +640,7 @@ public:
 		const LLUUID& uuid,
 		U32 flags = 0x00) const;
 };
+
 void rez_attachment(LLViewerInventoryItem* item, 
 					LLViewerJointAttachment* attachment,
 					bool replace = false);

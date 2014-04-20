@@ -84,7 +84,6 @@ protected:
 	LLComboBox		*mCtrlFullScreen;               // Fullscreen resolution
 	LLCheckBoxCtrl	*mCtrlAutoDetectAspect;			// automatically detect aspect ratio
 	LLComboBox		*mCtrlAspectRatio;				// user provided aspect ratio
-	LLComboBox		*mCtrlReflectionDetail;
 
 	LLCheckBoxCtrl	*mCtrlWindowed;					// windowed mode
 	LLComboBox      *mCtrlWindowSize;               // window size for windowed mode
@@ -94,7 +93,7 @@ protected:
 	LLCheckBoxCtrl	*mCtrlCustomSettings;
 
 	// performance sliders and boxes
-	LLViewBorder	*mGraphicsBorder;
+	//LLViewBorder	*mGraphicsBorder;
 
 	LLSliderCtrl	*mCtrlDrawDistance;				// the draw distance slider
 	LLSliderCtrl	*mCtrlLODFactor;				// LOD for volume objects
@@ -108,13 +107,16 @@ protected:
 	LLSliderCtrl	*mCtrlPostProcess;				// Max Particle
 	LLSliderCtrl	*mCtrlNonImpostors;				// Max non-impostors
 
+	LLCheckBoxCtrl	*mCtrlTransparentWater;
 	LLCheckBoxCtrl	*mCtrlBumpShiny;
 	LLCheckBoxCtrl	*mCtrlWindLight;
 	LLCheckBoxCtrl	*mCtrlAvatarVP;
 	LLCheckBoxCtrl	*mCtrlShaderEnable;
 	LLCheckBoxCtrl	*mCtrlDeferred;
 	LLCheckBoxCtrl	*mCtrlDeferredDoF;
+	LLComboBox		*mCtrlReflectionDetail;
 	LLComboBox		*mCtrlShadowDetail;
+	LLComboBox		*mCtrlTerrainScale;
 	LLCheckBoxCtrl	*mCtrlAvatarImpostors;
 	LLCheckBoxCtrl	*mCtrlAvatarCloth;
 	LLCheckBoxCtrl	*mCtrlLightingDetail2;
@@ -123,14 +125,12 @@ protected:
 
 	LLTextBox		*mAspectRatioLabel1;
 	LLTextBox		*mDisplayResLabel;
-	LLTextEditor	*mFullScreenInfo;
 	LLTextBox       *mWindowSizeLabel;
 	
 	LLTextBox		*mShaderText;
 	LLTextBox		*mReflectionText;
 	LLTextBox		*mAvatarText;
 	LLTextBox		*mTerrainText;
-	LLTextBox		*mLightingText;
 	LLTextBox		*mDrawDistanceMeterText1;
 	LLTextBox		*mDrawDistanceMeterText2;
 
@@ -144,6 +144,10 @@ protected:
 	LLTextBox		*mSkyFactorText;
 	LLTextBox		*mPostProcessText;
 	LLTextBox		*mShadowDetailText;
+	LLTextBox		*mTerrainScaleText;
+
+	LLCheckBoxCtrl	*mVBO;
+	LLCheckBoxCtrl	*mVBOStream;
 
 	BOOL mFSAutoDetectAspect;
 	F32 mAspectRatio;
@@ -153,6 +157,7 @@ protected:
 	S32 mQualityPerformance;
 	BOOL mCustomSettings;
 
+	BOOL mTransparentWater;
 	BOOL mBumpShiny;
 	BOOL mShaderEnable;
 	BOOL mWindLight;
@@ -162,6 +167,7 @@ protected:
 
 	S32 mReflectionDetail;
 	S32 mShadowDetail;
+	F32 mTerrainScale;
 
 	BOOL mAvatarImpostors;
 	S32 mNonImpostors;
@@ -180,30 +186,33 @@ protected:
 	S32 mParticleCount;
 	S32 mPostProcess;
 
-	static void setGraphicsSettings(LLControlGroup& group);
-	static void createGroup();
+	// Hardware tab
+	BOOL mUseVBO;
+	BOOL mUseFBO;
+	BOOL mUseAniso;
+	U32 mFSAASamples;
+	F32 mGamma;
+	S32 mVideoCardMem;
+	F32 mFogRatio;
 
 	// if the quality radio buttons are changed
-	static void onChangeQuality(LLUICtrl *ctrl, void *data);
+	void onChangeQuality(LLUICtrl* caller);
 	
 	// if the custom settings box is clicked
-	static void onChangeCustom(LLUICtrl *ctrl, void *data);
+	static void onChangeCustom();
 	
-	static void onOpenHelp(void *data);
-	static void onOpenHardwareSettings(void *data);
-	static void onCommitAutoDetectAspect(LLUICtrl *ctrl, void *data);
-	static void onKeystrokeAspectRatio(LLLineEditor* caller, void* user_data);
-	static void onSelectAspectRatio(LLUICtrl*, void*);
-	static void onCommitWindowedMode(LLUICtrl* ctrl, void *data);
-	static void onApplyResolution(LLUICtrl* ctrl, void* data);
-	static void updateSliderText(LLUICtrl* ctrl, void* user_data);
-	static void updateMeterText(LLUICtrl* ctrl, void* user_data);
+	void onCommitAutoDetectAspect(const LLSD& value);
+	void onKeystrokeAspectRatio();
+	void onSelectAspectRatio();
+	void onCommitWindowedMode();
+	static void updateSliderText(LLUICtrl* ctrl, LLTextBox* text_box);
+	void updateMeterText();
 
 	/// callback for defaults
-	static void setHardwareDefaults(void *data);
+	static void setHardwareDefaults();
 
 	// callback for when client turns on shaders
-	static void onVertexShaderEnable(LLUICtrl*, void*);
+	static void onVertexShaderEnable();
 
 	// helper function
 	static void fractionFromDecimal(F32 decimal_val, S32& numerator, S32& denominator);

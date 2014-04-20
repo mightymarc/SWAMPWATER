@@ -2,31 +2,25 @@
  * @file llmemory.cpp
  * @brief Very special memory allocation/deallocation stuff here
  *
- * $LicenseInfo:firstyear=2002&license=viewergpl$
- * 
- * Copyright (c) 2002-2009, Linden Research, Inc.
- * 
+ * $LicenseInfo:firstyear=2002&license=viewerlgpl$
  * Second Life Viewer Source Code
- * The source code in this file ("Source Code") is provided by Linden Lab
- * to you under the terms of the GNU General Public License, version 2.0
- * ("GPL"), unless you have obtained a separate licensing agreement
- * ("Other License"), formally executed by you and Linden Lab.  Terms of
- * the GPL can be found in doc/GPL-license.txt in this distribution, or
- * online at http://secondlifegrid.net/programs/open_source/licensing/gplv2
+ * Copyright (C) 2010, Linden Research, Inc.
  * 
- * There are special exceptions to the terms and conditions of the GPL as
- * it is applied to this Source Code. View the full text of the exception
- * in the file doc/FLOSS-exception.txt in this software distribution, or
- * online at
- * http://secondlifegrid.net/programs/open_source/licensing/flossexception
+ * This library is free software; you can redistribute it and/or
+ * modify it under the terms of the GNU Lesser General Public
+ * License as published by the Free Software Foundation;
+ * version 2.1 of the License only.
  * 
- * By copying, modifying or distributing this software, you acknowledge
- * that you have read and understood your obligations described above,
- * and agree to abide by those obligations.
+ * This library is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+ * Lesser General Public License for more details.
  * 
- * ALL LINDEN LAB SOURCE CODE IS PROVIDED "AS IS." LINDEN LAB MAKES NO
- * WARRANTIES, EXPRESS, IMPLIED OR OTHERWISE, REGARDING ITS ACCURACY,
- * COMPLETENESS OR PERFORMANCE.
+ * You should have received a copy of the GNU Lesser General Public
+ * License along with this library; if not, write to the Free Software
+ * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301  USA
+ * 
+ * Linden Research, Inc., 945 Battery Street, San Francisco, CA  94111  USA
  * $/LicenseInfo$
  */
 
@@ -65,6 +59,14 @@ BOOL LLMemory::sEnableMemoryFailurePrevention = FALSE;
 
 #if __DEBUG_PRIVATE_MEM__
 LLPrivateMemoryPoolManager::mem_allocation_info_t LLPrivateMemoryPoolManager::sMemAllocationTracker;
+#endif
+
+#ifdef SHOW_ASSERT
+void singu_alignment_check_failed(void)
+{
+	// Redundant, place to set breakpoints.
+	llassert(false);
+}
 #endif
 
 //static
@@ -170,7 +172,7 @@ void LLMemory::logMemoryInfo(BOOL update)
 
 	llinfos << "Current allocated physical memory(KB): " << sAllocatedMemInKB << llendl ;
 	llinfos << "Current allocated page size (KB): " << sAllocatedPageSizeInKB << llendl ;
-	llinfos << "Current availabe physical memory(KB): " << sAvailPhysicalMemInKB << llendl ;
+	llinfos << "Current available physical memory(KB): " << sAvailPhysicalMemInKB << llendl ;
 	llinfos << "Current max usable memory(KB): " << sMaxPhysicalMemInKB << llendl ;
 
 	llinfos << "--- private pool information -- " << llendl ;
@@ -244,21 +246,6 @@ U32 LLMemory::getMaxMemKB()
 U32 LLMemory::getAllocatedMemKB() 
 {
 	return sAllocatedMemInKB ;
-}
-
-void* ll_allocate (size_t size)
-{
-	if (size == 0)
-	{
-		llwarns << "Null allocation" << llendl;
-	}
-	void *p = malloc(size);
-	if (p == NULL)
-	{
-		LLMemory::freeReserve();
-		llerrs << "Out of memory Error" << llendl;
-	}
-	return p;
 }
 
 //----------------------------------------------------------------------------
@@ -382,6 +369,7 @@ U32 LLMemory::getWorkingSetSize()
 {
 	return 0 ;
 }
+
 #elif LL_SOLARIS
 #include <sys/types.h>
 #include <sys/stat.h>
@@ -425,7 +413,7 @@ U64 LLMemory::getCurrentRSS()
 
 U32 LLMemory::getWorkingSetSize()
 {
-	return 0 ;
+	return 0;
 }
 
 #endif
@@ -1358,7 +1346,7 @@ char* LLPrivateMemoryPool::allocate(U32 size)
 	//if the asked size larger than MAX_BLOCK_SIZE, fetch from heap directly, the pool does not manage it
 	if(size >= CHUNK_SIZE)
 	{
-		return (char*)malloc(size) ;
+		return (char*)ll_aligned_malloc_16(size) ;
 	}
 
 	char* p = NULL ;
@@ -1415,7 +1403,7 @@ char* LLPrivateMemoryPool::allocate(U32 size)
 			to_log = false ;
 		}
 
-		return (char*)malloc(size) ;
+		return (char*)ll_aligned_malloc_16(size) ;
 	}
 
 	return p ;
@@ -1434,7 +1422,7 @@ void LLPrivateMemoryPool::freeMem(void* addr)
 	
 	if(!chunk)
 	{
-		free(addr) ; //release from heap
+		ll_aligned_free_16(addr) ; //release from heap
 	}
 	else
 	{
@@ -1558,7 +1546,7 @@ LLPrivateMemoryPool::LLMemoryChunk* LLPrivateMemoryPool::addChunk(S32 chunk_inde
 
 	mReservedPoolSize += preferred_size + overhead ;
 
-	char* buffer = (char*)malloc(preferred_size + overhead) ;
+	char* buffer = (char*)ll_aligned_malloc_16(preferred_size + overhead) ;
 	if(!buffer)
 	{
 		return NULL ;
@@ -1626,7 +1614,7 @@ void LLPrivateMemoryPool::removeChunk(LLMemoryChunk* chunk)
 	mReservedPoolSize -= chunk->getBufferSize() ;
 	
 	//release memory
-	free(chunk->getBuffer()) ;
+	ll_aligned_free_16(chunk->getBuffer()) ;
 }
 
 U16 LLPrivateMemoryPool::findHashKey(const char* addr)
@@ -1970,7 +1958,7 @@ char* LLPrivateMemoryPoolManager::allocate(LLPrivateMemoryPool* poolp, U32 size,
 
 	if(!poolp)
 	{
-		p = (char*)malloc(size) ;
+		p = (char*)ll_aligned_malloc_16(size) ;
 	}
 	else
 	{
@@ -1999,7 +1987,7 @@ char* LLPrivateMemoryPoolManager::allocate(LLPrivateMemoryPool* poolp, U32 size)
 	}
 	else
 	{
-		return (char*)malloc(size) ;
+		return (char*)ll_aligned_malloc_16(size) ;
 	}
 }
 #endif
@@ -2024,7 +2012,7 @@ void  LLPrivateMemoryPoolManager::freeMem(LLPrivateMemoryPool* poolp, void* addr
 	{
 		if(!sPrivatePoolEnabled)
 		{
-			free(addr) ; //private pool is disabled.
+			ll_aligned_free_16(addr) ; //private pool is disabled.
 		}
 		else if(!sInstance) //the private memory manager is destroyed, try the dangling list
 		{

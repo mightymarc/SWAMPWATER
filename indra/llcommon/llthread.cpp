@@ -1,33 +1,32 @@
 /** 
  * @file llthread.cpp
  *
- * $LicenseInfo:firstyear=2004&license=viewergpl$
- * 
- * Copyright (c) 2004-2009, Linden Research, Inc.
- * 
+ * $LicenseInfo:firstyear=2004&license=viewerlgpl$
  * Second Life Viewer Source Code
- * The source code in this file ("Source Code") is provided by Linden Lab
- * to you under the terms of the GNU General Public License, version 2.0
- * ("GPL"), unless you have obtained a separate licensing agreement
- * ("Other License"), formally executed by you and Linden Lab.  Terms of
- * the GPL can be found in doc/GPL-license.txt in this distribution, or
- * online at http://secondlifegrid.net/programs/open_source/licensing/gplv2
+ * Copyright (C) 2010, Linden Research, Inc.
  * 
- * There are special exceptions to the terms and conditions of the GPL as
- * it is applied to this Source Code. View the full text of the exception
- * in the file doc/FLOSS-exception.txt in this software distribution, or
- * online at
- * http://secondlifegrid.net/programs/open_source/licensing/flossexception
+ * This library is free software; you can redistribute it and/or
+ * modify it under the terms of the GNU Lesser General Public
+ * License as published by the Free Software Foundation;
+ * version 2.1 of the License only.
  * 
- * By copying, modifying or distributing this software, you acknowledge
- * that you have read and understood your obligations described above,
- * and agree to abide by those obligations.
+ * This library is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+ * Lesser General Public License for more details.
  * 
- * ALL LINDEN LAB SOURCE CODE IS PROVIDED "AS IS." LINDEN LAB MAKES NO
- * WARRANTIES, EXPRESS, IMPLIED OR OTHERWISE, REGARDING ITS ACCURACY,
- * COMPLETENESS OR PERFORMANCE.
+ * You should have received a copy of the GNU Lesser General Public
+ * License along with this library; if not, write to the Free Software
+ * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301  USA
+ * 
+ * Linden Research, Inc., 945 Battery Street, San Francisco, CA  94111  USA
  * $/LicenseInfo$
  */
+
+#if LL_GNUC
+// Generate code for inlines from llthread.h (needed for is_main_thread()).
+#pragma implementation "llthread.h"
+#endif
 
 #include "linden_common.h"
 #include "llapr.h"
@@ -62,18 +61,12 @@
 // 
 //----------------------------------------------------------------------------
 
-#if !LL_DARWIN
-U32 ll_thread_local local_thread_ID = 0;
-#endif 
-
-U32 LLThread::sIDIter = 0;
 LLAtomicS32	LLThread::sCount = 0;
 LLAtomicS32	LLThread::sRunning = 0;
 
 LL_COMMON_API void assert_main_thread()
 {
-	static U32 s_thread_id = LLThread::currentID();
-	if (LLThread::currentID() != s_thread_id)
+	if (!AIThreadID::in_main_thread_inline())
 	{
 		llerrs << "Illegal execution outside main thread." << llendl;
 	}
@@ -90,9 +83,8 @@ void *APR_THREAD_FUNC LLThread::staticRun(apr_thread_t *apr_threadp, void *datap
 
 	LLThread *threadp = (LLThread *)datap;
 
-#if !LL_DARWIN
-	local_thread_ID = threadp->mID;
-#endif
+	// Initialize thread-local cache of current thread ID (if supported).
+	AIThreadID::set_current_thread_id();
 
 	// Create a thread local data.
 	LLThreadLocalData::create(threadp);
@@ -111,16 +103,15 @@ void *APR_THREAD_FUNC LLThread::staticRun(apr_thread_t *apr_threadp, void *datap
 	--sRunning;
 
 	// We're done with the run function, this thread is done executing now.
-	threadp->mStatus = STOPPED;
+	threadp->terminated();
 
 	// Only now print this info [doing that before setting mStatus
 	// to STOPPED makes it much more likely that another thread runs
-	// after the LLCurl::Multi::run() function exits and we actually
-	// change this variable (which really SHOULD have been inside
-	// the critical area of the mSignal lock)].
+	// after the AICurlPrivate::curlthread::AICurlThread::run() function
+	// exits and we actually change this variable (which really SHOULD
+	// have been inside the critical area of the mSignal lock)].
 	lldebugs << "LLThread::staticRun() Exiting: " << name << llendl;
 
-	--sRunning;		// Would be better to do this after joining with the thread, but we don't join :/
 	return NULL;
 }
 
@@ -132,7 +123,6 @@ LLThread::LLThread(std::string const& name) :
 	mStatus(STOPPED),
 	mThreadLocalData(NULL)
 {
-	mID = ++sIDIter;
 	sCount++;
 	llassert(sCount <= 50);
 	mRunCondition = new LLCondition;
@@ -277,12 +267,6 @@ void LLThread::setQuitting()
 }
 
 // static
-U32 LLThread::currentID()
-{
-	return (U32)apr_os_thread_current();
-}
-
-// static
 void LLThread::yield()
 {
 #if LL_LINUX || LL_SOLARIS
@@ -310,14 +294,18 @@ void LLThread::wakeLocked()
 	}
 }
 
-#ifdef SHOW_ASSERT
-// This allows the use of llassert(is_main_thread()) to assure the current thread is the main thread.
-static apr_os_thread_t main_thread_id;
-LL_COMMON_API bool is_main_thread(void) { return apr_os_thread_equal(main_thread_id, apr_os_thread_current()); }
-#endif
-
 // The thread private handle to access the LLThreadLocalData instance.
 apr_threadkey_t* LLThreadLocalData::sThreadLocalDataKey;
+
+LLThreadLocalData::LLThreadLocalData(char const* name) : mCurlMultiHandle(NULL), mCurlErrorBuffer(NULL), mName(name)
+{
+}
+
+LLThreadLocalData::~LLThreadLocalData()
+{
+  delete mCurlMultiHandle;
+  delete [] mCurlErrorBuffer;
+}
 
 //static
 void LLThreadLocalData::init(void)
@@ -328,6 +316,10 @@ void LLThreadLocalData::init(void)
 		return;
 	}
 
+	// This function is called by the main thread (these values are also needed in the next line).
+	AIThreadID::set_main_thread_id();
+	AIThreadID::set_current_thread_id();
+
 	apr_status_t status = apr_threadkey_private_create(&sThreadLocalDataKey, &LLThreadLocalData::destroy, LLAPRRootPool::get()());
 	ll_apr_assert_status(status);   // Or out of memory, or system-imposed limit on the
 									// total number of keys per process {PTHREAD_KEYS_MAX}
@@ -335,11 +327,6 @@ void LLThreadLocalData::init(void)
 
 	// Create the thread-local data for the main thread (this function is called by the main thread).
 	LLThreadLocalData::create(NULL);
-
-#ifdef SHOW_ASSERT
-	// This function is called by the main thread.
-	main_thread_id = apr_os_thread_current();
-#endif
 }
 
 // This is called once for every thread when the thread is destructed.
@@ -352,7 +339,7 @@ void LLThreadLocalData::destroy(void* thread_local_data)
 //static
 void LLThreadLocalData::create(LLThread* threadp)
 {
-	LLThreadLocalData* new_tld = new LLThreadLocalData;
+	LLThreadLocalData* new_tld = new LLThreadLocalData(threadp ? threadp->mName.c_str() : "main thread");
 	if (threadp)
 	{
 		threadp->mThreadLocalData = new_tld;
@@ -389,9 +376,19 @@ LLCondition::~LLCondition()
 	mAPRCondp = NULL;
 }
 
+LLFastTimer::DeclareTimer FT_WAIT_FOR_CONDITION("LLCondition::wait()");
+
 void LLCondition::wait()
 {
-	apr_thread_cond_wait(mAPRCondp, mAPRMutexp);
+	if (AIThreadID::in_main_thread_inline())
+	{
+		LLFastTimer ft1(FT_WAIT_FOR_CONDITION);
+		apr_thread_cond_wait(mAPRCondp, mAPRMutexp);
+	}
+	else
+	{
+		apr_thread_cond_wait(mAPRCondp, mAPRMutexp);
+	}
 }
 
 void LLCondition::signal()
@@ -406,39 +403,66 @@ void LLCondition::broadcast()
 
 //============================================================================
 LLMutexBase::LLMutexBase() :
-	mLockingThread(NO_THREAD),
-	mCount(0)
+	mCount(0),
+	mLockingThread(AIThreadID::sNone)
 {
 }
 
 bool LLMutexBase::isSelfLocked() const
 {
-#if LL_DARWIN
-	return mLockingThread == LLThread::currentID();
-#else
-	return mLockingThread == local_thread_ID;
-#endif
+	return mLockingThread.equals_current_thread_inline();
 }
+
+LLFastTimer::DeclareTimer FT_WAIT_FOR_MUTEX("LLMutexBase::lock()");
 
 void LLMutexBase::lock() 
 { 
-#if LL_DARWIN
-	if (mLockingThread == LLThread::currentID())
-#else
-	if (mLockingThread == local_thread_ID)
-#endif
+	if (mLockingThread.equals_current_thread_inline())
 	{ //redundant lock
 		mCount++;
 		return;
 	}
 
-	apr_thread_mutex_lock(mAPRMutexp);
+	if (APR_STATUS_IS_EBUSY(apr_thread_mutex_trylock(mAPRMutexp)))
+	{
+	  if (AIThreadID::in_main_thread_inline())
+	  {
+		LLFastTimer ft1(FT_WAIT_FOR_MUTEX);
+		apr_thread_mutex_lock(mAPRMutexp);
+	  }
+	  else
+	  {
+		apr_thread_mutex_lock(mAPRMutexp);
+	  }
+	}
 	
-#if LL_DARWIN
-	mLockingThread = LLThread::currentID();
-#else
-	mLockingThread = local_thread_ID;
-#endif
+	mLockingThread.reset_inline();
+}
+
+bool LLMutexBase::tryLock()
+{
+	if (mLockingThread.equals_current_thread_inline())
+	{ //redundant lock
+		mCount++;
+		return true;
+	}
+	bool success = !APR_STATUS_IS_EBUSY(apr_thread_mutex_trylock(mAPRMutexp));
+	if (success)
+	{
+		mLockingThread.reset_inline();
+	}
+	return success;
+}
+
+// non-blocking, but does do a lock/unlock so not free
+bool LLMutexBase::isLocked() const
+{
+	if (mLockingThread.equals_current_thread_inline())
+	  return false;		// A call to lock() won't block.
+	if (APR_STATUS_IS_EBUSY(apr_thread_mutex_trylock(mAPRMutexp)))
+	  return true;
+	apr_thread_mutex_unlock(mAPRMutexp);
+	return false;
 }
 
 void LLMutexBase::unlock()
@@ -448,7 +472,7 @@ void LLMutexBase::unlock()
 		mCount--;
 		return;
 	}
-	mLockingThread = NO_THREAD;
+	mLockingThread = AIThreadID::sNone;
 
 	apr_thread_mutex_unlock(mAPRMutexp);
 }

@@ -22,7 +22,7 @@
  * $/LicenseInfo$
  */
  
-#extension GL_ARB_texture_rectangle : enable
+//#extension GL_ARB_texture_rectangle : enable
 
 #ifdef DEFINE_GL_FRAGCOLOR
 out vec4 frag_color;
@@ -34,10 +34,10 @@ out vec4 frag_color;
 
 uniform sampler2DRect depthMap;
 uniform sampler2DRect normalMap;
-uniform sampler2DRectShadow shadowMap0;
-uniform sampler2DRectShadow shadowMap1;
-uniform sampler2DRectShadow shadowMap2;
-uniform sampler2DRectShadow shadowMap3;
+uniform sampler2DShadow shadowMap0;
+uniform sampler2DShadow shadowMap1;
+uniform sampler2DShadow shadowMap2;
+uniform sampler2DShadow shadowMap3;
 uniform sampler2DShadow shadowMap4;
 uniform sampler2DShadow shadowMap5;
 uniform sampler2D noiseMap;
@@ -55,15 +55,33 @@ VARYING vec2 vary_fragcoord;
 
 uniform mat4 inv_proj;
 uniform vec2 screen_res;
-uniform vec2 shadow_res;
 uniform vec2 proj_shadow_res;
 uniform vec3 sun_dir;
+
+uniform vec2 shadow_res;
 
 uniform float shadow_bias;
 uniform float shadow_offset;
 
 uniform float spot_shadow_bias;
 uniform float spot_shadow_offset;
+
+vec2 encode_normal(vec3 n)
+{
+	float f = sqrt(8 * n.z + 8);
+	return n.xy / f + 0.5;
+}
+
+vec3 decode_normal (vec2 enc)
+{
+    vec2 fenc = enc*4-2;
+    float f = dot(fenc,fenc);
+    float g = sqrt(1-f/4);
+    vec3 n;
+    n.xy = fenc*g;
+    n.z = 1-f/2;
+    return n;
+}
 
 vec4 getPosition(vec2 pos_screen)
 {
@@ -97,70 +115,67 @@ vec2 getKern(int i)
 //calculate decreases in ambient lighting when crowded out (SSAO)
 float calcAmbientOcclusion(vec4 pos, vec3 norm)
 {
-	float ret = 1.0;
-
 	vec2 pos_screen = vary_fragcoord.xy;
-	vec3 pos_world = pos.xyz;
 	vec2 noise_reflect = texture2D(noiseMap, vary_fragcoord.xy/128.0).xy;
-		
+	
+	 // We treat the first sample as the origin, which definitely doesn't obscure itself thanks to being visible for sampling in the first place.
+	float points = 1.0;
 	float angle_hidden = 0.0;
-	float points = 0;
 		
-	float scale = min(ssao_radius / -pos_world.z, ssao_max_radius);
+	// use a kernel scale that diminishes with distance.
+	// a scale of less than 32 is just wasting good samples, though.
+	float scale = max(32.0, min(ssao_radius / -pos.z, ssao_max_radius));
 	
 	// it was found that keeping # of samples a constant was the fastest, probably due to compiler optimizations (unrolling?)
 	for (int i = 0; i < 8; i++)
 	{
 		vec2 samppos_screen = pos_screen + scale * reflect(getKern(i), noise_reflect);
 		vec3 samppos_world = getPosition(samppos_screen).xyz; 
-		
-		vec3 diff = pos_world - samppos_world;
-		float dist2 = dot(diff, diff);
-			
-		// assume each sample corresponds to an occluding sphere with constant radius, constant x-sectional area
-		// --> solid angle shrinking by the square of distance
-		//radius is somewhat arbitrary, can approx with just some constant k * 1 / dist^2
-		//(k should vary inversely with # of samples, but this is taken care of later)
-		
-		float funky_val = (dot((samppos_world - 0.05*norm - pos_world), norm) > 0.0) ? 1.0 : 0.0;
-		angle_hidden = angle_hidden + funky_val * min(1.0/dist2, ssao_factor_inv);
-			
-		// 'blocked' samples (significantly closer to camera relative to pos_world) are "no data", not "no occlusion" 
-		float diffz_val = (diff.z > -1.0) ? 1.0 : 0.0;
-		points = points + diffz_val;
+
+		vec3 diff = samppos_world - pos.xyz;
+
+		if (diff.z < ssao_factor && diff.z != 0.0)
+		{
+			float dist = length(diff);
+			float angrel = max(0.0, dot(norm.xyz, diff/dist));
+			float distrel = 1.0/(1.0+dist*dist);
+			float samplehidden = min(angrel, distrel);
+	
+			angle_hidden += (samplehidden);
+			points += 1.0;
+		}
 	}
-		
-	angle_hidden = min(ssao_factor*angle_hidden/points, 1.0);
 	
-	float points_val = (points > 0.0) ? 1.0 : 0.0;
-	ret = (1.0 - (points_val * angle_hidden));
-
-	ret = max(ret, 0.0);
-	return min(ret, 1.0);
-}
-
-float pcfShadow(sampler2DRectShadow shadowMap, vec4 stc, float scl, vec2 pos_screen)
-{
-	stc.xyz /= stc.w;
-	stc.z += shadow_bias*scl;
-
-	stc.x = floor(stc.x + fract(pos_screen.y*0.666666666));
-	
-	float cs = shadow2DRect(shadowMap, stc.xyz).x;
-	float shadow = cs;
-	
-	shadow += shadow2DRect(shadowMap, stc.xyz+vec3(2.0, 1.5, 0.0)).x;
-        shadow += shadow2DRect(shadowMap, stc.xyz+vec3(1.0, -1.5, 0.0)).x;
-        shadow += shadow2DRect(shadowMap, stc.xyz+vec3(-1.0, 1.5, 0.0)).x;
-        shadow += shadow2DRect(shadowMap, stc.xyz+vec3(-2.0, -1.5, 0.0)).x;
-                        
-        return shadow*0.2;
+	angle_hidden /= points;
+	float rtn = (1.0 - angle_hidden);
+	return (rtn * rtn);
 }
 
 float pcfShadow(sampler2DShadow shadowMap, vec4 stc, float scl, vec2 pos_screen)
 {
 	stc.xyz /= stc.w;
+	stc.z += shadow_bias;
+
+	//stc.x += (((texture2D(noiseMap, pos_screen/128.0).x)-.5)/shadow_res.x);	//Random dither.
+	stc.x = floor(stc.x*shadow_res.x + fract(pos_screen.y*0.666666666))/shadow_res.x;
+
+	float cs = shadow2D(shadowMap, stc.xyz).x;
+	
+	float shadow = cs;
+	
+	shadow += shadow2D(shadowMap, stc.xyz+vec3(2.0/shadow_res.x, 1.5/shadow_res.y, 0.0)).x;
+    shadow += shadow2D(shadowMap, stc.xyz+vec3(1.0/shadow_res.x, -1.5/shadow_res.y, 0.0)).x;
+    shadow += shadow2D(shadowMap, stc.xyz+vec3(-1.0/shadow_res.x, 1.5/shadow_res.y, 0.0)).x;
+    shadow += shadow2D(shadowMap, stc.xyz+vec3(-2.0/shadow_res.x, -1.5/shadow_res.y, 0.0)).x;
+	         
+        return shadow*0.2;
+}
+
+float pcfSpotShadow(sampler2DShadow shadowMap, vec4 stc, float scl, vec2 pos_screen)
+{
+	stc.xyz /= stc.w;
 	stc.z += spot_shadow_bias*scl;
+	//stc.x += (((texture2D(noiseMap, pos_screen/128.0).x)-.5)/proj_shadow_res.x);	//Random dither.
 	stc.x = floor(proj_shadow_res.x * stc.x + fract(pos_screen.y*0.666666666)) / proj_shadow_res.x; // snap
 	
 	float cs = shadow2D(shadowMap, stc.xyz).x;
@@ -185,11 +200,9 @@ void main()
 	
 	vec4 pos = getPosition(pos_screen);
 	
-	vec4 nmap4 = texture2DRect(normalMap, pos_screen);
-	nmap4 = vec4((nmap4.xy-0.5)*2.0,nmap4.z,nmap4.w); // unpack norm
-	float displace = nmap4.w;
-	vec3 norm = nmap4.xyz;
-	
+	vec3 norm = texture2DRect(normalMap, pos_screen).xyz;
+	norm = decode_normal(norm.xy); // unpack norm
+		
 	/*if (pos.z == 0.0) // do nothing for sky *FIX: REMOVE THIS IF/WHEN THE POSITION MAP IS BEING USED AS A STENCIL
 	{
 		frag_color = vec4(0.0); // doesn't matter
@@ -198,8 +211,8 @@ void main()
 	
 	float shadow = 0.0;
 	float dp_directional_light = max(0.0, dot(norm, sun_dir.xyz));
-
-	vec3 shadow_pos = pos.xyz + displace*norm;
+	
+	vec3 shadow_pos = pos.xyz;
 	vec3 offset = sun_dir.xyz * (1.0-dp_directional_light);
 	
 	vec4 spos = vec4(shadow_pos+offset*shadow_offset, 1.0);
@@ -223,8 +236,7 @@ void main()
 			if (spos.z < near_split.z)
 			{
 				lpos = shadow_matrix[3]*spos;
-				lpos.xy *= shadow_res;
-
+				
 				float w = 1.0;
 				w -= max(spos.z-far_split.z, 0.0)/transition_domain.z;
 				shadow += pcfShadow(shadowMap3, lpos, 0.25, pos_screen)*w;
@@ -235,8 +247,7 @@ void main()
 			if (spos.z < near_split.y && spos.z > far_split.z)
 			{
 				lpos = shadow_matrix[2]*spos;
-				lpos.xy *= shadow_res;
-
+				
 				float w = 1.0;
 				w -= max(spos.z-far_split.y, 0.0)/transition_domain.y;
 				w -= max(near_split.z-spos.z, 0.0)/transition_domain.z;
@@ -247,8 +258,7 @@ void main()
 			if (spos.z < near_split.x && spos.z > far_split.y)
 			{
 				lpos = shadow_matrix[1]*spos;
-				lpos.xy *= shadow_res;
-
+				
 				float w = 1.0;
 				w -= max(spos.z-far_split.x, 0.0)/transition_domain.x;
 				w -= max(near_split.y-spos.z, 0.0)/transition_domain.y;
@@ -259,8 +269,7 @@ void main()
 			if (spos.z > far_split.x)
 			{
 				lpos = shadow_matrix[0]*spos;
-				lpos.xy *= shadow_res;
-				
+								
 				float w = 1.0;
 				w -= max(near_split.x-spos.z, 0.0)/transition_domain.x;
 				
@@ -298,11 +307,11 @@ void main()
 	
 	//spotlight shadow 1
 	vec4 lpos = shadow_matrix[4]*spos;
-	frag_color[2] = pcfShadow(shadowMap4, lpos, 0.8, pos_screen);
+	frag_color[2] = pcfSpotShadow(shadowMap4, lpos, 0.8, pos_screen);
 	
 	//spotlight shadow 2
 	lpos = shadow_matrix[5]*spos;
-	frag_color[3] = pcfShadow(shadowMap5, lpos, 0.8, pos_screen);
+	frag_color[3] = pcfSpotShadow(shadowMap5, lpos, 0.8, pos_screen);
 
 	//frag_color.rgb = pos.xyz;
 	//frag_color.b = shadow;

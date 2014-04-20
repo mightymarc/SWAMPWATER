@@ -114,10 +114,11 @@ BOOL LLFloaterGesture::postBuild()
 	
 	setTitle(label);
 
-	childSetCommitCallback("gesture_list", onCommitList, this);
-	childSetDoubleClickCallback("gesture_list", onClickPlay);
+	LLScrollListCtrl* gesture_list = getChild<LLScrollListCtrl>("gesture_list");
+	gesture_list->setCommitCallback(boost::bind(&LLFloaterGesture::onCommitList,this));
+	gesture_list->setDoubleClickCallback(boost::bind(&LLFloaterGesture::onClickPlay,this));
 
-	childSetAction("inventory_btn", onClickInventory, this);
+	//childSetAction("inventory_btn", onClickInventory, this);
 
 	childSetAction("edit_btn", onClickEdit, this);
 
@@ -168,7 +169,7 @@ void LLFloaterGesture::show()
 	self->mSelectedID = LLUUID::null;
 
 	// Update button labels
-	onCommitList(NULL, self);
+	self->onCommitList();
 	self->open();	/*Flawfinder: ignore*/
 }
 
@@ -183,6 +184,12 @@ void LLFloaterGesture::toggleVisibility()
 	{
 		show();
 	}
+}
+
+// static
+bool LLFloaterGesture::instanceVisible()
+{
+	return sInstance && sInstance->getVisible();
 }
 
 // static
@@ -213,7 +220,7 @@ void LLFloaterGesture::refreshAll()
 		}
 
 		// Update button labels
-		onCommitList(NULL, sInstance);
+		sInstance->onCommitList();
 	}
 }
 
@@ -322,6 +329,7 @@ void LLFloaterGesture::buildGestureList()
 	}
 }
 
+/*
 // static
 void LLFloaterGesture::onClickInventory(void* data)
 {
@@ -335,6 +343,7 @@ void LLFloaterGesture::onClickInventory(void* data)
 	if (!inv) return;
 	inv->getPanel()->setSelection(item_id, TRUE);
 }
+*/
 
 // static
 void LLFloaterGesture::onClickPlay(void* data)
@@ -404,22 +413,19 @@ void LLFloaterGesture::onClickEdit(void* data)
 	}
 }
 
-// static
-void LLFloaterGesture::onCommitList(LLUICtrl* ctrl, void* data)
+void LLFloaterGesture::onCommitList()
 {
-	LLFloaterGesture* self = (LLFloaterGesture*)data;
+	const LLUUID& item_id = childGetValue("gesture_list").asUUID();
 
-	const LLUUID& item_id = self->childGetValue("gesture_list").asUUID();
-
-	self->mSelectedID = item_id;
+	mSelectedID = item_id;
 	if (LLGestureMgr::instance().isGesturePlaying(item_id))
 	{
-		self->childSetVisible("play_btn", false);
-		self->childSetVisible("stop_btn", true);
+		childSetVisible("play_btn", false);
+		childSetVisible("stop_btn", true);
 	}
 	else
 	{
-		self->childSetVisible("play_btn", true);
-		self->childSetVisible("stop_btn", false);
+		childSetVisible("play_btn", true);
+		childSetVisible("stop_btn", false);
 	}
 }

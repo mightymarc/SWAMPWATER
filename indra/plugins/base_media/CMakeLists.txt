@@ -2,6 +2,9 @@
 
 project(media_plugin_base)
 
+# Fail at configure, not link time.
+set(OpenGL_FIND_REQUIRED ON)
+
 include(00-Common)
 include(LLCommon)
 include(LLImage)
@@ -28,7 +31,7 @@ include_directories(
 
 if(NOT WORD_SIZE EQUAL 32)
 	if(WINDOWS)
-		add_definitions(/FIXED:NO)
+		# add_definitions(/FIXED:NO)
 	else(WINDOWS) # not windows therefore gcc LINUX and DARWIN
 		add_definitions(-fPIC)
 	endif(WINDOWS)

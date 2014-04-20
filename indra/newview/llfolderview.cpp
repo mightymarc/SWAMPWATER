@@ -235,10 +235,9 @@ LLFolderView::LLFolderView( const std::string& name,
 
 	mRenamer = new LLLineEditor(std::string("ren"), getRect(), LLStringUtil::null, getLabelFontForStyle(LLFontGL::NORMAL),
 								DB_INV_ITEM_NAME_STR_LEN,
-								&LLFolderView::commitRename,
+								boost::bind(&LLFolderView::commitRename,this),
 								NULL,
 								NULL,
-								this,
 								&LLLineEditor::prevalidatePrintableNotPipe);
 	//mRenamer->setWriteableBgColor(LLColor4::white);
 	// Escape is handled by reverting the rename, not commiting it (default behavior)
@@ -429,7 +428,7 @@ void LLFolderView::setOpenArrangeRecursively(BOOL openitem, ERecurseType recurse
 
 static LLFastTimer::DeclareTimer FTM_ARRANGE("Arrange");
 
-// This view grows and shinks to enclose all of its children items and folders.
+// This view grows and shrinks to enclose all of its children items and folders.
 S32 LLFolderView::arrange( S32* unused_width, S32* unused_height, S32 filter_generation )
 {
 	if(!mScrollContainer)
@@ -897,13 +896,9 @@ BOOL LLFolderView::startDrag(LLToolDragAndDrop::ESource source)
 	return can_drag;
 }
 
-void LLFolderView::commitRename( LLUICtrl* renamer, void* user_data )
+void LLFolderView::commitRename( )
 {
-	LLFolderView* root = reinterpret_cast<LLFolderView*>(user_data);
-	if( root )
-	{
-		root->finishRenamingItem();
-	}
+	finishRenamingItem();
 }
 
 void LLFolderView::draw()
@@ -959,11 +954,16 @@ void LLFolderView::draw()
 		static LLCachedControl<LLColor4> sSearchStatusColor(gColors, "InventorySearchStatusColor", LLColor4::white );
 		if (LLInventoryModelBackgroundFetch::instance().folderFetchActive() || mCompletedFilterGeneration < mFilter->getMinRequiredGeneration())
 		{
-			mStatusText = std::string("Searching..."); // *TODO:translate
+			mStatusText = LLTrans::getString("Searching");
 		}
 		else
 		{
-			mStatusText = std::string("No matching items found in inventory."); // *TODO:translate
+		//	if(getFilter())
+		//	{
+		//		LLStringUtil::format_map_t args;
+		//		args["[SEARCH_TERM]"] = LLURI::escape(getFilter()->getFilterSubStringOrig());
+				mStatusText = LLTrans::getString("InventoryNoMatchingItems"); //, args);
+		//	}
 		}
 		mStatusTextBox->setWrappedText(mStatusText);
 		mStatusTextBox->setVisible( TRUE );
@@ -1042,6 +1042,24 @@ bool isDescendantOfASelectedItem(LLFolderViewItem* item, const std::vector<LLFol
 	}
 
 	return false;
+}
+
+// static
+void LLFolderView::removeCutItems()
+{
+	// There's no item in "cut" mode on the clipboard -> exit
+	if (!LLInventoryClipboard::instance().isCutMode())
+		return;
+
+	// Get the list of clipboard item uuids and iterate through them
+	LLDynamicArray<LLUUID> objects;
+	LLInventoryClipboard::instance().retrieve(objects);
+	for (LLDynamicArray<LLUUID>::const_iterator iter = objects.begin();
+		 iter != objects.end();
+		 ++iter)
+	{
+		gInventory.removeObject(*iter);
+	}
 }
 
 void LLFolderView::removeSelectedItems( void )
@@ -1380,6 +1398,7 @@ void LLFolderView::cut()
 				listener->cutToClipboard();
 			}
 		}
+		LLFolderView::removeCutItems();
 	}
 	mSearchString.clear();
 }
@@ -1487,12 +1506,6 @@ BOOL LLFolderView::handleKeyHere( KEY key, MASK mask )
 	if (menu && menu->isOpen())
 	{
 		LLMenuGL::sMenuContainer->hideMenus();
-	}
-
-	LLView *item = NULL;
-	if (getChildCount() > 0)
-	{
-		item = *(getChildList()->begin());
 	}
 
 	switch( key )
@@ -2010,7 +2023,7 @@ void LLFolderView::scrollToShowSelection()
 	}
 }
 
-// If the parent is scroll containter, scroll it to make the selection
+// If the parent is scroll container, scroll it to make the selection
 // is maximally visible.
 void LLFolderView::scrollToShowItem(LLFolderViewItem* item, const LLRect& constraint_rect)
 {
@@ -2028,7 +2041,6 @@ void LLFolderView::scrollToShowItem(LLFolderViewItem* item, const LLRect& constr
 	{
 		LLRect local_rect = item->getLocalRect();
 		LLRect item_scrolled_rect; // item position relative to display area of scroller
-		LLRect visible_doc_rect = mScrollContainer->getVisibleContentRect();
 		
 		S32 icon_height = mIcon.isNull() ? 0 : mIcon->getHeight(); 
 		S32 label_height = llround(getLabelFontForStyle(mLabelStyle)->getLineHeight()); 
@@ -2048,6 +2060,12 @@ void LLFolderView::scrollToShowItem(LLFolderViewItem* item, const LLRect& constr
 		mScrollContainer->scrollToShowRect( item_doc_rect, constraint_rect );
 
 	}
+}
+
+void LLFolderView::setScrollContainer(LLScrollContainer* parent)
+{
+	mScrollContainer = parent;
+	parent->setPassBackToChildren(false);
 }
 
 LLRect LLFolderView::getVisibleRect()
@@ -2160,7 +2178,7 @@ void LLFolderView::doIdle()
 	mNeedsAutoSelect = filter_modified_and_active &&
 							!(gFocusMgr.childHasKeyboardFocus(this) || gFocusMgr.getMouseCapture());
 	
-	// filter to determine visiblity before arranging
+	// filter to determine visibility before arranging
 	filterFromRoot();
 
 	// automatically show matching items, and select first one

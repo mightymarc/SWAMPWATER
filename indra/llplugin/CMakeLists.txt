@@ -3,23 +3,16 @@
 project(llplugin)
 
 include(00-Common)
-include(CURL)
 include(LLCommon)
-include(LLImage)
 include(LLMath)
 include(LLMessage)
 include(LLRender)
-include(LLXML)
-include(LLWindow)
 
 include_directories(
     ${LLCOMMON_INCLUDE_DIRS}
-    ${LLIMAGE_INCLUDE_DIRS}
     ${LLMATH_INCLUDE_DIRS}
     ${LLMESSAGE_INCLUDE_DIRS}
     ${LLRENDER_INCLUDE_DIRS}
-    ${LLXML_INCLUDE_DIRS}
-    ${LLWINDOW_INCLUDE_DIRS}
     ${LLQTWEBKIT_INCLUDE_DIR}
     )
 
@@ -56,7 +49,7 @@ set_source_files_properties(${llplugin_HEADER_FILES}
 
 if(NOT WORD_SIZE EQUAL 32)
 	if(WINDOWS)
-		add_definitions(/FIXED:NO)
+		# add_definitions(/FIXED:NO)
 	else(WINDOWS) # not windows therefore gcc LINUX and DARWIN
 		add_definitions(-fPIC)
 	endif(WINDOWS)

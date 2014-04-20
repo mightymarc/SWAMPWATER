@@ -41,7 +41,7 @@
 
 #include "lldarray.h"
 
-class LLScrollableContainerView;
+class LLScrollContainer;
 class LLView;
 class LLButton;
 class LLLineEditor;
@@ -64,6 +64,7 @@ public:
 	static void show();
 	static void toggleVisibility();
 	static void refreshAll();
+	static bool instanceVisible();
 
 protected:
 	// Reads from the gesture manager's list of active gestures
@@ -74,7 +75,7 @@ protected:
 	static void onClickEdit(void* data);
 	static void onClickPlay(void* data);
 	static void onClickNew(void* data);
-	static void onCommitList(LLUICtrl* ctrl, void* data);
+	void onCommitList();
 
 protected:
 	LLUUID mSelectedID;

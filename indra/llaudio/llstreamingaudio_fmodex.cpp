@@ -50,7 +50,7 @@ public:
 
 	const std::string& getURL() 	{ return mInternetStreamURL; }
 
-	FMOD_OPENSTATE getOpenState();
+	FMOD_OPENSTATE getOpenState(unsigned int* percentbuffered=NULL, bool* starving=NULL, bool* diskbusy=NULL);
 protected:
 	FMOD::System* mSystem;
 	FMOD::Channel* mStreamChannel;
@@ -74,7 +74,7 @@ LLStreamingAudio_FMODEX::LLStreamingAudio_FMODEX(FMOD::System *system) :
 {
 	// Number of milliseconds of audio to buffer for the audio card.
 	// Must be larger than the usual Second Life frame stutter time.
-	const U32 buffer_seconds = 5;		//sec
+	const U32 buffer_seconds = 10;		//sec
 	const U32 estimated_bitrate = 128;	//kbit/sec
 	mSystem->setStreamBufferSize(estimated_bitrate * buffer_seconds * 128/*bytes/kbit*/, FMOD_TIMEUNIT_RAWBYTES);
 
@@ -107,10 +107,18 @@ void LLStreamingAudio_FMODEX::start(const std::string& url)
 
 	if (!url.empty())
 	{
-		llinfos << "Starting internet stream: " << url << llendl;
-		mCurrentInternetStreamp = new LLAudioStreamManagerFMODEX(mSystem,url);
-		mURL = url;
-		mMetaData = new LLSD;
+		if(mDeadStreams.empty())
+		{
+			llinfos << "Starting internet stream: " << url << llendl;
+			mCurrentInternetStreamp = new LLAudioStreamManagerFMODEX(mSystem,url);
+			mURL = url;
+			mMetaData = new LLSD;
+		}
+		else
+		{
+			llinfos << "Deferring stream load until buffer release: " << url << llendl;
+			mPendingURL = url;
+		}
 	}
 	else
 	{
@@ -139,13 +147,32 @@ void LLStreamingAudio_FMODEX::update()
 		}
 	}
 
+	if(!mDeadStreams.empty())
+	{
+		llassert_always(mCurrentInternetStreamp == NULL);
+		return;
+	}
+
+	if(!mPendingURL.empty())
+	{
+		llassert_always(mCurrentInternetStreamp == NULL);
+		llinfos << "Starting internet stream: " << mPendingURL << llendl;
+		mCurrentInternetStreamp = new LLAudioStreamManagerFMODEX(mSystem,mPendingURL);
+		mURL = mPendingURL;
+		mMetaData = new LLSD;
+		mPendingURL.clear();
+	}
+
 	// Don't do anything if there are no streams playing
 	if (!mCurrentInternetStreamp)
 	{
 		return;
 	}
 
-	FMOD_OPENSTATE open_state = mCurrentInternetStreamp->getOpenState();
+	unsigned int progress;
+	bool starving;
+	bool diskbusy;
+	FMOD_OPENSTATE open_state = mCurrentInternetStreamp->getOpenState(&progress, &starving, &diskbusy);
 
 	if (open_state == FMOD_OPENSTATE_READY)
 	{
@@ -196,6 +223,13 @@ void LLStreamingAudio_FMODEX::update()
 						if(name == "Title") name = "TITLE";
 						else if(name == "WM/AlbumArtist") name = "ARTIST";
 						break;
+					case(FMOD_TAGTYPE_FMOD):
+						if (!strcmp(tag.name, "Sample Rate Change"))
+						{
+							llinfos << "Stream forced changing sample rate to " << *((float *)tag.data) << llendl;
+							mFMODInternetStreamChannelp->setFrequency(*((float *)tag.data));
+						}
+						continue;
 					default:
 						break;
 					}
@@ -237,12 +271,30 @@ void LLStreamingAudio_FMODEX::update()
 					}
 				}
 			}
+			if(starving)
+			{
+				bool paused = false;
+				mFMODInternetStreamChannelp->getPaused(&paused);
+				if(!paused)
+				{
+					llinfos << "Stream starvation detected! Pausing stream until buffer nearly full." << llendl;
+					llinfos << "  (diskbusy="<<diskbusy<<")" << llendl;
+					llinfos << "  (progress="<<progress<<")" << llendl;
+					mFMODInternetStreamChannelp->setPaused(true);
+				}
+			}
+			else if(progress > 80)
+			{
+				mFMODInternetStreamChannelp->setPaused(false);
+			}
 		}
 	}
 }
 
 void LLStreamingAudio_FMODEX::stop()
 {
+	mPendingURL.clear();
+
 	if(mMetaData)
 	{
 		delete mMetaData;
@@ -301,7 +353,7 @@ int LLStreamingAudio_FMODEX::isPlaying()
 	{
 		return 1; // Active and playing
 	}
-	else if (!mURL.empty())
+	else if (!mURL.empty() || !mPendingURL.empty())
 	{
 		return 2; // "Paused"
 	}
@@ -341,6 +393,11 @@ void LLStreamingAudio_FMODEX::setGain(F32 vol)
 	if(!mFMODInternetStreamChannelp || !mCurrentInternetStreamp)
 		return false;
 
+	bool muted=false;
+	mFMODInternetStreamChannelp->getMute(&muted);
+	if(muted)
+		return false;
+
 	static std::vector<float> local_array(count);	//Have to have an extra buffer to mix channels. Bleh.
 	if(count > (S32)local_array.size())	//Expand the array if needed. Try to minimize allocation calls, so don't ever shrink.
 		local_array.resize(count);
@@ -369,12 +426,12 @@ LLAudioStreamManagerFMODEX::LLAudioStreamManagerFMODEX(FMOD::System *system, con
 {
 	mInternetStreamURL = url;
 
-	FMOD_CREATESOUNDEXINFO exinfo;
+	/*FMOD_CREATESOUNDEXINFO exinfo;
 	memset(&exinfo,0,sizeof(exinfo));
 	exinfo.cbsize = sizeof(exinfo);
-	exinfo.suggestedsoundtype = FMOD_SOUND_TYPE_MPEG;	//Hint to speed up loading.
+	exinfo.suggestedsoundtype = FMOD_SOUND_TYPE_OGGVORBIS;	//Hint to speed up loading.*/
 
-	FMOD_RESULT result = mSystem->createStream(url.c_str(), FMOD_2D | FMOD_NONBLOCKING | FMOD_IGNORETAGS, &exinfo, &mInternetStream);
+	FMOD_RESULT result = mSystem->createStream(url.c_str(), FMOD_2D | FMOD_NONBLOCKING | FMOD_IGNORETAGS, 0, &mInternetStream);
 
 	if (result!= FMOD_OK)
 	{
@@ -408,8 +465,6 @@ bool LLAudioStreamManagerFMODEX::stopStream()
 {
 	if (mInternetStream)
 	{
-
-
 		bool close = true;
 		switch (getOpenState())
 		{
@@ -424,9 +479,8 @@ bool LLAudioStreamManagerFMODEX::stopStream()
 			close = true;
 		}
 
-		if (close)
+		if (close && mInternetStream->release() == FMOD_OK)
 		{
-			mInternetStream->release();
 			mStreamChannel = NULL;
 			mInternetStream = NULL;
 			return true;
@@ -442,9 +496,19 @@ bool LLAudioStreamManagerFMODEX::stopStream()
 	}
 }
 
-FMOD_OPENSTATE LLAudioStreamManagerFMODEX::getOpenState()
+FMOD_OPENSTATE LLAudioStreamManagerFMODEX::getOpenState(unsigned int* percentbuffered, bool* starving, bool* diskbusy)
 {
 	FMOD_OPENSTATE state;
-	mInternetStream->getOpenState(&state,NULL,NULL,NULL);
+	mInternetStream->getOpenState(&state,percentbuffered,starving,diskbusy);
 	return state;
+}
+
+void LLStreamingAudio_FMODEX::setBufferSizes(U32 streambuffertime, U32 decodebuffertime)
+{
+	mSystem->setStreamBufferSize(streambuffertime/1000*128*128, FMOD_TIMEUNIT_RAWBYTES);
+	FMOD_ADVANCEDSETTINGS settings;
+	memset(&settings,0,sizeof(settings));
+	settings.cbsize=sizeof(settings);
+	settings.defaultDecodeBufferSize = decodebuffertime;//ms
+	mSystem->setAdvancedSettings(&settings);
 }

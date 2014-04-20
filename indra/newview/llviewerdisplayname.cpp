@@ -40,6 +40,9 @@
 #include "llnotificationsutil.h"
 #include "llui.h"					// getLanguage()
 
+class AIHTTPTimeoutPolicy;
+extern AIHTTPTimeoutPolicy setDisplayNameResponder_timeout;
+
 namespace LLViewerDisplayName
 {
 	// Fired when viewer receives server response to display name change
@@ -55,7 +58,7 @@ namespace LLViewerDisplayName
 
 }
 
-class LLSetDisplayNameResponder : public LLHTTPClient::Responder
+class LLSetDisplayNameResponder : public LLHTTPClient::ResponderIgnoreBody
 {
 public:
 	// only care about errors
@@ -64,6 +67,9 @@ public:
 		LLViewerDisplayName::sSetDisplayNameSignal(false, "", LLSD());
 		LLViewerDisplayName::sSetDisplayNameSignal.disconnect_all_slots();
 	}
+
+	/*virtual*/ AIHTTPTimeoutPolicy const& getHTTPTimeoutPolicy(void) const { return setDisplayNameResponder_timeout; }
+	/*virtual*/ char const* getName(void) const { return "LLSetDisplayNameResponder"; }
 };
 
 void LLViewerDisplayName::set(const std::string& display_name, const set_name_slot_t& slot)
@@ -82,8 +88,7 @@ void LLViewerDisplayName::set(const std::string& display_name, const set_name_sl
 
 	// People API can return localized error messages.  Indicate our
 	// language preference via header.
-	LLSD headers;
-	headers["Accept-Language"] = LLUI::getLanguage();
+	AIHTTPHeaders headers("Accept-Language", LLUI::getLanguage());
 
 	// People API requires both the old and new value to change a variable.
 	// Our display name will be in cache before the viewer's UI is available
@@ -179,20 +184,22 @@ class LLDisplayNameUpdate : public LLHTTPNode
 		// default value
 		// *TODO: get actual headers out of ResponsePtr
 		//LLSD headers = response->mHeaders;
-		LLSD headers;
 		av_name.mExpires = 
-			LLAvatarNameCache::nameExpirationFromHeaders(headers);
+			LLAvatarNameCache::nameExpirationFromHeaders(AIHTTPReceivedHeaders());
 
 		LLAvatarNameCache::insert(agent_id, av_name);
 
 		// force name tag to update
 		LLVOAvatar::invalidateNameTag(agent_id);
 
-		LLSD args;
-		args["OLD_NAME"] = old_display_name;
-		args["SLID"] = av_name.mUsername;
-		args["NEW_NAME"] = av_name.mDisplayName;
-		LLNotificationsUtil::add("DisplayNameUpdate", args);
+		if (gSavedSettings.getBOOL("ShowDisplayNameChanges"))
+		{
+			LLSD args;
+			args["OLD_NAME"] = old_display_name;
+			args["SLID"] = av_name.mUsername;
+			args["NEW_NAME"] = av_name.mDisplayName;
+			LLNotificationsUtil::add("DisplayNameUpdate", args);
+		}
 		if (agent_id == gAgent.getID())
 		{
 			LLViewerDisplayName::sNameChangedSignal();

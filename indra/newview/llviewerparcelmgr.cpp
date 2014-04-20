@@ -55,6 +55,7 @@
 #include "llfloaterbuyland.h"
 #include "llfloatergroups.h"
 //#include "llfloaterhtml.h"
+#include "llpanelnearbymedia.h"
 #include "llfloatersellland.h"
 #include "llfloaterteleporthistory.h"
 #include "llfloatertools.h"
@@ -120,7 +121,7 @@ LLViewerParcelMgr::LLViewerParcelMgr()
 	mRequestResult(0),
 	mWestSouth(),
 	mEastNorth(),
-	mSelectedDwell(0.f),
+	mSelectedDwell(DWELL_NAN),
 	mAgentParcelSequenceID(-1),
 	mHoverRequestResult(0),
 	mHoverWestSouth(),
@@ -144,7 +145,10 @@ LLViewerParcelMgr::LLViewerParcelMgr()
 	mHoverParcel = new LLParcel();
 	mCollisionParcel = new LLParcel();
 
-	mParcelsPerEdge = S32(	REGION_WIDTH_METERS / PARCEL_GRID_STEP_METERS );
+// <FS:CR> Aurora Sim
+	mParcelsPerEdge = S32(8192.f / PARCEL_GRID_STEP_METERS); // 8192 is the maximum region size on Aurora and solves the audio problem.
+	//mParcelsPerEdge = S32(	REGION_WIDTH_METERS / PARCEL_GRID_STEP_METERS );
+// </FS:CR> Aurora Sim
 	mHighlightSegments = new U8[(mParcelsPerEdge+1)*(mParcelsPerEdge+1)];
 	resetSegments(mHighlightSegments);
 
@@ -167,9 +171,19 @@ LLViewerParcelMgr::LLViewerParcelMgr()
 		mAgentParcelOverlay[i] = 0;
 	}
 
+// <FS:CR> Aurora Sim
+	mParcelsPerEdge = S32(REGION_WIDTH_METERS / PARCEL_GRID_STEP_METERS);
+// </FS:CR> Aurora Sim
+
 	mTeleportInProgress = TRUE; // the initial parcel update is treated like teleport
 }
 
+// <FS:CR> Aurora Sim
+void LLViewerParcelMgr::init(F32 region_size)
+{
+	mParcelsPerEdge = S32(region_size / PARCEL_GRID_STEP_METERS);
+}
+// </FS:CR> Aurora Sim
 
 LLViewerParcelMgr::~LLViewerParcelMgr()
 {
@@ -244,7 +258,7 @@ void LLViewerParcelMgr::getDisplayInfo(S32* area_out, S32* claim_out,
 	S32 price = 0;
 	S32 rent = 0;
 	BOOL for_sale = FALSE;
-	F32 dwell = 0.f;
+	F32 dwell = DWELL_NAN;
 
 	if (mSelected)
 	{
@@ -449,9 +463,14 @@ LLParcelSelectionHandle LLViewerParcelMgr::selectParcelInRectangle()
 void LLViewerParcelMgr::selectCollisionParcel()
 {
 	// BUG: Claim to be in the agent's region
-	mWestSouth = gAgent.getRegion()->getOriginGlobal();
+// <FS:CR> Aurora Sim
+	//mWestSouth = gAgent.getRegion()->getOriginGlobal();
+	//mEastNorth = mWestSouth;
+	//mEastNorth += LLVector3d(PARCEL_GRID_STEP_METERS, PARCEL_GRID_STEP_METERS, 0.0);
+	mWestSouth = getSelectionRegion()->getOriginGlobal();
 	mEastNorth = mWestSouth;
-	mEastNorth += LLVector3d(PARCEL_GRID_STEP_METERS, PARCEL_GRID_STEP_METERS, 0.0);
+	mEastNorth += LLVector3d(getSelectionRegion()->getWidth()/REGION_WIDTH_METERS * PARCEL_GRID_STEP_METERS, getSelectionRegion()->getWidth()/REGION_WIDTH_METERS * PARCEL_GRID_STEP_METERS, 0.0);
+// </FS:CR> Aurora Sim
 
 	// BUG: must be in the sim you are in
 	LLMessageSystem *msg = gMessageSystem;
@@ -590,7 +609,7 @@ void LLViewerParcelMgr::deselectLand()
 		mCurrentParcel->mBanList.clear();
 		//mCurrentParcel->mRenterList.reset();
 
-		mSelectedDwell = 0.f;
+		mSelectedDwell = DWELL_NAN;
 
 		// invalidate parcel selection so that existing users of this selection can clean up
 		mCurrentParcelSelection->setParcel(NULL);
@@ -710,8 +729,8 @@ bool LLViewerParcelMgr::allowAgentScripts(const LLViewerRegion* region, const LL
 	// This mirrors the traditional menu bar parcel icon code, but is not
 	// technically correct.
 	return region
-		&& !(region->getRegionFlags() & REGION_FLAGS_SKIP_SCRIPTS)
-		&& !(region->getRegionFlags() & REGION_FLAGS_ESTATE_SKIP_SCRIPTS)
+		&& !region->getRegionFlag(REGION_FLAGS_SKIP_SCRIPTS)
+		&& !region->getRegionFlag(REGION_FLAGS_ESTATE_SKIP_SCRIPTS)
 		&& parcel
 		&& parcel->getAllowOtherScripts();
 }
@@ -1310,7 +1329,7 @@ void LLViewerParcelMgr::sendParcelPropertiesUpdate(LLParcel* parcel, bool use_ag
 		parcel->packMessage(body);
 		llinfos << "Sending parcel properties update via capability to: "
 			<< url << llendl;
-		LLHTTPClient::post(url, body, new LLHTTPClient::Responder());
+		LLHTTPClient::post(url, body, new LLHTTPClient::ResponderIgnore);
 	}
 	else
 	{
@@ -1409,8 +1428,11 @@ void LLViewerParcelMgr::processParcelOverlay(LLMessageSystem *msg, void **user)
 		return;
 	}
 
-	S32 parcels_per_edge = LLViewerParcelMgr::getInstance()->mParcelsPerEdge;
-	S32 expected_size = parcels_per_edge * parcels_per_edge / PARCEL_OVERLAY_CHUNKS;
+// <FS:CR> Aurora Sim
+	//S32 parcels_per_edge = LLViewerParcelMgr::getInstance()->mParcelsPerEdge;
+	//S32 expected_size = parcels_per_edge * parcels_per_edge / PARCEL_OVERLAY_CHUNKS;
+	S32 expected_size = 1024;
+// </FS:CR> Aurora Sim
 	if (packed_overlay_size != expected_size)
 	{
 		llwarns << "Got parcel overlay size " << packed_overlay_size
@@ -1473,6 +1495,13 @@ void LLViewerParcelMgr::processParcelProperties(LLMessageSystem *msg, void **use
 	S32		other_clean_time = 0;
 
 	LLViewerParcelMgr& parcel_mgr = LLViewerParcelMgr::instance();
+// <FS:CR> Aurora Sim
+	LLViewerRegion* msg_region = LLWorld::getInstance()->getRegion(msg->getSender());
+	if(msg_region)
+		parcel_mgr.mParcelsPerEdge = S32(msg_region->getWidth() / PARCEL_GRID_STEP_METERS);
+	else
+		parcel_mgr.mParcelsPerEdge = S32(gAgent.getRegion()->getWidth() / PARCEL_GRID_STEP_METERS);
+// </FS:CR> Aurora Sim
 
 	msg->getS32Fast(_PREHASH_ParcelData, _PREHASH_RequestResult, request_result );
 	msg->getS32Fast(_PREHASH_ParcelData, _PREHASH_SequenceID, sequence_id );
@@ -1679,7 +1708,7 @@ void LLViewerParcelMgr::processParcelProperties(LLMessageSystem *msg, void **use
 			parcel_mgr.sendParcelAccessListRequest(AL_ACCESS | AL_BAN);
 
 			// Request dwell for this land, if it's not public land.
-			parcel_mgr.mSelectedDwell = 0.f;
+			parcel_mgr.mSelectedDwell = DWELL_NAN;
 			if (0 != local_id)
 			{
 				parcel_mgr.sendParcelDwellRequest();
@@ -1799,6 +1828,9 @@ void optionally_start_music(LLParcel* parcel)
 {
 	if (gSavedSettings.getBOOL("AudioStreamingMusic"))
 	{
+		
+	
+	
 		// Make the user click the start button on the overlay bar. JC
 		//		llinfos << "Starting parcel music " << parcel->getMusicURL() << llendl;
 
@@ -1806,8 +1838,19 @@ void optionally_start_music(LLParcel* parcel)
 		// changed as part of SL-4878
 		if (gOverlayBar && gOverlayBar->musicPlaying())
 		{
-			LLViewerParcelMedia::playStreamingMusic(parcel);
+			LLPanelNearByMedia* nearby_media_panel = LLFloaterNearbyMedia::instanceExists() ? LLFloaterNearbyMedia::getInstance()->getMediaPanel() : NULL;
+			if ((nearby_media_panel &&
+			     nearby_media_panel->getParcelAudioAutoStart()) ||
+			    // or they have expressed no opinion in the UI, but have autoplay on...
+			    (!nearby_media_panel &&
+			     /*gSavedSettings.getBOOL(LLViewerMedia::AUTO_PLAY_MEDIA_SETTING) &&*/
+				 gSavedSettings.getBOOL("MediaTentativeAutoPlay")))
+			{
+				LLViewerParcelMedia::playStreamingMusic(parcel);
+				return;
+			}
 		}
+		gAudiop->startInternetStream(LLStringUtil::null); 
 	}
 }
 
@@ -2080,7 +2123,7 @@ void LLViewerParcelMgr::startReleaseLand()
 		return;
 	}
 /*
-	if ((region->getRegionFlags() & REGION_FLAGS_BLOCK_LAND_RESELL)
+	if (region->getRegionFlag(REGION_FLAGS_BLOCK_LAND_RESELL)
 		&& !gAgent.isGodlike())
 	{
 		LLSD args;
@@ -2324,7 +2367,7 @@ void LLViewerParcelMgr::startDeedLandToGroup()
 	/*
 	if(!gAgent.isGodlike())
 	{
-		if((region->getRegionFlags() & REGION_FLAGS_BLOCK_LAND_RESELL)
+		if(region->getRegionFlag(REGION_FLAGS_BLOCK_LAND_RESELL)
 			&& (mCurrentParcel->getOwnerID() != region->getOwner()))
 		{
 			LLSD args;

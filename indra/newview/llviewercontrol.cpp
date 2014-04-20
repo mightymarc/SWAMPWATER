@@ -78,10 +78,11 @@
 #include "llnetmap.h"
 #include "llrender.h"
 #include "llfloaterchat.h"
-#include "statemachine/aistatemachine.h"
+#include "aistatemachine.h"
 #include "aithreadsafe.h"
 #include "lldrawpoolbump.h"
-#include "emeraldboobutils.h"
+#include "aicurl.h"
+#include "aihttptimeoutpolicy.h"
 
 #ifdef TOGGLE_HACKED_GODLIKE_VIEWER
 BOOL 				gHackGodmode = FALSE;
@@ -122,9 +123,17 @@ static bool handleTerrainDetailChanged(const LLSD& newvalue)
 	return true;
 }
 
+static bool handleTerrainScaleChanged(const LLSD& inputvalue)
+{
+	LLSD newvalue = 1.f / inputvalue.asReal();
+	LLDrawPoolTerrain::sDetailScale = newvalue.asReal();
+	return true;
+}
+
 bool handleStateMachineMaxTimeChanged(const LLSD& newvalue)
 {
-	AIStateMachine::updateSettings();
+	F32 StateMachineMaxTime = newvalue.asFloat();
+	AIEngine::setMaxCount(StateMachineMaxTime);
 	return true;
 }
 
@@ -145,52 +154,51 @@ static bool handleSetShaderChanged(const LLSD& newvalue)
 	return true;
 }
 
-static bool handleAvatarBoobMassChanged(const LLSD& newvalue)
+static bool handleRenderPerfTestChanged(const LLSD& newvalue)
 {
-	LLVOAvatar::sBoobConfig.mass = EmeraldBoobUtils::convertMass((F32) newvalue.asReal());
-	return true;
-}
+       bool status = !newvalue.asBoolean();
+       if (!status)
+       {
+               gPipeline.clearRenderTypeMask(LLPipeline::RENDER_TYPE_WL_SKY,
+                                                                         LLPipeline::RENDER_TYPE_GROUND,
+                                                                        LLPipeline::RENDER_TYPE_TERRAIN,
+                                                                         LLPipeline::RENDER_TYPE_GRASS,
+                                                                         LLPipeline::RENDER_TYPE_TREE,
+                                                                         LLPipeline::RENDER_TYPE_WATER,
+                                                                         LLPipeline::RENDER_TYPE_PASS_GRASS,
+                                                                         LLPipeline::RENDER_TYPE_HUD,
+                                                                         LLPipeline::RENDER_TYPE_CLASSIC_CLOUDS,
+                                                                         LLPipeline::RENDER_TYPE_HUD_PARTICLES,
+                                                                         LLPipeline::END_RENDER_TYPES); 
+               gPipeline.setRenderDebugFeatureControl(~(U32)0, false);	// Reset all RENDER_DEBUG_FEATURE_* flags.
+       }
+       else 
+       {
+               gPipeline.setRenderTypeMask(LLPipeline::RENDER_TYPE_WL_SKY,
+                                                                         LLPipeline::RENDER_TYPE_GROUND,
+                                                                         LLPipeline::RENDER_TYPE_TERRAIN,
+                                                                         LLPipeline::RENDER_TYPE_GRASS,
+                                                                         LLPipeline::RENDER_TYPE_TREE,
+                                                                         LLPipeline::RENDER_TYPE_WATER,
+                                                                         LLPipeline::RENDER_TYPE_PASS_GRASS,
+                                                                         LLPipeline::RENDER_TYPE_HUD,
+                                                                         LLPipeline::RENDER_TYPE_CLASSIC_CLOUDS,
+                                                                         LLPipeline::RENDER_TYPE_HUD_PARTICLES,
+                                                                         LLPipeline::END_RENDER_TYPES);
+               gPipeline.setRenderDebugFeatureControl(LLPipeline::RENDER_DEBUG_FEATURE_UI, true);
+       }
 
-static bool handleAvatarBoobHardnessChanged(const LLSD& newvalue)
-{
-	LLVOAvatar::sBoobConfig.hardness = EmeraldBoobUtils::convertHardness((F32) newvalue.asReal());
-	return true;
-}
-
-static bool handleAvatarBoobVelMaxChanged(const LLSD& newvalue)
-{
-	LLVOAvatar::sBoobConfig.velMax = EmeraldBoobUtils::convertVelMax((F32) newvalue.asReal());
-	LLVOAvatar::sBoobConfig.velMin = LLVOAvatar::sBoobConfig.velMin*LLVOAvatar::sBoobConfig.velMax;
-	return true;
-}
-
-static bool handleAvatarBoobFrictionChanged(const LLSD& newvalue)
-{
-	LLVOAvatar::sBoobConfig.friction = EmeraldBoobUtils::convertFriction((F32) newvalue.asReal());
-	return true;
-}
-
-static bool handleAvatarBoobVelMinChanged(const LLSD& newvalue)
-{
-	LLVOAvatar::sBoobConfig.velMin = EmeraldBoobUtils::convertVelMin((F32) newvalue.asReal())*LLVOAvatar::sBoobConfig.velMax;
-	return true;
-}
-
-static bool handleAvatarBoobToggleChanged(const LLSD& newvalue)
-{
-	LLVOAvatar::sBoobConfig.enabled = (BOOL) newvalue.asReal();
-	return true;
-}
-
-static bool handleAvatarBoobXYInfluence(const LLSD& newvalue)
-{
-	LLVOAvatar::sBoobConfig.XYInfluence = (F32) newvalue.asReal();
-	return true;
+       return true;
 }
 
 static bool handleSetSelfInvisible( const LLSD& newvalue)
 {
 	LLVOAvatarSelf::onChangeSelfInvisible( newvalue.asBoolean() );
+	return true;
+}
+
+bool handleRenderAvatarComplexityLimitChanged(const LLSD& newvalue)
+{
 	return true;
 }
 
@@ -321,6 +329,12 @@ static bool handleBandwidthChanged(const LLSD& newvalue)
 	return true;
 }
 
+static bool handleHTTPBandwidthChanged(const LLSD& newvalue)
+{
+	AIPerService::setHTTPThrottleBandwidth((F32) newvalue.asReal());
+	return true;
+}
+
 static bool handleChatFontSizeChanged(const LLSD& newvalue)
 {
 	if(gConsole)
@@ -341,7 +355,7 @@ static bool handleChatPersistTimeChanged(const LLSD& newvalue)
 
 static void handleAudioVolumeChanged(const LLSD& newvalue)
 {
-	audio_update_volume(true);
+	audio_update_volume(false);
 }
 
 static bool handleJoystickChanged(const LLSD& newvalue)
@@ -377,8 +391,12 @@ static bool handleAudioStreamMusicChanged(const LLSD& newvalue)
 
 static bool handleUseOcclusionChanged(const LLSD& newvalue)
 {
-	LLPipeline::sUseOcclusion = (newvalue.asBoolean() && gGLManager.mHasOcclusionQuery 
-		&& LLFeatureManager::getInstance()->isFeatureAvailable("UseOcclusion") && !gUseWireframe) ? 2 : 0;
+	LLPipeline::sUseOcclusion = 
+			(!gUseWireframe
+			&& LLGLSLShader::sNoFixedFunction
+			&& LLFeatureManager::getInstance()->isFeatureAvailable("UseOcclusion") 
+			&& newvalue.asBoolean() 
+			&& gGLManager.mHasOcclusionQuery) ? 2 : 0;
 	return true;
 }
 
@@ -421,6 +439,7 @@ static bool handleRepartition(const LLSD&)
 	if (gPipeline.isInit())
 	{
 		gOctreeMaxCapacity = gSavedSettings.getU32("OctreeMaxNodeCapacity");
+		gOctreeReserveCapacity = llmin(gSavedSettings.getU32("OctreeReserveNodeCapacity"),U32(512));
 		gObjectList.repartitionObjects();
 	}
 	return true;
@@ -528,6 +547,12 @@ bool handleEffectColorChanged(const LLSD& newvalue)
 	return true;
 }
 
+bool handleVoiceClientPrefsChanged(const LLSD& newvalue)
+{
+	LLVoiceClient::getInstance()->updateSettings();
+	return true;
+}
+
 bool handleVelocityInterpolate(const LLSD& newvalue)
 {
 	LLMessageSystem* msg = gMessageSystem;
@@ -548,15 +573,6 @@ bool handleVelocityInterpolate(const LLSD& newvalue)
 		msg->addUUIDFast(_PREHASH_SessionID, gAgent.getSessionID());
 		gAgent.sendReliableMessage();
 		llinfos << "Velocity Interpolation Off" << llendl;
-	}
-	return true;
-}
-
-bool handleVoiceClientPrefsChanged(const LLSD& newvalue)
-{
-	if(gVoiceClient)
-	{
-		gVoiceClient->updateSettings();
 	}
 	return true;
 }
@@ -611,19 +627,22 @@ static bool handleAllowLargeSounds(const LLSD& newvalue)
 		gAudiop->setAllowLargeSounds(newvalue.asBoolean());
 	return true;
 }
+
 ////////////////////////////////////////////////////////////////////////////
 void settings_setup_listeners()
 {
 	gSavedSettings.getControl("FirstPersonAvatarVisible")->getSignal()->connect(boost::bind(&handleRenderAvatarMouselookChanged, _2));
 	gSavedSettings.getControl("RenderFarClip")->getSignal()->connect(boost::bind(&handleRenderFarClipChanged, _2));
 	gSavedSettings.getControl("RenderTerrainDetail")->getSignal()->connect(boost::bind(&handleTerrainDetailChanged, _2));
+	gSavedSettings.getControl("RenderTerrainScale")->getSignal()->connect(boost::bind(&handleTerrainScaleChanged, _2));
 	gSavedSettings.getControl("OctreeStaticObjectSizeFactor")->getSignal()->connect(boost::bind(&handleRepartition, _2));
 	gSavedSettings.getControl("OctreeDistanceFactor")->getSignal()->connect(boost::bind(&handleRepartition, _2));
 	gSavedSettings.getControl("OctreeMaxNodeCapacity")->getSignal()->connect(boost::bind(&handleRepartition, _2));
+	gSavedSettings.getControl("OctreeReserveNodeCapacity")->getSignal()->connect(boost::bind(&handleRepartition, _2));
 	gSavedSettings.getControl("OctreeAlphaDistanceFactor")->getSignal()->connect(boost::bind(&handleRepartition, _2));
 	gSavedSettings.getControl("OctreeAttachmentSizeFactor")->getSignal()->connect(boost::bind(&handleRepartition, _2));
 	gSavedSettings.getControl("RenderMaxTextureIndex")->getSignal()->connect(boost::bind(&handleSetShaderChanged, _2));
-	//gSavedSettings.getControl("RenderAnimateTrees")->getSignal()->connect(boost::bind(&handleResetVertexBuffersChanged, _2));
+	gSavedSettings.getControl("RenderAnimateTrees")->getSignal()->connect(boost::bind(&handleResetVertexBuffersChanged, _2));
 	gSavedSettings.getControl("RenderAvatarVP")->getSignal()->connect(boost::bind(&handleSetShaderChanged, _2));
 	gSavedSettings.getControl("VertexShaderEnable")->getSignal()->connect(boost::bind(&handleSetShaderChanged, _2));
 	gSavedSettings.getControl("RenderDepthOfField")->getSignal()->connect(boost::bind(&handleReleaseGLBufferChanged, _2));
@@ -641,6 +660,7 @@ void settings_setup_listeners()
 	gSavedSettings.getControl("RenderGammaFull")->getSignal()->connect(boost::bind(&handleSetShaderChanged, _2));
 	gSavedSettings.getControl("RenderAvatarMaxVisible")->getSignal()->connect(boost::bind(&handleAvatarMaxVisibleChanged, _2));
 	gSavedSettings.getControl("RenderAvatarInvisible")->getSignal()->connect(boost::bind(&handleSetSelfInvisible, _2));
+	gSavedSettings.getControl("RenderAvatarComplexityLimit")->getSignal()->connect(boost::bind(&handleRenderAvatarComplexityLimitChanged, _2));
 	gSavedSettings.getControl("RenderVolumeLODFactor")->getSignal()->connect(boost::bind(&handleVolumeLODChanged, _2));
 	gSavedSettings.getControl("RenderAvatarLODFactor")->getSignal()->connect(boost::bind(&handleAvatarLODChanged, _2));
 	gSavedSettings.getControl("RenderAvatarPhysicsLODFactor")->getSignal()->connect(boost::bind(&handleAvatarPhysicsLODChanged, _2));
@@ -648,6 +668,7 @@ void settings_setup_listeners()
 	gSavedSettings.getControl("RenderTreeLODFactor")->getSignal()->connect(boost::bind(&handleTreeLODChanged, _2));
 	gSavedSettings.getControl("RenderFlexTimeFactor")->getSignal()->connect(boost::bind(&handleFlexLODChanged, _2));
 	gSavedSettings.getControl("ThrottleBandwidthKBPS")->getSignal()->connect(boost::bind(&handleBandwidthChanged, _2));
+	gSavedSettings.getControl("HTTPThrottleBandwidth")->getSignal()->connect(boost::bind(&handleHTTPBandwidthChanged, _2));
 	gSavedSettings.getControl("RenderGamma")->getSignal()->connect(boost::bind(&handleGammaChanged, _2));
 	gSavedSettings.getControl("RenderFogRatio")->getSignal()->connect(boost::bind(&handleFogRatioChanged, _2));
 	gSavedSettings.getControl("RenderMaxPartCount")->getSignal()->connect(boost::bind(&handleMaxPartCountChanged, _2));
@@ -656,6 +677,8 @@ void settings_setup_listeners()
 	gSavedSettings.getControl("RenderDebugTextureBind")->getSignal()->connect(boost::bind(&handleResetVertexBuffersChanged, _2));
 	gSavedSettings.getControl("RenderAutoMaskAlphaDeferred")->getSignal()->connect(boost::bind(&handleResetVertexBuffersChanged, _2));
 	gSavedSettings.getControl("RenderAutoMaskAlphaNonDeferred")->getSignal()->connect(boost::bind(&handleResetVertexBuffersChanged, _2));
+	gSavedSettings.getControl("SHUseRMSEAutoMask")->getSignal()->connect(boost::bind(&handleResetVertexBuffersChanged, _2));
+	gSavedSettings.getControl("SHAutoMaskMaxRMSE")->getSignal()->connect(boost::bind(&handleResetVertexBuffersChanged, _2));
 	gSavedSettings.getControl("RenderObjectBump")->getSignal()->connect(boost::bind(&handleResetVertexBuffersChanged, _2));
 	gSavedSettings.getControl("RenderMaxVBOSize")->getSignal()->connect(boost::bind(&handleResetVertexBuffersChanged, _2));
 	//See LL jira VWR-3258 comment section. Implemented by LL in 2.1 -Shyotl
@@ -671,6 +694,7 @@ void settings_setup_listeners()
 	gSavedSettings.getControl("RenderShadowDetail")->getSignal()->connect(boost::bind(&handleSetShaderChanged, _2));
 	gSavedSettings.getControl("RenderDeferredSSAO")->getSignal()->connect(boost::bind(&handleSetShaderChanged, _2));
 	gSavedSettings.getControl("RenderDepthOfField")->getSignal()->connect(boost::bind(&handleSetShaderChanged, _2));
+	gSavedSettings.getControl("RenderPerformanceTest")->getSignal()->connect(boost::bind(&handleRenderPerfTestChanged, _2));
 	gSavedSettings.getControl("TextureMemory")->getSignal()->connect(boost::bind(&handleVideoMemoryChanged, _2));
 	gSavedSettings.getControl("AuditTexture")->getSignal()->connect(boost::bind(&handleAuditTextureChanged, _2));
 	gSavedSettings.getControl("ChatFontSize")->getSignal()->connect(boost::bind(&handleChatFontSizeChanged, _2));
@@ -686,6 +710,7 @@ void settings_setup_listeners()
 	gSavedSettings.getControl("AudioLevelVoice")->getSignal()->connect(boost::bind(&handleAudioVolumeChanged, _2));
 	gSavedSettings.getControl("AudioLevelDoppler")->getSignal()->connect(boost::bind(&handleAudioVolumeChanged, _2));
 	gSavedSettings.getControl("AudioLevelRolloff")->getSignal()->connect(boost::bind(&handleAudioVolumeChanged, _2));
+	gSavedSettings.getControl("AudioLevelUnderwaterRolloff")->getSignal()->connect(boost::bind(&handleAudioVolumeChanged, _2));
 	gSavedSettings.getControl("AudioStreamingMusic")->getSignal()->connect(boost::bind(&handleAudioStreamMusicChanged, _2));
 	gSavedSettings.getControl("MuteAudio")->getSignal()->connect(boost::bind(&handleAudioVolumeChanged, _2));
 	gSavedSettings.getControl("MuteMusic")->getSignal()->connect(boost::bind(&handleAudioVolumeChanged, _2));
@@ -764,18 +789,29 @@ void settings_setup_listeners()
 	gSavedSettings.getControl("CloudsEnabled")->getSignal()->connect(boost::bind(&handleCloudSettingsChanged, _2));
 	gSavedSettings.getControl("SkyUseClassicClouds")->getSignal()->connect(boost::bind(&handleCloudSettingsChanged, _2));
 	gSavedSettings.getControl("RenderTransparentWater")->getSignal()->connect(boost::bind(&handleRenderTransparentWaterChanged, _2));
-
-	gSavedSettings.getControl("EmeraldBoobMass")->getSignal()->connect(boost::bind(&handleAvatarBoobMassChanged, _2));
-	gSavedSettings.getControl("EmeraldBoobHardness")->getSignal()->connect(boost::bind(&handleAvatarBoobHardnessChanged, _2));
-	gSavedSettings.getControl("EmeraldBoobVelMax")->getSignal()->connect(boost::bind(&handleAvatarBoobVelMaxChanged, _2));
-	gSavedSettings.getControl("EmeraldBoobFriction")->getSignal()->connect(boost::bind(&handleAvatarBoobFrictionChanged, _2));
-	gSavedSettings.getControl("EmeraldBoobVelMin")->getSignal()->connect(boost::bind(&handleAvatarBoobVelMinChanged, _2));
-	gSavedSettings.getControl("EmeraldBreastPhysicsToggle")->getSignal()->connect(boost::bind(&handleAvatarBoobToggleChanged, _2));
-	gSavedSettings.getControl("EmeraldBoobXYInfluence")->getSignal()->connect(boost::bind(&handleAvatarBoobXYInfluence, _2));
 	
 	gSavedSettings.getControl("AscentAvatarXModifier")->getSignal()->connect(boost::bind(&handleAscentAvatarModifier, _2));
 	gSavedSettings.getControl("AscentAvatarYModifier")->getSignal()->connect(boost::bind(&handleAscentAvatarModifier, _2));
 	gSavedSettings.getControl("AscentAvatarZModifier")->getSignal()->connect(boost::bind(&handleAscentAvatarModifier, _2));
+
+	gSavedSettings.getControl("CurlMaxTotalConcurrentConnections")->getSignal()->connect(boost::bind(&AICurlInterface::handleCurlMaxTotalConcurrentConnections, _2));
+	gSavedSettings.getControl("CurlConcurrentConnectionsPerService")->getSignal()->connect(boost::bind(&AICurlInterface::handleCurlConcurrentConnectionsPerService, _2));
+	gSavedSettings.getControl("NoVerifySSLCert")->getSignal()->connect(boost::bind(&AICurlInterface::handleNoVerifySSLCert, _2));
+
+	gSavedSettings.getControl("CurlTimeoutDNSLookup")->getValidateSignal()->connect(boost::bind(&validateCurlTimeoutDNSLookup, _2));
+	gSavedSettings.getControl("CurlTimeoutDNSLookup")->getSignal()->connect(boost::bind(&handleCurlTimeoutDNSLookup, _2));
+	gSavedSettings.getControl("CurlTimeoutConnect")->getValidateSignal()->connect(boost::bind(&validateCurlTimeoutConnect, _2));
+	gSavedSettings.getControl("CurlTimeoutConnect")->getSignal()->connect(boost::bind(&handleCurlTimeoutConnect, _2));
+	gSavedSettings.getControl("CurlTimeoutReplyDelay")->getValidateSignal()->connect(boost::bind(&validateCurlTimeoutReplyDelay, _2));
+	gSavedSettings.getControl("CurlTimeoutReplyDelay")->getSignal()->connect(boost::bind(&handleCurlTimeoutReplyDelay, _2));
+	gSavedSettings.getControl("CurlTimeoutLowSpeedLimit")->getValidateSignal()->connect(boost::bind(&validateCurlTimeoutLowSpeedLimit, _2));
+	gSavedSettings.getControl("CurlTimeoutLowSpeedLimit")->getSignal()->connect(boost::bind(&handleCurlTimeoutLowSpeedLimit, _2));
+	gSavedSettings.getControl("CurlTimeoutLowSpeedTime")->getValidateSignal()->connect(boost::bind(&validateCurlTimeoutLowSpeedTime, _2));
+	gSavedSettings.getControl("CurlTimeoutLowSpeedTime")->getSignal()->connect(boost::bind(&handleCurlTimeoutLowSpeedTime, _2));
+	gSavedSettings.getControl("CurlTimeoutMaxTransaction")->getValidateSignal()->connect(boost::bind(&validateCurlTimeoutMaxTransaction, _2));
+	gSavedSettings.getControl("CurlTimeoutMaxTransaction")->getSignal()->connect(boost::bind(&handleCurlTimeoutMaxTransaction, _2));
+	gSavedSettings.getControl("CurlTimeoutMaxTotalDelay")->getValidateSignal()->connect(boost::bind(&validateCurlTimeoutMaxTotalDelay, _2));
+	gSavedSettings.getControl("CurlTimeoutMaxTotalDelay")->getSignal()->connect(boost::bind(&handleCurlTimeoutMaxTotalDelay, _2));
 
     // [Ansariel: Display name support]
 	gSavedSettings.getControl("PhoenixNameSystem")->getSignal()->connect(boost::bind(&handlePhoenixNameSystemChanged, _2));

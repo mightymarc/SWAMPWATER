@@ -35,32 +35,32 @@
 #include "llpreviewtexture.h"
 
 #include "llagent.h"
+#include "llavataractions.h"
 #include "llbutton.h"
 #include "llcombobox.h"
 #include "statemachine/aifilepicker.h"
 #include "llfloaterinventory.h"
-#include "llimagetga.h"
+#include "llimage.h"
 #include "llinventory.h"
 #include "llnotificationsutil.h"
 #include "llresmgr.h"
+#include "lltrans.h"
 #include "lltextbox.h"
 #include "lltextureview.h"
-#include "llui.h"
 #include "llviewertexturelist.h"
 #include "lluictrlfactory.h"
 #include "llviewerwindow.h"
 #include "lllineeditor.h"
-#include "llfloateravatarinfo.h"
 
 const S32 PREVIEW_TEXTURE_MIN_WIDTH = 300;
 const S32 PREVIEW_TEXTURE_MIN_HEIGHT = 120;
 
-const F32 PREVIEW_TEXTURE_MAX_ASPECT = 200.f;
-const F32 PREVIEW_TEXTURE_MIN_ASPECT = 0.005f;
-
 const S32 CLIENT_RECT_VPAD = 4;
 
 const F32 SECONDS_TO_SHOW_FILE_SAVED_MSG = 8.f;
+
+const F32 PREVIEW_TEXTURE_MAX_ASPECT = 200.f;
+const F32 PREVIEW_TEXTURE_MIN_ASPECT = 0.005f;
 
 LLPreviewTexture * LLPreviewTexture::sInstance;
 LLPreviewTexture::LLPreviewTexture(const std::string& name,
@@ -79,7 +79,7 @@ LLPreviewTexture::LLPreviewTexture(const std::string& name,
 	mLastWidth(0),
 	mAspectRatio(0.f),
 	mImage(NULL),
-	mImageOldBoostLevel(LLViewerTexture::BOOST_NONE)
+	mImageOldBoostLevel(LLGLTexture::BOOST_NONE)
 {
 	const LLInventoryItem *item = getItem();
 	if(item)
@@ -122,8 +122,7 @@ LLPreviewTexture::LLPreviewTexture(
 	const LLRect& rect,
 	const std::string& title,
 	const LLUUID& asset_id,
-	BOOL copy_to_inv,
-	BOOL copyable)
+	BOOL copy_to_inv)
 	:
 	LLPreview(
 		name,
@@ -138,7 +137,6 @@ LLPreviewTexture::LLPreviewTexture(
 	mLoadingFullImage( FALSE ),
 	mShowKeepDiscard(FALSE),
 	mCopyToInv(copy_to_inv),
-	mIsCopyable(copyable),
 	mLastHeight(0),
 	mLastWidth(0),
 	mAspectRatio(0.f),
@@ -162,8 +160,11 @@ LLPreviewTexture::~LLPreviewTexture()
 	{
 		getWindow()->decBusyCount();
 	}
-	mImage->setBoostLevel(mImageOldBoostLevel);
-	mImage = NULL;
+	if(mImage)
+	{
+		mImage->setBoostLevel(mImageOldBoostLevel);
+		mImage = NULL;
+	}
 	sInstance = NULL;
 }
 
@@ -184,14 +185,12 @@ void LLPreviewTexture::init()
 	{
 		childSetAction("Copy To Inventory",LLPreview::onBtnCopyToInv,this);
 	}
-
 	else if (mShowKeepDiscard)
 	{
 		childSetAction("Keep",onKeepBtn,this);
 		childSetAction("Discard",onDiscardBtn,this);
 	}
-
-	else 
+	else
 	{
 		// If the buttons are hidden move stuff down to use the space.
 		
@@ -228,11 +227,11 @@ void LLPreviewTexture::init()
 			mCreatorKey = item->getCreatorUUID();
 			childSetCommitCallback("desc", LLPreview::onText, this);
 			childSetText("desc", item->getDescription());
-			childSetPrevalidate("desc", &LLLineEditor::prevalidatePrintableNotPipe);
+			getChild<LLLineEditor>("desc")->setPrevalidate(&LLLineEditor::prevalidatePrintableNotPipe);
 			childSetText("uuid", getItemID().asString());
 			childSetText("uploader", getItemCreatorName());
 			childSetText("uploadtime", getItemCreationDate());
-			childSetText("alphanote", std::string("Loading..."));
+			childSetText("alphanote", LLTrans::getString("LoadingData"));
 		}
 	}
 	
@@ -281,19 +280,22 @@ void LLPreviewTexture::draw()
 								interior.getHeight(),
 								mImage);
 
-			if (mAlphaMaskResult != mImage->getIsAlphaMask())
+			static const LLCachedControl<bool> use_rmse_auto_mask("SHUseRMSEAutoMask",false);
+			static const LLCachedControl<F32> auto_mask_max_rmse("SHAutoMaskMaxRMSE",.09f);
+			if (mAlphaMaskResult != mImage->getIsAlphaMask(use_rmse_auto_mask ? auto_mask_max_rmse : -1.f))
 			{
-				if (!mImage->getIsAlphaMask())
+				mAlphaMaskResult = !mAlphaMaskResult;
+				if (!mAlphaMaskResult)
 				{
 					childSetColor("alphanote", LLColor4::green);
-					childSetText("alphanote", std::string("No Alpha"));
+					childSetText("alphanote", getString("No Alpha"));
 				}
 				else
 				{
 					childSetColor("alphanote", LLColor4::red);
-					childSetText("alphanote", std::string("Has Alpha"));
+					childSetText("alphanote", getString("Has Alpha"));
 				}
-				mAlphaMaskResult = mImage->getIsAlphaMask();
+				
 			}
 			// Pump the texture priority
 			F32 pixel_area = mLoadingFullImage ? (F32)MAX_IMAGE_AREA  : (F32)(interior.getWidth() * interior.getHeight() );
@@ -319,8 +321,7 @@ void LLPreviewTexture::draw()
 
 			if( mLoadingFullImage )
 			{
-				// *TODO: Translate
-				LLFontGL::getFontSansSerif()->renderUTF8(std::string("Receiving:"), 0,
+				LLFontGL::getFontSansSerif()->renderUTF8(LLTrans::getString("Receiving"), 0,
 					interior.mLeft + 4, 
 					interior.mBottom + 4,
 					LLColor4::white, LLFontGL::LEFT, LLFontGL::BOTTOM,
@@ -356,8 +357,7 @@ void LLPreviewTexture::draw()
 			}
 			else if(!mSavedFileTimer.hasExpired())
 			{
-				// *TODO: Translate
-				LLFontGL::getFontSansSerif()->renderUTF8(std::string("File Saved"), 0,
+				LLFontGL::getFontSansSerif()->renderUTF8(LLTrans::getString("FileSaved"), 0,
 					interior.mLeft + 4,
 					interior.mBottom + 4,
 					LLColor4::white, LLFontGL::LEFT, LLFontGL::BOTTOM,
@@ -366,6 +366,7 @@ void LLPreviewTexture::draw()
 			}
 		}
 	} 
+
 }
 
 
@@ -375,7 +376,6 @@ BOOL LLPreviewTexture::canSaveAs() const
 	return mIsCopyable && !mLoadingFullImage && mImage.notNull() && !mImage->isMissingAsset();
 }
 
-
 // virtual
 void LLPreviewTexture::saveAs()
 {
@@ -384,7 +384,7 @@ void LLPreviewTexture::saveAs()
 
 	const LLViewerInventoryItem* item = getItem() ;
 	AIFilePicker* filepicker = AIFilePicker::create();
-	filepicker->open(item ? LLDir::getScrubbedFileName(item->getName()) + ".tga" : LLStringUtil::null, FFSAVE_TGA, "", "image");
+	filepicker->open(item ? LLDir::getScrubbedFileName(item->getName()) + ".png" : LLStringUtil::null, FFSAVE_IMAGE, "", "image");
 	filepicker->run(boost::bind(&LLPreviewTexture::saveAs_continued, this, item, filepicker));
 }
 
@@ -397,6 +397,7 @@ void LLPreviewTexture::saveAs_continued(LLViewerInventoryItem const* item, AIFil
 	mSaveFileName = filepicker->getFilename();
 	mLoadingFullImage = TRUE;
 	getWindow()->incBusyCount();
+
 	mImage->forceToSaveRawImage(0) ;//re-fetch the raw image if the old one is removed.
 	mImage->setLoadedCallback( LLPreviewTexture::onFileLoadedForSave, 
 								0, TRUE, FALSE, new LLUUID( mItemUUID ), &mCallbackTextureList );
@@ -433,14 +434,14 @@ void LLPreviewTexture::onFileLoadedForSave(BOOL success,
 
 	if( self && final && success )
 	{
-		LLPointer<LLImageTGA> image_tga = new LLImageTGA;
-		if( !image_tga->encode( src ) )
+		LLPointer<LLImageFormatted> image = LLImageFormatted::createFromExtension(self->mSaveFileName);
+		if (!image || !image->encode(src, 0.0))
 		{
 			LLSD args;
 			args["FILE"] = self->mSaveFileName;
 			LLNotificationsUtil::add("CannotEncodeFile", args);
 		}
-		else if( !image_tga->save( self->mSaveFileName ) )
+		else if (!image->save(self->mSaveFileName))
 		{
 			LLSD args;
 			args["FILE"] = self->mSaveFileName;
@@ -484,7 +485,7 @@ std::string LLPreviewTexture::getItemCreationDate()
 		timeToFormattedString(item->getCreationDate(), gSavedSettings.getString("TimestampFormat"), time);
 		return time;
 	}
-	return "Unknown";
+	return getString("Unknown");
 }
 
 std::string LLPreviewTexture::getItemCreatorName()
@@ -497,7 +498,7 @@ std::string LLPreviewTexture::getItemCreatorName()
 		mCreatorKey = item->getCreatorUUID();
 		return name;
 	}
-	return "Unknown";
+	return getString("Unknown");
 }
 
 
@@ -656,8 +657,7 @@ bool LLPreviewTexture::setAspectRatio(const F32 width, const F32 height)
 void LLPreviewTexture::onClickProfile(void* userdata)
 {
 	LLPreviewTexture* self = (LLPreviewTexture*) userdata;
-	LLUUID key =  self->mCreatorKey;
-	if (!key.isNull()) LLFloaterAvatarInfo::showFromDirectory(key);
+	LLAvatarActions::showProfile(self->mCreatorKey);
 }
 
 void LLPreviewTexture::onAspectRatioCommit(LLUICtrl* ctrl, void* userdata)
@@ -685,9 +685,9 @@ void LLPreviewTexture::onAspectRatioCommit(LLUICtrl* ctrl, void* userdata)
 
 void LLPreviewTexture::loadAsset()
 {
-	mImage = LLViewerTextureManager::getFetchedTexture(mImageID, MIPMAP_TRUE, LLViewerTexture::BOOST_NONE, LLViewerTexture::LOD_TEXTURE);
+	mImage = LLViewerTextureManager::getFetchedTexture(mImageID, MIPMAP_TRUE, LLGLTexture::BOOST_NONE, LLViewerTexture::LOD_TEXTURE);
 	mImageOldBoostLevel = mImage->getBoostLevel();
-	mImage->setBoostLevel(LLViewerTexture::BOOST_PREVIEW);
+	mImage->setBoostLevel(LLGLTexture::BOOST_PREVIEW);
 	mImage->forceToSaveRawImage(0) ;
 	mAssetStatus = PREVIEW_ASSET_LOADING;
 	mUpdateDimensions = TRUE;

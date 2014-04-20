@@ -73,22 +73,19 @@ LLProgressBar::~LLProgressBar()
 void LLProgressBar::draw()
 {
 	static LLTimer timer;
-
-	LLUIImagePtr shadow_imagep = LLUI::getUIImage("rounded_square_soft.tga");
+	F32 alpha = getDrawContext().mAlpha;
+	
+	//LLUIImagePtr shadow_imagep = LLUI::getUIImage("rounded_square_soft.tga");
 	LLUIImagePtr bar_fg_imagep = LLUI::getUIImage("progressbar_fill.tga");
 	LLUIImagePtr bar_bg_imagep = LLUI::getUIImage("progressbar_track.tga");
-	LLUIImagePtr bar_imagep = LLUI::getUIImage("rounded_square.tga");
+	//LLUIImagePtr bar_imagep = LLUI::getUIImage("rounded_square.tga");
 	LLColor4 background_color = LLUI::sColorsGroup->getColor("LoginProgressBarBgColor");
 	
-	bar_bg_imagep->draw(getLocalRect(),
-		background_color);
+	bar_bg_imagep->draw(getLocalRect(), background_color  % alpha);
 
-	F32 alpha = 0.5f + 0.5f*0.5f*(1.f + (F32)sin(3.f*timer.getElapsedTimeF32()));
-	LLColor4 bar_color = LLUI::sColorsGroup->getColor("LoginProgressBarFgColor");
-	bar_color.mV[3] = alpha;
 	LLRect progress_rect = getLocalRect();
 	progress_rect.mRight = llround(getRect().getWidth() * (mPercentDone / 100.f));
-	bar_fg_imagep->draw(progress_rect);
+	bar_fg_imagep->draw(progress_rect, LLColor4::white % alpha);
 }
 
 void LLProgressBar::setPercent(const F32 percent)

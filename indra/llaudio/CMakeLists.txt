@@ -40,9 +40,9 @@ include_directories(
     )
 
 set(llaudio_SOURCE_FILES
+    llaudiodecodemgr.cpp
     llaudioengine.cpp
     lllistener.cpp
-    llaudiodecodemgr.cpp
     llvorbisdecode.cpp
     llvorbisencode.cpp
     )
@@ -50,9 +50,9 @@ set(llaudio_SOURCE_FILES
 set(llaudio_HEADER_FILES
     CMakeLists.txt
 
+    llaudiodecodemgr.h
     llaudioengine.h
     lllistener.h
-    llaudiodecodemgr.h
     llvorbisdecode.h
     llvorbisencode.h
     llwindgen.h
@@ -111,10 +111,4 @@ list(APPEND llaudio_SOURCE_FILES ${llaudio_HEADER_FILES})
 
 add_library (llaudio ${llaudio_SOURCE_FILES})
 add_dependencies(llaudio prepare)
-target_link_libraries(
-    llaudio
-    ${VORBISENC_LIBRARIES}
-    ${VORBISFILE_LIBRARIES}
-    ${VORBIS_LIBRARIES}
-    ${OGG_LIBRARIES}
-    )
+

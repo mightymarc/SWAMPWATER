@@ -93,7 +93,7 @@ LLFolderViewItem::LLFolderViewItem( const std::string& name, LLUIImagePtr icon,
 								   S32 creation_date,
 								   LLFolderView* root,
 									LLFolderViewEventListener* listener ) :
-	LLUICtrl( name, LLRect(0, 0, 0, 0), TRUE, NULL, NULL, FOLLOWS_LEFT|FOLLOWS_TOP|FOLLOWS_RIGHT),
+	LLUICtrl( name, LLRect(0, 0, 0, 0), TRUE, NULL, FOLLOWS_LEFT|FOLLOWS_TOP|FOLLOWS_RIGHT),
 	mLabelWidth(0),
 	mLabelWidthDirty(false),
 	mParentFolder( NULL ),
@@ -615,6 +615,15 @@ void LLFolderViewItem::rename(const std::string& new_name)
 	}
 }
 
+void LLFolderViewItem::nameOrDescriptionChanged(void) const
+{
+	// Inform the listeners. Our name was already updated (and we don't have a description).
+	if( mListener )
+	{
+		mListener->nameOrDescriptionChanged();
+	}
+}
+
 void LLFolderViewItem::updateSearchLabelType()
 {
 	mSearchType = mRoot->getSearchType();
@@ -1053,7 +1062,7 @@ void LLFolderViewItem::draw()
 				&&	root_is_loading
 				&&	mShowLoadStatus))
 	{
-		std::string load_string = " ( Loading... ) ";
+		static std::string const load_string = " ( " + LLTrans::getString("LoadingData") + " ) ";
 		font->renderUTF8(load_string, 0, right_x, y, sSearchStatusColor,
 						 LLFontGL::LEFT, LLFontGL::BOTTOM, LLFontGL::NORMAL, LLFontGL::NO_SHADOW, 
 						 S32_MAX, S32_MAX, &right_x, FALSE);
@@ -2872,3 +2881,4 @@ bool LLInventorySort::operator()(const LLFolderViewItem* const& a, const LLFolde
 		}
 	}
 }
+

@@ -72,6 +72,7 @@
 #include "llparcel.h" // always rez
 #include "llviewerparcelmgr.h" // always rez
 // </edit>
+#include "importtracker.h"
 
 // [RLVa:KB]
 #include "rlvhandler.h"
@@ -188,6 +189,7 @@ S32 LLToolPlacer::getTreeGrassSpecies(std::map<std::string, S32> &table, const c
 		return (rand() % max);
 	}
 }
+
 BOOL LLToolPlacer::addObject( LLPCode pcode, S32 x, S32 y, U8 use_physics )
 {
 	LLVector3 ray_start_region;
@@ -215,7 +217,7 @@ BOOL LLToolPlacer::addObject( LLPCode pcode, S32 x, S32 y, U8 use_physics )
 		return FALSE;
 	}
 
-	if (regionp->getRegionFlags() & REGION_FLAGS_SANDBOX)
+	if (regionp->getRegionFlag(REGION_FLAGS_SANDBOX))
 	{
 		LLFirstUse::useSandbox();
 	}
@@ -224,6 +226,22 @@ BOOL LLToolPlacer::addObject( LLPCode pcode, S32 x, S32 y, U8 use_physics )
 	LLQuaternion	rotation;
 	LLVector3		scale = DEFAULT_OBJECT_SCALE;
 	U8				material = LL_MCODE_WOOD;
+	static LLCachedControl<bool> enable_BP("LiruEnableBuildPrefs", true);
+	static LLCachedControl<bool> duplicate("CreateToolCopySelection", true);
+	//If we are using the defaults, and we aren't duplicating
+	if(enable_BP && !duplicate)
+	{
+		scale = LLVector3(
+			gSavedSettings.getF32("BuildPrefs_Xsize"),
+			gSavedSettings.getF32("BuildPrefs_Ysize"),
+			gSavedSettings.getF32("BuildPrefs_Zsize"));
+		if(gSavedSettings.getString("BuildPrefs_Material")== "Stone") material = LL_MCODE_STONE;
+		else if(gSavedSettings.getString("BuildPrefs_Material")== "Metal") material = LL_MCODE_METAL;
+		//if(gSavedSettings.getString("BuildPrefs_Material")== "Wood") material = LL_MCODE_WOOD; redundant
+		else if(gSavedSettings.getString("BuildPrefs_Material")== "Flesh") material = LL_MCODE_FLESH;
+		else if(gSavedSettings.getString("BuildPrefs_Material")== "Rubber") material = LL_MCODE_RUBBER;
+		else if(gSavedSettings.getString("BuildPrefs_Material")== "Plastic") material = LL_MCODE_PLASTIC;
+	}
 	BOOL			create_selected = FALSE;
 	LLVolumeParams	volume_params;
 	
@@ -280,7 +298,7 @@ BOOL LLToolPlacer::addObject( LLPCode pcode, S32 x, S32 y, U8 use_physics )
 	gMessageSystem->addU8Fast(_PREHASH_Material,	material);
 
 	U32 flags = 0;		// not selected
-	if (use_physics)
+	if (use_physics || (enable_BP && !duplicate && gSavedSettings.getBOOL("EmeraldBuildPrefs_Physical")))
 	{
 		flags |= FLAGS_USE_PHYSICS;
 	}
@@ -465,6 +483,9 @@ BOOL LLToolPlacer::addObject( LLPCode pcode, S32 x, S32 y, U8 use_physics )
 	
 	// Pack in name value pairs
 	gMessageSystem->sendReliable(regionp->getHost());
+	//If we are using the defaults, and we aren't duplicating
+	if(enable_BP && !duplicate)	//then, actually call expectRez so that importtracker can do its thing, which sadly only works close up.
+		gImportTracker.expectRez();
 
 	// Spawns a message, so must be after above send
 	if (create_selected)
@@ -532,7 +553,7 @@ BOOL LLToolPlacer::addDuplicate(S32 x, S32 y)
 										FALSE);				// select copy
 
 	if (regionp
-		&& (regionp->getRegionFlags() & REGION_FLAGS_SANDBOX))
+		&& regionp->getRegionFlag(REGION_FLAGS_SANDBOX))
 	{
 		LLFirstUse::useSandbox();
 	}
@@ -586,59 +607,3 @@ void LLToolPlacer::handleDeselect()
 {
 }
 
-//////////////////////////////////////////////////////
-// LLToolPlacerPanel
-
-S32			LLToolPlacerPanel::sButtonsAdded = 0;
-LLButton*	LLToolPlacerPanel::sButtons[ TOOL_PLACER_NUM_BUTTONS ];
-
-LLToolPlacerPanel::LLToolPlacerPanel(const std::string& name, const LLRect& rect)
-	:
-	LLPanel( name, rect )
-{
-}
-
-void LLToolPlacerPanel::addButton( const std::string& up_state, const std::string& down_state, LLPCode* pcode )
-{
-	const S32 TOOL_SIZE = 32;
-	const S32 HORIZ_SPACING = TOOL_SIZE + 5;
-	const S32 VERT_SPACING = TOOL_SIZE + 5;
-	const S32 VPAD = 10;
-	const S32 HPAD = 7;
-
-	S32 row = sButtonsAdded / 4;
-	S32 column = sButtonsAdded % 4; 
-
-	LLRect help_rect = gSavedSettings.getRect("ToolHelpRect");
-
-	// Build the rectangle, recalling the origin is at lower left
-	// and we want the icons to build down from the top.
-	LLRect rect;
-	rect.setLeftTopAndSize(
-		HPAD + (column * HORIZ_SPACING),
-		help_rect.mBottom - VPAD - (row * VERT_SPACING),
-		TOOL_SIZE,
-		TOOL_SIZE );
-
-	LLButton* btn = new LLButton(
-		std::string("ToolPlacerOptBtn"),
-		rect,
-		up_state,
-		down_state,
-		LLStringUtil::null, &LLToolPlacerPanel::setObjectType,
-		pcode,
-		LLFontGL::getFontSansSerif());
-	btn->setFollowsBottom();
-	btn->setFollowsLeft();
-	addChild(btn);
-
-	sButtons[sButtonsAdded] = btn;
-	sButtonsAdded++;
-}
-
-// static 
-void	LLToolPlacerPanel::setObjectType( void* data )
-{
-	LLPCode pcode = *(LLPCode*) data;
-	LLToolPlacer::setObjectType( pcode );
-}

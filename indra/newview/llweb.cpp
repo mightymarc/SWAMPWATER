@@ -35,11 +35,45 @@
 
 #include "llweb.h"
 
-#include "llviewerwindow.h"
-#include "llwindow.h"
+// Library includes
+#include "llwindow.h"	// spawnWebBrowser()
 
+#include "llagent.h"
+#include "llappviewer.h"
+#include "llfloaterwebcontent.h"
+#include "llparcel.h"
+#include "llsd.h"
+#include "llui.h"
+#include "lluri.h"
 #include "llviewercontrol.h"
-#include "llfloatermediabrowser.h"
+#include "llviewermedia.h"
+#include "llviewernetwork.h"
+#include "llviewerparcelmgr.h"
+#include "llviewerregion.h"
+#include "llviewerwindow.h"
+#include "llnotificationsutil.h"
+#include "llalertdialog.h"
+
+#include "sgversion.h"
+
+bool on_load_url_external_response(const LLSD& notification, const LLSD& response, bool async );
+
+class URLLoader : public LLAlertDialog::URLLoader
+{
+	virtual void load(const std::string& url , bool force_open_externally)
+	{
+		if (force_open_externally)
+		{
+			LLWeb::loadURLExternal(url);
+		}
+		else
+		{
+			LLWeb::loadURL(url);
+		}
+	}
+};
+static URLLoader sAlertURLLoader;
+
 
 // static
 void LLWeb::initClass()
@@ -47,27 +81,76 @@ void LLWeb::initClass()
 	LLAlertDialog::setURLLoader(&sAlertURLLoader);
 }
 
+
+
+
 // static
-void LLWeb::loadURL(const std::string& url)
+void LLWeb::loadURL(const std::string& url, const std::string& target, const std::string& uuid)
 {
-	if (gSavedSettings.getBOOL("UseExternalBrowser"))
+	if(target == "_internal")
+	{
+		// Force load in the internal browser, as if with a blank target.
+		loadURLInternal(url, "", uuid);
+	}
+	else if (gSavedSettings.getBOOL("UseExternalBrowser") || (target == "_external"))
 	{
 		loadURLExternal(url);
 	}
 	else
 	{
-		LLFloaterMediaBrowser::showInstance(url);
+		loadURLInternal(url, target, uuid);
 	}
 }
 
-
 // static
-void LLWeb::loadURLExternal(const std::string& url)
+// Explicitly open a Web URL using the Web content floater
+void LLWeb::loadURLInternal(const std::string &url, const std::string& target, const std::string& uuid)
 {
-	std::string escaped_url = escapeURL(url);
-	gViewerWindow->getWindow()->spawnWebBrowser(escaped_url,true);
+	LLFloaterWebContent::Params p;
+	p.url(url).target(target).id(uuid);
+	LLFloaterWebContent::showInstance("web_content", p);
 }
 
+// static
+void LLWeb::loadURLExternal(const std::string& url, const std::string& uuid)
+{
+	loadURLExternal(url, true, uuid);
+}
+
+// static
+void LLWeb::loadURLExternal(const std::string& url, bool async, const std::string& uuid)
+{
+	// Act like the proxy window was closed, since we won't be able to track targeted windows in the external browser.
+	LLViewerMedia::proxyWindowClosed(uuid);
+	
+	if(gSavedSettings.getBOOL("DisableExternalBrowser"))
+	{
+		// Don't open an external browser under any circumstances.
+		llwarns << "Blocked attempt to open external browser." << llendl;
+		return;
+	}
+	
+	LLSD payload;
+	payload["url"] = url;
+	LLNotificationsUtil::add( "WebLaunchExternalTarget", LLSD(), payload, boost::bind(on_load_url_external_response, _1, _2, async));
+}
+
+// static 
+bool on_load_url_external_response(const LLSD& notification, const LLSD& response, bool async )
+{
+	S32 option = LLNotificationsUtil::getSelectedOption(notification, response);
+	if ( 0 == option )
+	{
+		LLSD payload = notification["payload"];
+		std::string url = payload["url"].asString();
+		std::string escaped_url = LLWeb::escapeURL(url);
+		if (gViewerWindow)
+		{
+			gViewerWindow->getWindow()->spawnWebBrowser(escaped_url, async);
+		}
+	}
+	return false;
+}
 
 // static
 std::string LLWeb::curlEscape(const std::string& url)
@@ -125,11 +208,61 @@ std::string LLWeb::escapeURL(const std::string& url)
 	return escaped_url;
 }
 
-// virtual
-void LLWeb::URLLoader::load(const std::string& url)
+//static
+std::string LLWeb::expandURLSubstitutions(const std::string &url,
+										  const LLSD &default_subs)
 {
-	loadURL(url);
-}
+    gCurrentVersion = llformat("%s %d.%d.%d.%d",
+        gVersionChannel,
+        gVersionMajor,
+        gVersionMinor,
+        gVersionPatch,
+        gVersionBuild );
 
-// static
-LLWeb::URLLoader LLWeb::sAlertURLLoader;
+	LLSD substitution = default_subs;
+	substitution["VERSION"] = gCurrentVersion;
+	substitution["VERSION_MAJOR"] = gVersionMajor;
+	substitution["VERSION_MINOR"] = gVersionMinor;
+	substitution["VERSION_PATCH"] = gVersionPatch;
+	substitution["VERSION_BUILD"] = gVersionBuild;
+	substitution["CHANNEL"] = gVersionChannel;
+	substitution["GRID"] = LLViewerLogin::getInstance()->getGridLabel();
+	substitution["GRID_LOWERCASE"] =  utf8str_tolower(LLViewerLogin::getInstance()->getGridLabel());
+	substitution["OS"] = LLAppViewer::instance()->getOSInfo().getOSStringSimple();
+	substitution["SESSION_ID"] = gAgent.getSessionID();
+	substitution["FIRST_LOGIN"] = gAgent.isFirstLogin();
+
+	// work out the current language
+	std::string lang = LLUI::getLanguage();
+	if (lang == "en-us")
+	{
+		// *HACK: the correct fix is to change English.lproj/language.txt,
+		// but we're late in the release cycle and this is a less risky fix
+		lang = "en";
+	}
+	substitution["LANGUAGE"] = lang;
+
+	// find the region ID
+	LLUUID region_id;
+	LLViewerRegion *region = gAgent.getRegion();
+	if (region)
+	{
+		region_id = region->getRegionID();
+	}
+	substitution["REGION_ID"] = region_id;
+
+	// find the parcel local ID
+	S32 parcel_id = 0;
+	LLParcel* parcel = LLViewerParcelMgr::getInstance()->getAgentParcel();
+	if (parcel)
+	{
+		parcel_id = parcel->getLocalID();
+	}
+	substitution["PARCEL_ID"] = llformat("%d", parcel_id);
+
+	// expand all of the substitution strings and escape the url
+	std::string expanded_url = url;
+	LLStringUtil::format(expanded_url, substitution);
+
+	return LLWeb::escapeURL(expanded_url);
+}

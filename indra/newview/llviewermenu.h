@@ -74,8 +74,6 @@ BOOL enable_deselect(void*);
 BOOL enable_undo(void*);
 BOOL enable_redo(void*);
 
-// returns TRUE if we have a friend relationship with agent_id
-BOOL is_agent_friend(const LLUUID& agent_id);
 BOOL is_agent_mappable(const LLUUID& agent_id);
 
 void menu_toggle_control( void* user_data );
@@ -83,14 +81,13 @@ void confirm_replace_attachment(S32 option, void* user_data);
 void handle_detach_from_avatar(void* user_data);
 void attach_label(std::string& label, void* user_data);
 void detach_label(std::string& label, void* user_data);
-BOOL object_selected_and_point_valid(void* user_data);
-BOOL object_attached(void* user_data);
 void handle_detach(void*);
+// [SL:KB] - Patch: Inventory-AttachmentEdit - Checked: 2010-08-25 (Catznip-2.2.0a) | Added: Catznip-2.1.2a
+void handle_attachment_edit(const LLUUID& idItem);
+// [/SL:KB]
 BOOL enable_god_full(void* user_data);
 BOOL enable_god_liaison(void* user_data);
-BOOL enable_god_customer_service(void* user_data);
 BOOL enable_god_basic(void* user_data);
-void handle_show_newest_map(void*);
 void set_underclothes_menu_options();
 
 void exchange_callingcard(const LLUUID& dest_id);
@@ -98,8 +95,31 @@ void exchange_callingcard(const LLUUID& dest_id);
 void handle_gestures(void*);
 void handle_sit_down(void*);
 void handle_object_build(void*);
+void handle_object_touch();
+bool enable_object_open();
+void handle_object_open();
 
+bool visible_take_object();
+bool enable_object_take_copy();
+bool enable_object_return();
+bool enable_object_delete();
+
+// Buy either contents or object itself
 void handle_buy();
+void handle_take();
+void handle_take_copy();
+void handle_look_at_selection(const LLSD& param);
+void handle_object_return();
+void handle_object_delete();
+
+// Takes avatar UUID, or if no UUID passed, uses last selected object
+void handle_avatar_freeze(const LLSD& avatar_id);
+
+// Takes avatar UUID, or if no UUID passed, uses last selected object
+void handle_avatar_eject(const LLSD& avatar_id);
+
+bool enable_freeze_eject(const LLSD& avatar_id);
+
 // Can anyone take a free copy of the object?
 // *TODO: Move to separate file
 bool anyone_copy_selection(LLSelectNode* nodep);
@@ -112,19 +132,14 @@ void handle_save_snapshot(void *);
 void handle_toggle_flycam();
 void handle_fake_away_status(void*);
 
-bool handle_sit_or_stand();
-bool handle_give_money_dialog();
-bool handle_object_open();
+void handle_object_sit_or_stand();
+void handle_give_money_dialog();
+bool enable_pay_object();
 bool enable_buy_object();
 bool handle_go_to();
 
 // Export to XML or Collada
 void handle_export_selected( void * );
-
-// Pass in an empty string and this function will build a string that
-// describes buyer permissions.
-class LLSaleInfo;
-class LLPermissions;
 
 class LLViewerMenuHolderGL : public LLMenuHolderGL
 {
@@ -152,31 +167,24 @@ extern LLViewerMenuHolderGL*	gMenuHolder;
 extern LLMenuBarGL*		gLoginMenuBarView;
 
 // Pie menus
-extern LLPieMenu	*gPieSelf;
-extern LLPieMenu	*gPieAvatar;
-extern LLPieMenu	*gPieObject;
-extern LLPieMenu	*gPieAttachment;
-extern LLPieMenu	*gPieLand;
-extern LLPieMenu*	gPieRate;
-
-// Pie menus
-extern LLPieMenu	*gPieSelfSimple;
-extern LLPieMenu	*gPieAvatarSimple;
-extern LLPieMenu	*gPieObjectSimple;
-extern LLPieMenu	*gPieAttachmentSimple;
-extern LLPieMenu	*gPieLandSimple;
+extern LLContextMenu		*gPieSelf;
+extern LLContextMenu		*gPieAvatar;
+extern LLContextMenu		*gPieObject;
+extern LLContextMenu		*gPieAttachment;
+extern LLContextMenu		*gPieLand;
+extern LLContextMenu		*gPieRate;
 
 // Needed to build menus when attachment site list available
 extern LLMenuGL* gAttachSubMenu;
 extern LLMenuGL* gDetachSubMenu;
 extern LLMenuGL* gTakeOffClothes;
 extern LLMenuGL* gMeshesAndMorphsMenu;
-extern LLPieMenu* gAttachScreenPieMenu;
-extern LLPieMenu* gDetachScreenPieMenu;
-extern LLPieMenu* gAttachPieMenu;
-extern LLPieMenu* gDetachPieMenu;
-extern LLPieMenu* gAttachBodyPartPieMenus[8];
-extern LLPieMenu* gDetachBodyPartPieMenus[8];
+extern LLContextMenu* gAttachScreenPieMenu;
+extern LLContextMenu* gDetachScreenPieMenu;
+extern LLContextMenu* gAttachPieMenu;
+extern LLContextMenu* gDetachPieMenu;
+extern LLContextMenu* gAttachBodyPartPieMenus[8];
+extern LLContextMenu* gDetachBodyPartPieMenus[8];
 
 extern LLMenuItemCallGL* gAFKMenu;
 extern LLMenuItemCallGL* gBusyMenu;

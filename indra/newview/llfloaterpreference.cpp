@@ -54,11 +54,9 @@
 #include "llpanelnetwork.h"
 #include "llpanelaudioprefs.h"
 #include "llpaneldisplay.h"
-#include "llpaneldebug.h"
 #include "llpanelgeneral.h"
 #include "llpanelinput.h"
 #include "llpanellogin.h"
-#include "llpanelLCD.h"
 #include "llpanelmsgs.h"
 #include "llpanelweb.h"
 #include "llpanelskins.h"
@@ -79,7 +77,6 @@
 #include "llviewerwindow.h"
 #include "llkeyboard.h"
 #include "llscrollcontainer.h"
-#include "llfloaterhardwaresettings.h"
 #include "hippopanelgrids.h"
 
 const S32 PREF_BORDER = 4;
@@ -96,7 +93,7 @@ class LLPreferencesHandler : public LLCommandHandler
 {
 public:
 	// requires trusted browser
-	LLPreferencesHandler() : LLCommandHandler("preferences", true) { }
+	LLPreferencesHandler() : LLCommandHandler("preferences", UNTRUSTED_BLOCK) { }
 	bool handle(const LLSD& tokens, const LLSD& query_map,
 				LLMediaCtrl* web)
 	{
@@ -138,7 +135,6 @@ LLPreferenceCore::LLPreferenceCore(LLTabContainer* tab_container, LLButton * def
 	mMsgPanel(NULL),
 	mSkinsPanel(NULL),
 	mGridsPanel(NULL),
-	mLCDPanel(NULL),
 	mPrefsAscentChat(NULL),
 	mPrefsAscentSys(NULL),
 	mPrefsAscentVan(NULL)
@@ -178,20 +174,6 @@ LLPreferenceCore::LLPreferenceCore(LLTabContainer* tab_container, LLButton * def
 	mPrefsIM = new LLPrefsIM();
 	mTabContainer->addTabPanel(mPrefsIM->getPanel(), mPrefsIM->getPanel()->getLabel());
 	mPrefsIM->getPanel()->setDefaultBtn(default_btn);
-
-#if LL_LCD_COMPILE
-
-	// only add this option if we actually have a logitech keyboard / speaker set
-	if (gLcdScreen->Enabled())
-	{
-		mLCDPanel = new LLPanelLCD();
-		mTabContainer->addTabPanel(mLCDPanel, mLCDPanel->getLabel());
-		mLCDPanel->setDefaultBtn(default_btn);
-	}
-
-#else
-	mLCDPanel = NULL;
-#endif
 
 	mMsgPanel = new LLPanelMsgs();
 	mTabContainer->addTabPanel(mMsgPanel, mMsgPanel->getLabel());
@@ -318,18 +300,7 @@ void LLPreferenceCore::apply()
 	mPrefsAscentSys->apply();
 	mPrefsAscentVan->apply();
 
-	// hardware menu apply
-	LLFloaterHardwareSettings::instance()->apply();
-
 	mWebPanel->apply();
-#if LL_LCD_COMPILE
-	// only add this option if we actually have a logitech keyboard / speaker set
-	if (gLcdScreen->Enabled())
-	{
-		mLCDPanel->apply();
-	}
-#endif
-//	mWebPanel->apply();
 }
 
 
@@ -350,18 +321,7 @@ void LLPreferenceCore::cancel()
 	mPrefsAscentSys->cancel();
 	mPrefsAscentVan->cancel();
 
-	// cancel hardware menu
-	LLFloaterHardwareSettings::instance()->cancel();
-
 	mWebPanel->cancel();
-#if LL_LCD_COMPILE
-	// only add this option if we actually have a logitech keyboard / speaker set
-	if (gLcdScreen->Enabled())
-	{
-		mLCDPanel->cancel();
-	}
-#endif
-//	mWebPanel->cancel();
 }
 
 // static
@@ -380,7 +340,6 @@ void LLPreferenceCore::setPersonalInfo(const std::string& visibility, bool im_vi
 
 void LLPreferenceCore::refreshEnabledGraphics()
 {
-	LLFloaterHardwareSettings::instance()->refreshEnabledState();
 	mDisplayPanel->refreshEnabledState();
 }
 
@@ -502,7 +461,8 @@ void LLFloaterPreference::onBtnOK( void* userdata )
 		
 		std::string crash_settings_filename = gDirUtilp->getExpandedFilename(LL_PATH_USER_SETTINGS, CRASH_SETTINGS_FILE);
 		// save all settings, even if equals defaults
-		gCrashSettings.saveToFile(crash_settings_filename, FALSE);
+		// Singu Note: crash settings no longer separate
+		// gCrashSettings.saveToFile(crash_settings_filename, FALSE);
 	}
 	else
 	{
@@ -510,7 +470,7 @@ void LLFloaterPreference::onBtnOK( void* userdata )
 		llinfos << "Can't close preferences!" << llendl;
 	}
 
-	LLPanelLogin::refreshLocation( false );
+	LLPanelLogin::updateLocationSelectorsVisibility();
 }
 
 
@@ -521,14 +481,14 @@ void LLFloaterPreference::onBtnApply( void* userdata )
 	if (fp->hasFocus())
 	{
 		LLUICtrl* cur_focus = dynamic_cast<LLUICtrl*>(gFocusMgr.getKeyboardFocus());
-		if (cur_focus->acceptsTextInput())
+		if (cur_focus && cur_focus->acceptsTextInput())
 		{
 			cur_focus->onCommit();
 		}
 	}
 	fp->apply();
 
-	LLPanelLogin::refreshLocation( false );
+	LLPanelLogin::updateLocationSelectorsVisibility();
 }
 
 

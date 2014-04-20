@@ -41,39 +41,53 @@
 #include "llcombobox.h"
 #include "llfloaterchat.h" //For POWER USER affirmation.
 #include "llradiogroup.h"
+#include "lltexturectrl.h"
 #include "lluictrlfactory.h"
 #include "llviewercontrol.h"
-
+#include "lltrans.h"
 
 LLPrefsAscentSys::LLPrefsAscentSys()
 {
     LLUICtrlFactory::getInstance()->buildPanel(this, "panel_preferences_ascent_system.xml");
 
-    childSetCommitCallback("speed_rez_check", onCommitCheckBox, this);
-    childSetCommitCallback("double_click_teleport_check", onCommitCheckBox, this);
-    childSetCommitCallback("system_folder_check", onCommitCheckBox, this);
-    childSetCommitCallback("show_look_at_check", onCommitCheckBox, this);
-    childSetCommitCallback("enable_clouds", onCommitCheckBox, this);
-    childSetCommitCallback("power_user_check", onCommitCheckBox, this);
-    childSetCommitCallback("power_user_confirm_check", onCommitCheckBox, this);
+    //General -----------------------------------------------------------------------------
+	getChild<LLUICtrl>("speed_rez_check")->setCommitCallback(boost::bind(&LLPrefsAscentSys::onCommitCheckBox, this, _1, _2));
+	getChild<LLUICtrl>("double_click_teleport_check")->setCommitCallback(boost::bind(&LLPrefsAscentSys::onCommitCheckBox, this, _1, _2));
+	getChild<LLUICtrl>("show_look_at_check")->setCommitCallback(boost::bind(&LLPrefsAscentSys::onCommitCheckBox, this, _1, _2));
+	getChild<LLUICtrl>("enable_clouds")->setCommitCallback(boost::bind(&LLPrefsAscentSys::onCommitCheckBox, this, _1, _2));
+	getChild<LLUICtrl>("power_user_check")->setCommitCallback(boost::bind(&LLPrefsAscentSys::onCommitCheckBox, this, _1, _2));
+	getChild<LLUICtrl>("power_user_confirm_check")->setCommitCallback(boost::bind(&LLPrefsAscentSys::onCommitCheckBox, this, _1, _2));
 
-    childSetCommitCallback("chat_cmd_toggle", onCommitCmdLine, this);
-    childSetCommitCallback("AscentCmdLinePos", onCommitCmdLine, this);
-    childSetCommitCallback("AscentCmdLineGround", onCommitCmdLine, this);
-    childSetCommitCallback("AscentCmdLineHeight", onCommitCmdLine, this);
-    childSetCommitCallback("AscentCmdLineTeleportHome", onCommitCmdLine, this);
-    childSetCommitCallback("AscentCmdLineRezPlatform", onCommitCmdLine, this);
-    childSetCommitCallback("AscentCmdLineCalc", onCommitCmdLine, this);
-    childSetCommitCallback("AscentCmdLineClearChat", onCommitCmdLine, this);
-    childSetCommitCallback("AscentCmdLineDrawDistance", onCommitCmdLine, this);
-    childSetCommitCallback("AscentCmdTeleportToCam", onCommitCmdLine, this);
-    childSetCommitCallback("AscentCmdLineKeyToName", onCommitCmdLine, this);
-    childSetCommitCallback("AscentCmdLineOfferTp", onCommitCmdLine, this);
-    childSetCommitCallback("AscentCmdLineMapTo", onCommitCmdLine, this);
-    childSetCommitCallback("AscentCmdLineTP2", onCommitCmdLine, this);
-    childSetCommitCallback("SinguCmdLineAway", onCommitCmdLine, this);
+    //Command Line ------------------------------------------------------------------------
+	getChild<LLUICtrl>("chat_cmd_toggle")->setCommitCallback(boost::bind(&LLPrefsAscentSys::onCommitCmdLine, this, _1, _2));
+	getChild<LLUICtrl>("AscentCmdLinePos")->setCommitCallback(boost::bind(&LLPrefsAscentSys::onCommitCmdLine, this, _1, _2));
+	getChild<LLUICtrl>("AscentCmdLineGround")->setCommitCallback(boost::bind(&LLPrefsAscentSys::onCommitCmdLine, this, _1, _2));
+	getChild<LLUICtrl>("AscentCmdLineHeight")->setCommitCallback(boost::bind(&LLPrefsAscentSys::onCommitCmdLine, this, _1, _2));
+	getChild<LLUICtrl>("AscentCmdLineTeleportHome")->setCommitCallback(boost::bind(&LLPrefsAscentSys::onCommitCmdLine, this, _1, _2));
+	getChild<LLUICtrl>("AscentCmdLineRezPlatform")->setCommitCallback(boost::bind(&LLPrefsAscentSys::onCommitCmdLine, this, _1, _2));
+	getChild<LLUICtrl>("AscentCmdLineCalc")->setCommitCallback(boost::bind(&LLPrefsAscentSys::onCommitCmdLine, this, _1, _2));
+	getChild<LLUICtrl>("AscentCmdLineClearChat")->setCommitCallback(boost::bind(&LLPrefsAscentSys::onCommitCmdLine, this, _1, _2));
+	getChild<LLUICtrl>("AscentCmdLineDrawDistance")->setCommitCallback(boost::bind(&LLPrefsAscentSys::onCommitCmdLine, this, _1, _2));
+	getChild<LLUICtrl>("AscentCmdTeleportToCam")->setCommitCallback(boost::bind(&LLPrefsAscentSys::onCommitCmdLine, this, _1, _2));
+	getChild<LLUICtrl>("AscentCmdLineKeyToName")->setCommitCallback(boost::bind(&LLPrefsAscentSys::onCommitCmdLine, this, _1, _2));
+	getChild<LLUICtrl>("AscentCmdLineOfferTp")->setCommitCallback(boost::bind(&LLPrefsAscentSys::onCommitCmdLine, this, _1, _2));
+	getChild<LLUICtrl>("AscentCmdLineMapTo")->setCommitCallback(boost::bind(&LLPrefsAscentSys::onCommitCmdLine, this, _1, _2));
+	getChild<LLUICtrl>("AscentCmdLineTP2")->setCommitCallback(boost::bind(&LLPrefsAscentSys::onCommitCmdLine, this, _1, _2));
+	getChild<LLUICtrl>("SinguCmdLineAway")->setCommitCallback(boost::bind(&LLPrefsAscentSys::onCommitCmdLine, this, _1, _2));
+	getChild<LLUICtrl>("SinguCmdLineURL")->setCommitCallback(boost::bind(&LLPrefsAscentSys::onCommitCmdLine, this, _1, _2));
 
-    refreshValues();
+	//Security ----------------------------------------------------------------------------
+	getChild<LLUICtrl>("disable_click_sit_check")->setCommitCallback(boost::bind(&LLPrefsAscentSys::onCommitCheckBox, this, _1, _2));
+
+	//Build -------------------------------------------------------------------------------
+	getChild<LLUICtrl>("next_owner_copy")->setCommitCallback(boost::bind(&LLPrefsAscentSys::onCommitCheckBox, this, _1, _2));
+	childSetEnabled("next_owner_transfer", gSavedSettings.getBOOL("NextOwnerCopy"));
+	getChild<LLUICtrl>("material")->setCommitCallback(boost::bind(&LLPrefsAscentSys::onCommitComboBox, this, _1, _2));
+	getChild<LLUICtrl>("combobox shininess")->setCommitCallback(boost::bind(&LLPrefsAscentSys::onCommitComboBox, this, _1, _2));
+	getChild<LLTextureCtrl>("texture control")->setDefaultImageAssetID(LLUUID(gSavedSettings.getString("EmeraldBuildPrefs_Texture")));
+	getChild<LLUICtrl>("texture control")->setCommitCallback(boost::bind(&LLPrefsAscentSys::onCommitTexturePicker, this, _1));
+
+	refreshValues();
     refresh();
 }
 
@@ -81,112 +95,109 @@ LLPrefsAscentSys::~LLPrefsAscentSys()
 {
 }
 
-//static
-void LLPrefsAscentSys::onCommitCheckBox(LLUICtrl* ctrl, void* user_data)
+void LLPrefsAscentSys::onCommitCheckBox(LLUICtrl* ctrl, const LLSD& value)
 {
-    LLPrefsAscentSys* self = (LLPrefsAscentSys*)user_data;	
-    
 //    llinfos << "Change to " << ctrl->getControlName()  << " aka " << ctrl->getName() << llendl;
-    
-    if (ctrl->getName() == "speed_rez_check")
-    {
-        bool enabled = self->childGetValue("speed_rez_check").asBoolean();
-        self->childSetEnabled("speed_rez_interval", enabled);
-        self->childSetEnabled("speed_rez_seconds", enabled);
-    }
-    else if (ctrl->getName() == "double_click_teleport_check")
-    {
-        bool enabled = self->childGetValue("double_click_teleport_check").asBoolean();
-        self->childSetEnabled("center_after_teleport_check", enabled);
-        self->childSetEnabled("offset_teleport_check", enabled);
-    }
-    else if (ctrl->getName() == "system_folder_check")
-    {
-        bool enabled = self->childGetValue("system_folder_check").asBoolean();
-        self->childSetEnabled("temp_in_system_check", enabled);
-    }
-    else if (ctrl->getName() == "enable_clouds")
-    {
-        bool enabled = self->childGetValue("enable_clouds").asBoolean();
-        self->childSetEnabled("enable_classic_clouds", enabled);
-    }
-    else if (ctrl->getName() == "power_user_check")
-    {
-        bool enabled = self->childGetValue("power_user_check").asBoolean();
-        self->childSetEnabled("power_user_confirm_check", enabled);
-        self->childSetValue("power_user_confirm_check", false);
-    }
-    else if (ctrl->getName() == "power_user_confirm_check")
-    {
-        bool enabled = self->childGetValue("power_user_confirm_check").asBoolean();
 
-        gSavedSettings.setBOOL("AscentPowerfulWizard", enabled);
+	const std::string name = ctrl->getName();
+	bool enabled = value.asBoolean();
+	if (name == "speed_rez_check")
+	{
+		childSetEnabled("speed_rez_interval", enabled);
+		childSetEnabled("speed_rez_seconds", enabled);
+	}
+	else if (name == "double_click_teleport_check")
+	{
+		childSetEnabled("center_after_teleport_check", enabled);
+		childSetEnabled("offset_teleport_check", enabled);
+	}
+	else if (name == "enable_clouds")
+	{
+		childSetEnabled("enable_classic_clouds", enabled);
+	}
+	else if (name == "power_user_check")
+	{
+		childSetEnabled("power_user_confirm_check", enabled);
+		childSetValue("power_user_confirm_check", false);
+	}
+	else if (name == "power_user_confirm_check")
+	{
+		gSavedSettings.setBOOL("AscentPowerfulWizard", enabled);
 
-        if (enabled)
-        {
-            LLVector3d lpos_global = gAgent.getPositionGlobal();
-            gAudiop->triggerSound(LLUUID("58a38e89-44c6-c52b-deb8-9f1ddc527319"), gAgent.getID(), 1.0f, LLAudioEngine::AUDIO_TYPE_UI, lpos_global);
-            LLChat chat;
-            chat.mSourceType = CHAT_SOURCE_SYSTEM;
-            chat.mText = llformat("You are bestowed with powers beyond mortal comprehension.\nUse your newfound abilities wisely.\nUnlocked:\n- Animation Priority up to 7 - Meant for animations that should override anything and everything at all times. DO NOT USE THIS FOR GENERAL ANIMATIONS.\n- Right click > Destroy objects - Permanently deletes an object immediately, when you don't feel like waiting for the server to respond.\n- Right Click > Explode objects - Turns an object physical, temporary, and delinks it.");
-            LLFloaterChat::addChat(chat);
-        }
-    }
+		if (enabled)
+		{
+			LLVector3d lpos_global = gAgent.getPositionGlobal();
+			if(gAudiop)
+				gAudiop->triggerSound(LLUUID("58a38e89-44c6-c52b-deb8-9f1ddc527319"), gAgent.getID(), 1.0f, LLAudioEngine::AUDIO_TYPE_UI, lpos_global);
+			LLChat chat;
+			chat.mSourceType = CHAT_SOURCE_SYSTEM;
+			chat.mText = LLTrans::getString("PowerUser1") + "\n" + LLTrans::getString("PowerUser2") + "\n" + LLTrans::getString("Unlocked:") + "\n" + LLTrans::getString("PowerUser3") + "\n- " + LLTrans::getString("RightClick") + " > " + LLTrans::getString("PowerUser4") + "\n- " + LLTrans::getString("RightClick") + " > " + LLTrans::getString("PowerUser5");
+			LLFloaterChat::addChat(chat);
+		}
+	}
+	else if (name == "disable_click_sit_check")
+	{
+		childSetEnabled("disable_click_sit_own_check", !enabled);
+	}
+	else if (name == "next_owner_copy")
+	{
+		if (!enabled) gSavedSettings.setBOOL("NextOwnerTransfer", true);
+		childSetEnabled("next_owner_transfer", enabled);
+	}
 }
 
-//static
-void LLPrefsAscentSys::onCommitCmdLine(LLUICtrl* ctrl, void* user_data)
+void LLPrefsAscentSys::onCommitCmdLine(LLUICtrl* ctrl, const LLSD& value)
 {
-    LLPrefsAscentSys* self = (LLPrefsAscentSys*)user_data;
-
-    if (ctrl->getName() == "chat_cmd_toggle")
+	const std::string& name = ctrl->getName();
+	if (name == "chat_cmd_toggle")
     {
-        bool enabled = self->childGetValue("chat_cmd_toggle").asBoolean();
-        self->childSetEnabled("cmd_line_text_2",           enabled);
-        self->childSetEnabled("cmd_line_text_3",           enabled);
-        self->childSetEnabled("cmd_line_text_4",           enabled);
-        self->childSetEnabled("cmd_line_text_5",           enabled);
-        self->childSetEnabled("cmd_line_text_6",           enabled);
-        self->childSetEnabled("cmd_line_text_7",           enabled);
-        self->childSetEnabled("cmd_line_text_8",           enabled);
-        self->childSetEnabled("cmd_line_text_9",           enabled);
-        self->childSetEnabled("cmd_line_text_10",          enabled);
-        self->childSetEnabled("cmd_line_text_11",          enabled);
-        self->childSetEnabled("cmd_line_text_12",          enabled);
-        self->childSetEnabled("cmd_line_text_13",          enabled);
-        self->childSetEnabled("cmd_line_text_15",          enabled);
-        self->childSetEnabled("AscentCmdLinePos",          enabled);
-        self->childSetEnabled("AscentCmdLineGround",       enabled);
-        self->childSetEnabled("AscentCmdLineHeight",       enabled);
-        self->childSetEnabled("AscentCmdLineTeleportHome", enabled);
-        self->childSetEnabled("AscentCmdLineRezPlatform",  enabled);
-        self->childSetEnabled("AscentPlatformSize",        enabled);
-        self->childSetEnabled("AscentCmdLineCalc",         enabled);
-        self->childSetEnabled("AscentCmdLineClearChat",    enabled);
-        self->childSetEnabled("AscentCmdLineDrawDistance", enabled);
-        self->childSetEnabled("AscentCmdTeleportToCam",    enabled);
-        self->childSetEnabled("AscentCmdLineKeyToName",    enabled);
-        self->childSetEnabled("AscentCmdLineOfferTp",      enabled);
-        self->childSetEnabled("AscentCmdLineMapTo",        enabled);
-        self->childSetEnabled("map_to_keep_pos",           enabled);
-        self->childSetEnabled("AscentCmdLineTP2",          enabled);
-        self->childSetEnabled("SinguCmdLineAway",          enabled);
+		bool enabled = value.asBoolean();
+		childSetEnabled("cmd_line_text_2",           enabled);
+		childSetEnabled("cmd_line_text_3",           enabled);
+		childSetEnabled("cmd_line_text_4",           enabled);
+		childSetEnabled("cmd_line_text_5",           enabled);
+		childSetEnabled("cmd_line_text_6",           enabled);
+		childSetEnabled("cmd_line_text_7",           enabled);
+		childSetEnabled("cmd_line_text_8",           enabled);
+		childSetEnabled("cmd_line_text_9",           enabled);
+		childSetEnabled("cmd_line_text_10",          enabled);
+		childSetEnabled("cmd_line_text_11",          enabled);
+		childSetEnabled("cmd_line_text_12",          enabled);
+		childSetEnabled("cmd_line_text_13",          enabled);
+		childSetEnabled("cmd_line_text_15",          enabled);
+		childSetEnabled("AscentCmdLinePos",          enabled);
+		childSetEnabled("AscentCmdLineGround",       enabled);
+		childSetEnabled("AscentCmdLineHeight",       enabled);
+		childSetEnabled("AscentCmdLineTeleportHome", enabled);
+		childSetEnabled("AscentCmdLineRezPlatform",  enabled);
+		childSetEnabled("AscentPlatformSize",        enabled);
+		childSetEnabled("AscentCmdLineCalc",         enabled);
+		childSetEnabled("AscentCmdLineClearChat",    enabled);
+		childSetEnabled("AscentCmdLineDrawDistance", enabled);
+		childSetEnabled("AscentCmdTeleportToCam",    enabled);
+		childSetEnabled("AscentCmdLineKeyToName",    enabled);
+		childSetEnabled("AscentCmdLineOfferTp",      enabled);
+		childSetEnabled("AscentCmdLineMapTo",        enabled);
+		childSetEnabled("map_to_keep_pos",           enabled);
+		childSetEnabled("AscentCmdLineTP2",          enabled);
+		childSetEnabled("SinguCmdLineAway",          enabled);
+		childSetEnabled("SinguCmdLineURL",           enabled);
     }
+	else
+	{
+		gSavedSettings.setString(name, value); // Singu Note: Keep commandline settings using the same name as their settings
+	}
+}
 
-    gSavedSettings.setString("AscentCmdLinePos",          self->childGetValue("AscentCmdLinePos"));
-    gSavedSettings.setString("AscentCmdLineGround",       self->childGetValue("AscentCmdLineGround"));
-    gSavedSettings.setString("AscentCmdLineHeight",       self->childGetValue("AscentCmdLineHeight"));
-    gSavedSettings.setString("AscentCmdLineTeleportHome", self->childGetValue("AscentCmdLineTeleportHome"));
-    gSavedSettings.setString("AscentCmdLineRezPlatform",  self->childGetValue("AscentCmdLineRezPlatform"));
-    gSavedSettings.setString("AscentCmdLineCalc",         self->childGetValue("AscentCmdLineCalc"));
-    gSavedSettings.setString("AscentCmdLineClearChat",    self->childGetValue("AscentCmdLineClearChat"));
-    gSavedSettings.setString("AscentCmdLineDrawDistance", self->childGetValue("AscentCmdLineDrawDistance"));
-    gSavedSettings.setString("AscentCmdTeleportToCam",    self->childGetValue("AscentCmdTeleportToCam"));
-    gSavedSettings.setString("AscentCmdLineKeyToName",    self->childGetValue("AscentCmdLineKeyToName"));
-    gSavedSettings.setString("AscentCmdLineOfferTp",      self->childGetValue("AscentCmdLineOfferTp"));
-    gSavedSettings.setString("AscentCmdLineMapTo",        self->childGetValue("AscentCmdLineMapTo"));
-    gSavedSettings.setString("AscentCmdLineTP2",          self->childGetValue("AscentCmdLineTP2"));
-    gSavedSettings.setString("SinguCmdLineAway",          self->childGetValue("SinguCmdLineAway"));
+void LLPrefsAscentSys::onCommitComboBox(LLUICtrl* ctrl, const LLSD& value)
+{
+	gSavedSettings.setString(ctrl->getControlName(), value.asString());
+}
+
+void LLPrefsAscentSys::onCommitTexturePicker(LLUICtrl* ctrl)
+{
+	LLTextureCtrl*	image_ctrl = static_cast<LLTextureCtrl*>(ctrl);
+	if(image_ctrl)	gSavedSettings.setString("EmeraldBuildPrefs_Texture", image_ctrl->getImageAssetID().asString());
 }
 
 void LLPrefsAscentSys::refreshValues()
@@ -195,21 +206,25 @@ void LLPrefsAscentSys::refreshValues()
     mDoubleClickTeleport		= gSavedSettings.getBOOL("DoubleClickTeleport");
         mResetCameraAfterTP		= gSavedSettings.getBOOL("OptionRotateCamAfterLocalTP");
         mOffsetTPByUserHeight	= gSavedSettings.getBOOL("OptionOffsetTPByAgentHeight");
+	mClearBeaconAfterTeleport	= gSavedSettings.getBOOL("ClearBeaconAfterTeleport");
+    mLiruFlyAfterTeleport		= gSavedSettings.getBOOL("LiruFlyAfterTeleport");
+    mLiruContinueFlying			= gSavedSettings.getBOOL("LiruContinueFlyingOnUnsit");
     mPreviewAnimInWorld			= gSavedSettings.getBOOL("PreviewAnimInWorld");
-//    mSaveScriptsAsMono			= gSavedSettings.getBOOL("SaveScriptsAsMono");
+    mSaveScriptsAsMono			= gSavedSettings.getBOOL("SaveInventoryScriptsAsMono");
     mAlwaysRezInGroup			= gSavedSettings.getBOOL("AscentAlwaysRezInGroup");
     mBuildAlwaysEnabled			= gSavedSettings.getBOOL("AscentBuildAlwaysEnabled");
     mAlwaysShowFly				= gSavedSettings.getBOOL("AscentFlyAlwaysEnabled");
     mDisableMinZoom				= gSavedSettings.getBOOL("AscentDisableMinZoomDist");
     mPowerUser					= gSavedSettings.getBOOL("AscentPowerfulWizard");
-    mUseSystemFolder			= gSavedSettings.getBOOL("AscentUseSystemFolder");
-        mUploadToSystem				= gSavedSettings.getBOOL("AscentSystemTemporary");
     mFetchInventoryOnLogin		= gSavedSettings.getBOOL("FetchInventoryOnLogin");
     mEnableLLWind				= gSavedSettings.getBOOL("WindEnabled");
     mEnableClouds				= gSavedSettings.getBOOL("CloudsEnabled");
         mEnableClassicClouds		= gSavedSettings.getBOOL("SkyUseClassicClouds");
     mSpeedRez					= gSavedSettings.getBOOL("SpeedRez");
         mSpeedRezInterval			= gSavedSettings.getU32("SpeedRezInterval");
+	mUseContextMenus			= gSavedSettings.getBOOL("LiruUseContextMenus");
+	mUseWebProfiles				= gSavedSettings.getBOOL("UseWebProfiles");
+	mUseWebSearch				= gSavedSettings.getBOOL("UseWebSearch");
 
     //Command Line ------------------------------------------------------------------------
     mCmdLine                    = gSavedSettings.getBOOL("AscentCmdLine");
@@ -229,6 +244,7 @@ void LLPrefsAscentSys::refreshValues()
     mCmdMapToKeepPos            = gSavedSettings.getBOOL("AscentMapToKeepPos");
     mCmdLineTP2                 = gSavedSettings.getString("AscentCmdLineTP2");
     mCmdLineAway                = gSavedSettings.getString("SinguCmdLineAway");
+	mCmdLineURL                 = gSavedSettings.getString("SinguCmdLineURL");
 
     //Security ----------------------------------------------------------------------------
     mBroadcastViewerEffects		= gSavedSettings.getBOOL("BroadcastViewerEffects");
@@ -236,22 +252,44 @@ void LLPrefsAscentSys::refreshValues()
     mPrivateLookAt				= gSavedSettings.getBOOL("PrivateLookAt");
     mShowLookAt					= gSavedSettings.getBOOL("AscentShowLookAt");
 	mQuietSnapshotsToDisk		= gSavedSettings.getBOOL("QuietSnapshotsToDisk");
+	mDetachBridge				= gSavedSettings.getBOOL("SGDetachBridge");
     mRevokePermsOnStandUp		= gSavedSettings.getBOOL("RevokePermsOnStandUp");
     mDisableClickSit			= gSavedSettings.getBOOL("DisableClickSit");
+	mDisableClickSitOtherOwner	= gSavedSettings.getBOOL("DisableClickSitOtherOwner");
     mDisplayScriptJumps			= gSavedSettings.getBOOL("AscentDisplayTotalScriptJumps");
     mNumScriptDiff              = gSavedSettings.getF32("Ascentnumscriptdiff");
+
+	//Build -------------------------------------------------------------------------------
+	mAlpha						= gSavedSettings.getF32("EmeraldBuildPrefs_Alpha");
+	mColor						= gSavedSettings.getColor4("EmeraldBuildPrefs_Color");
+	mFullBright					= gSavedSettings.getBOOL("EmeraldBuildPrefs_FullBright");
+	mGlow						= gSavedSettings.getF32("EmeraldBuildPrefs_Glow");
+	mItem						= gSavedPerAccountSettings.getString("EmeraldBuildPrefs_Item");
+	mMaterial					= gSavedSettings.getString("BuildPrefs_Material");
+	mNextCopy					= gSavedSettings.getBOOL("NextOwnerCopy");
+	mNextMod					= gSavedSettings.getBOOL("NextOwnerModify");
+	mNextTrans					= gSavedSettings.getBOOL("NextOwnerTransfer");
+	mShiny						= gSavedSettings.getString("EmeraldBuildPrefs_Shiny");
+	mTemporary					= gSavedSettings.getBOOL("EmeraldBuildPrefs_Temporary");
+	mTexture					= gSavedSettings.getString("EmeraldBuildPrefs_Texture");
+	mPhantom					= gSavedSettings.getBOOL("EmeraldBuildPrefs_Phantom");
+	mPhysical					= gSavedSettings.getBOOL("EmeraldBuildPrefs_Physical");
+	mXsize						= gSavedSettings.getF32("BuildPrefs_Xsize");
+	mYsize						= gSavedSettings.getF32("BuildPrefs_Ysize");
+	mZsize						= gSavedSettings.getF32("BuildPrefs_Zsize");
 }
 
 void LLPrefsAscentSys::refresh()
 {
+    //General -----------------------------------------------------------------------------
     childSetEnabled("center_after_teleport_check",	mDoubleClickTeleport);
     childSetEnabled("offset_teleport_check",		mDoubleClickTeleport);
     childSetValue("power_user_check",				mPowerUser);
     childSetValue("power_user_confirm_check",		mPowerUser);
-    childSetEnabled("temp_in_system_check",			mUseSystemFolder);
     childSetEnabled("speed_rez_interval",           mSpeedRez);
     childSetEnabled("speed_rez_seconds",            mSpeedRez);
 
+    //Command Line ------------------------------------------------------------------------
     childSetEnabled("cmd_line_text_2",            mCmdLine);
     childSetEnabled("cmd_line_text_3",            mCmdLine);
     childSetEnabled("cmd_line_text_4",            mCmdLine);
@@ -281,7 +319,9 @@ void LLPrefsAscentSys::refresh()
     childSetEnabled("map_to_keep_pos",            mCmdLine);
     childSetEnabled("AscentCmdLineTP2",           mCmdLine);
     childSetEnabled("SinguCmdLineAway",           mCmdLine);
+	childSetEnabled("SinguCmdLineURL",            mCmdLine);
 
+    //Security ----------------------------------------------------------------------------
     childSetValue("AscentCmdLinePos",           mCmdLinePos);
     childSetValue("AscentCmdLineGround",        mCmdLineGround);
     childSetValue("AscentCmdLineHeight",        mCmdLineHeight);
@@ -296,6 +336,25 @@ void LLPrefsAscentSys::refresh()
     childSetValue("AscentCmdLineMapTo",         mCmdLineMapTo);
     childSetValue("AscentCmdLineTP2",           mCmdLineTP2);
     childSetValue("SinguCmdLineAway",           mCmdLineAway);
+	childSetValue("SinguCmdLineURL",            mCmdLineURL);
+
+	//Build -------------------------------------------------------------------------------
+	childSetValue("alpha",               mAlpha);
+	getChild<LLColorSwatchCtrl>("colorswatch")->setOriginal(mColor);
+	childSetValue("EmFBToggle",          mFullBright);
+	childSetValue("glow",                mGlow);
+	childSetValue("material",            mMaterial);
+	childSetValue("next_owner_copy",     mNextCopy);
+	childSetValue("next_owner_modify",   mNextMod);
+	childSetValue("next_owner_transfer", mNextTrans);
+	childSetValue("EmPhantomToggle",     mPhantom);
+	childSetValue("EmPhysicalToggle",    mPhysical);
+	childSetValue("combobox shininess",  mShiny);
+	childSetValue("EmTemporaryToggle",   mTemporary);
+	childSetValue("texture control",     mTexture);
+	childSetValue("X size",              mXsize);
+	childSetValue("Y size",              mYsize);
+	childSetValue("Z size",              mZsize);
 }
 
 void LLPrefsAscentSys::cancel()
@@ -304,20 +363,24 @@ void LLPrefsAscentSys::cancel()
     gSavedSettings.setBOOL("DoubleClickTeleport", mDoubleClickTeleport);
         gSavedSettings.setBOOL("OptionRotateCamAfterLocalTP", mResetCameraAfterTP);
         gSavedSettings.setBOOL("OptionOffsetTPByAgentHeight", mOffsetTPByUserHeight);
+	gSavedSettings.setBOOL("ClearBeaconAfterTeleport", mClearBeaconAfterTeleport);
+    gSavedSettings.setBOOL("LiruFlyAfterTeleport", mLiruFlyAfterTeleport);
+    gSavedSettings.setBOOL("LiruContinueFlyingOnUnsit", mLiruContinueFlying);
     gSavedSettings.setBOOL("PreviewAnimInWorld", mPreviewAnimInWorld);
-//    gSavedSettings.setBOOL("SaveScriptsAsMono", mSaveScriptsAsMono);
+    gSavedSettings.setBOOL("SaveInventoryScriptsAsMono", mSaveScriptsAsMono);
     gSavedSettings.setBOOL("AscentAlwaysRezInGroup", mAlwaysRezInGroup);
     gSavedSettings.setBOOL("AscentBuildAlwaysEnabled", mBuildAlwaysEnabled);
     gSavedSettings.setBOOL("AscentFlyAlwaysEnabled", mAlwaysShowFly);
     gSavedSettings.setBOOL("AscentDisableMinZoomDist", mDisableMinZoom);
-    gSavedSettings.setBOOL("AscentUseSystemFolder", mUseSystemFolder);
-        gSavedSettings.setBOOL("AscentSystemTemporary", mUploadToSystem);
     gSavedSettings.setBOOL("FetchInventoryOnLogin", mFetchInventoryOnLogin);
     gSavedSettings.setBOOL("WindEnabled", mEnableLLWind);
     gSavedSettings.setBOOL("CloudsEnabled", mEnableClouds);
         gSavedSettings.setBOOL("SkyUseClassicClouds", mEnableClassicClouds);
     gSavedSettings.setBOOL("SpeedRez", mSpeedRez);
         gSavedSettings.setU32("SpeedRezInterval", mSpeedRezInterval);
+	gSavedSettings.setBOOL("LiruUseContextMenus", mUseContextMenus);
+	gSavedSettings.setBOOL("UseWebProfiles", mUseWebProfiles);
+	gSavedSettings.setBOOL("UseWebSearch", mUseWebSearch);
 
     //Command Line ------------------------------------------------------------------------
     gSavedSettings.setBOOL("AscentCmdLine",                 mCmdLine);
@@ -337,6 +400,7 @@ void LLPrefsAscentSys::cancel()
     gSavedSettings.setBOOL("AscentMapToKeepPos",            mCmdMapToKeepPos);
     gSavedSettings.setString("AscentCmdLineTP2",			mCmdLineTP2);
     gSavedSettings.setString("SinguCmdLineAway",			mCmdLineAway);
+	gSavedSettings.setString("SinguCmdLineURL",				mCmdLineURL);
 
     //Security ----------------------------------------------------------------------------
     gSavedSettings.setBOOL("BroadcastViewerEffects",        mBroadcastViewerEffects);
@@ -344,10 +408,31 @@ void LLPrefsAscentSys::cancel()
     gSavedSettings.setBOOL("PrivateLookAt",                 mPrivateLookAt);
     gSavedSettings.setBOOL("AscentShowLookAt",              mShowLookAt);
     gSavedSettings.setBOOL("QuietSnapshotsToDisk",			mQuietSnapshotsToDisk);
+    gSavedSettings.setBOOL("SGDetachBridge",    			mDetachBridge);
     gSavedSettings.setBOOL("RevokePermsOnStandUp",          mRevokePermsOnStandUp);
     gSavedSettings.setBOOL("DisableClickSit",               mDisableClickSit);
+	gSavedSettings.setBOOL("DisableClickSitOtherOwner",     mDisableClickSitOtherOwner);
     gSavedSettings.setBOOL("AscentDisplayTotalScriptJumps", mDisplayScriptJumps);
     gSavedSettings.setF32("Ascentnumscriptdiff",            mNumScriptDiff);
+
+	//Build -------------------------------------------------------------------------------
+	gSavedSettings.setF32("EmeraldBuildPrefs_Alpha",        mAlpha);
+	gSavedSettings.setColor4("EmeraldBuildPrefs_Color",     mColor);
+	gSavedSettings.setBOOL("EmeraldBuildPrefs_FullBright",  mFullBright);
+	gSavedSettings.setF32("EmeraldBuildPrefs_Glow",         mGlow);
+	gSavedPerAccountSettings.setString("EmeraldBuildPrefs_Item",      mItem);
+	gSavedSettings.setString("BuildPrefs_Material",         mMaterial);
+	gSavedSettings.setBOOL("NextOwnerCopy",                 mNextCopy);
+	gSavedSettings.setBOOL("NextOwnerModify",               mNextMod);
+	gSavedSettings.setBOOL("NextOwnerTransfer",             mNextTrans);
+	gSavedSettings.setBOOL("EmeraldBuildPrefs_Phantom",     mPhantom);
+	gSavedSettings.setBOOL("EmeraldBuildPrefs_Physical",    mPhysical);
+	gSavedSettings.setString("EmeraldBuildPrefs_Shiny",     mShiny);
+	gSavedSettings.setBOOL("EmeraldBuildPrefs_Temporary",   mTemporary);
+	gSavedSettings.setString("EmeraldBuildPrefs_Texture",   mTexture);
+	gSavedSettings.setF32("BuildPrefs_Xsize",               mXsize);
+	gSavedSettings.setF32("BuildPrefs_Ysize",               mYsize);
+	gSavedSettings.setF32("BuildPrefs_Zsize",               mZsize);
 }
 
 void LLPrefsAscentSys::apply()

@@ -1,31 +1,25 @@
 /** 
  * @file lluuid.cpp
  *
- * $LicenseInfo:firstyear=2000&license=viewergpl$
- * 
- * Copyright (c) 2000-2009, Linden Research, Inc.
- * 
+ * $LicenseInfo:firstyear=2000&license=viewerlgpl$
  * Second Life Viewer Source Code
- * The source code in this file ("Source Code") is provided by Linden Lab
- * to you under the terms of the GNU General Public License, version 2.0
- * ("GPL"), unless you have obtained a separate licensing agreement
- * ("Other License"), formally executed by you and Linden Lab.  Terms of
- * the GPL can be found in doc/GPL-license.txt in this distribution, or
- * online at http://secondlifegrid.net/programs/open_source/licensing/gplv2
+ * Copyright (C) 2010, Linden Research, Inc.
  * 
- * There are special exceptions to the terms and conditions of the GPL as
- * it is applied to this Source Code. View the full text of the exception
- * in the file doc/FLOSS-exception.txt in this software distribution, or
- * online at
- * http://secondlifegrid.net/programs/open_source/licensing/flossexception
+ * This library is free software; you can redistribute it and/or
+ * modify it under the terms of the GNU Lesser General Public
+ * License as published by the Free Software Foundation;
+ * version 2.1 of the License only.
  * 
- * By copying, modifying or distributing this software, you acknowledge
- * that you have read and understood your obligations described above,
- * and agree to abide by those obligations.
+ * This library is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+ * Lesser General Public License for more details.
  * 
- * ALL LINDEN LAB SOURCE CODE IS PROVIDED "AS IS." LINDEN LAB MAKES NO
- * WARRANTIES, EXPRESS, IMPLIED OR OTHERWISE, REGARDING ITS ACCURACY,
- * COMPLETENESS OR PERFORMANCE.
+ * You should have received a copy of the GNU Lesser General Public
+ * License along with this library; if not, write to the Free Software
+ * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301  USA
+ * 
+ * Linden Research, Inc., 945 Battery Street, San Francisco, CA  94111  USA
  * $/LicenseInfo$
  */
 
@@ -33,9 +27,9 @@
 
 // We can't use WIN32_LEAN_AND_MEAN here, needs lots of includes.
 #if LL_WINDOWS
-#	undef WIN32_LEAN_AND_MEAN
-#	include <winsock2.h>
-#	include <windows.h>
+#undef WIN32_LEAN_AND_MEAN
+#include <winsock2.h>
+#include <windows.h>
 #endif
 
 #include "lldefs.h"
@@ -47,9 +41,14 @@
 #include "llmd5.h"
 #include "llstring.h"
 #include "lltimer.h"
+#include "llthread.h"
 
 const LLUUID LLUUID::null;
 const LLTransactionID LLTransactionID::tnull;
+
+// static 
+LLMutex * LLUUID::mMutex = NULL;
+
 
 /*
 
@@ -172,27 +171,12 @@ void LLUUID::toString(std::string& out) const
 		(U8)(mData[15]));
 }
 
-// *TODO: deprecate
-void LLUUID::toString(char *out) const
-{
-	std::string buffer;
-	toString(buffer);
-	strcpy(out,buffer.c_str()); /* Flawfinder: ignore */
-}
-
 void LLUUID::toCompressedString(std::string& out) const
 {
 	char bytes[UUID_BYTES+1];
 	memcpy(bytes, mData, UUID_BYTES);		/* Flawfinder: ignore */
 	bytes[UUID_BYTES] = '\0';
 	out.assign(bytes, UUID_BYTES);
-}
-
-// *TODO: deprecate
-void LLUUID::toCompressedString(char *out) const
-{
-	memcpy(out, mData, UUID_BYTES);		/* Flawfinder: ignore */
-	out[UUID_BYTES] = '\0';
 }
 
 std::string LLUUID::getString() const
@@ -423,14 +407,9 @@ std::ostream& operator<<(std::ostream& s, const LLUUID &uuid)
 
 std::istream& operator>>(std::istream &s, LLUUID &uuid)
 {
-	U32 i;
-	char uuid_str[UUID_STR_LENGTH];		/* Flawfinder: ignore */
-	for (i = 0; i < UUID_STR_LENGTH-1; i++)
-	{
-		s >> uuid_str[i];
-	}
-	uuid_str[i] = '\0';
-	uuid.set(std::string(uuid_str));
+	std::string uuid_str;
+	s >> uuid_str;
+	uuid.set(uuid_str);
 	return s;
 }
 
@@ -452,7 +431,8 @@ static void get_random_bytes(void *buf, int nbytes)
 	return;	
 }
 
-#if LL_WINDOWS
+#if	LL_WINDOWS
+
 typedef struct _ASTAT_
 {
 	ADAPTER_STATUS adapt;
@@ -460,58 +440,44 @@ typedef struct _ASTAT_
 }ASTAT, * PASTAT;
 
 // static
-S32 LLUUID::getNodeID(unsigned char * node_id)
+S32	LLUUID::getNodeID(unsigned char	*node_id)
 {
-	  ASTAT Adapter;
-      NCB Ncb;
-      UCHAR uRetCode;
-      LANA_ENUM   lenum;
-      int      i;
-	  int retval = 0;
+	ASTAT Adapter;
+	NCB Ncb;
+	UCHAR uRetCode;
+	LANA_ENUM   lenum;
+	int      i;
+	int retval = 0;
 
-      memset( &Ncb, 0, sizeof(Ncb) );
-      Ncb.ncb_command = NCBENUM;
-      Ncb.ncb_buffer = (UCHAR *)&lenum;
-      Ncb.ncb_length = sizeof(lenum);
-      uRetCode = Netbios( &Ncb );
- //     printf( "The NCBENUM return code is: 0x%x \n", uRetCode );
+	memset( &Ncb, 0, sizeof(Ncb) );
+	Ncb.ncb_command = NCBENUM;
+	Ncb.ncb_buffer = (UCHAR *)&lenum;
+	Ncb.ncb_length = sizeof(lenum);
+	uRetCode = Netbios( &Ncb );
 
-      for(i=0; i < lenum.length ;i++)
-      {
-          memset( &Ncb, 0, sizeof(Ncb) );
-          Ncb.ncb_command = NCBRESET;
-          Ncb.ncb_lana_num = lenum.lana[i];
+	for(i=0; i < lenum.length ;i++)
+	{
+		memset( &Ncb, 0, sizeof(Ncb) );
+		Ncb.ncb_command = NCBRESET;
+		Ncb.ncb_lana_num = lenum.lana[i];
 
-          uRetCode = Netbios( &Ncb );
- //         printf( "The NCBRESET on LANA %d return code is: 0x%x \n",
- //                 lenum.lana[i], uRetCode );
+		uRetCode = Netbios( &Ncb );
 
-          memset( &Ncb, 0, sizeof (Ncb) );
-          Ncb.ncb_command = NCBASTAT;
-          Ncb.ncb_lana_num = lenum.lana[i];
+		memset( &Ncb, 0, sizeof (Ncb) );
+		Ncb.ncb_command = NCBASTAT;
+		Ncb.ncb_lana_num = lenum.lana[i];
 
-          strcpy( (char *)Ncb.ncb_callname,  "*              " );		/* Flawfinder: ignore */
-          Ncb.ncb_buffer = (unsigned char *)&Adapter;
-          Ncb.ncb_length = sizeof(Adapter);
+		strcpy( (char *)Ncb.ncb_callname,  "*              " );		/* Flawfinder: ignore */
+		Ncb.ncb_buffer = (unsigned char *)&Adapter;
+		Ncb.ncb_length = sizeof(Adapter);
 
-          uRetCode = Netbios( &Ncb );
-//          printf( "The NCBASTAT on LANA %d return code is: 0x%x \n",
-//                 lenum.lana[i], uRetCode );
-          if ( uRetCode == 0 )
-          {
-//            printf( "The Ethernet Number on LANA %d is: %02x%02x%02x%02x%02x%02x\n",
-//	 			  lenum.lana[i],
-//                  Adapter.adapt.adapter_address[0],
-//                  Adapter.adapt.adapter_address[1],
-//                  Adapter.adapt.adapter_address[2],
-//                  Adapter.adapt.adapter_address[3],
-//                  Adapter.adapt.adapter_address[4],
-//                  Adapter.adapt.adapter_address[5] );
+		uRetCode = Netbios( &Ncb );
+		if ( uRetCode == 0 )
+		{
 			memcpy(node_id,Adapter.adapt.adapter_address,6);		/* Flawfinder: ignore */
 			retval = 1;
-
-          }
-	  }
+		}
+	}
 	return retval;
 }
 
@@ -750,6 +716,7 @@ void LLUUID::getCurrentTime(uuid_time_t *timestamp)
       getSystemTime(&time_last);
       uuids_this_tick = uuids_per_tick;
       init = TRUE;
+	  mMutex = new LLMutex;
    }
 
    uuid_time_t time_now = {0,0};
@@ -801,6 +768,7 @@ void LLUUID::generate()
 #endif
 	if (!has_init) 
 	{
+		has_init = 1;
 		if (getNodeID(node_id) <= 0) 
 		{
 			get_random_bytes(node_id, 6);
@@ -822,17 +790,23 @@ void LLUUID::generate()
 #else
 		clock_seq = (U16)ll_rand(65536);
 #endif
-		has_init = 1;
 	}
 
 	// get current time
 	getCurrentTime(&timestamp);
+	U16 our_clock_seq = clock_seq;
 
-	// if clock went backward change clockseq
-	if (cmpTime(&timestamp, &time_last) == -1) {
+	// if clock hasn't changed or went backward, change clockseq
+	if (cmpTime(&timestamp, &time_last) != 1) 
+	{
+		LLMutexLock	lock(mMutex);
 		clock_seq = (clock_seq + 1) & 0x3FFF;
-		if (clock_seq == 0) clock_seq++;
+		if (clock_seq == 0) 
+			clock_seq++;
+		our_clock_seq = clock_seq;	// Ensure we're using a different clock_seq value from previous time
 	}
+
+    time_last = timestamp;
 
 	memcpy(mData+10, node_id, 6);		/* Flawfinder: ignore */
 	U32 tmp;
@@ -855,7 +829,8 @@ void LLUUID::generate()
 	tmp >>= 8;
 	mData[6] = (unsigned char) tmp;
 
-	tmp = clock_seq;
+	tmp = our_clock_seq;
+
 	mData[9] = (unsigned char) tmp;
 	tmp >>= 8;
 	mData[8] = (unsigned char) tmp;
@@ -865,8 +840,6 @@ void LLUUID::generate()
 	md5_uuid.update(mData,16);
 	md5_uuid.finalize();
 	md5_uuid.raw_digest(mData);
-
-    time_last = timestamp;
 }
 
 void LLUUID::generate(const std::string& hash_string)
@@ -880,8 +853,14 @@ U32 LLUUID::getRandomSeed()
    static unsigned char seed[16];		/* Flawfinder: ignore */
    
    getNodeID(&seed[0]);
-   seed[6]='\0';
-   seed[7]='\0';
+
+   // Incorporate the pid into the seed to prevent
+   // processes that start on the same host at the same
+   // time from generating the same seed.
+   pid_t pid = LLApp::getPid();
+
+   seed[6]=(unsigned char)(pid >> 8);
+   seed[7]=(unsigned char)(pid);
    getSystemTime((uuid_time_t *)(&seed[8]));
 
    LLMD5 md5_seed;

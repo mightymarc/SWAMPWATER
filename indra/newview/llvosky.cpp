@@ -298,7 +298,8 @@ void LLSkyTex::create(const F32 brightness)
 
 void LLSkyTex::createGLImage(S32 which)
 {	
-	mTexture[which]->createGLTexture(0, mImageRaw[which], 0, TRUE, LLViewerTexture::LOCAL);
+	mTexture[which]->setNeedsAlphaAndPickMask(false);	//Needed, else analyzeAlpha is called every frame for each texture.
+	mTexture[which]->createGLTexture(0, mImageRaw[which], 0, TRUE, LLGLTexture::LOCAL);
 	mTexture[which]->setAddressMode(LLTexUnit::TAM_CLAMP);
 }
 
@@ -352,7 +353,6 @@ LLVOSky::LLVOSky(const LLUUID &id, const LLPCode pcode, LLViewerRegion *regionp)
 	cloud_pos_density1 = LLColor3();
 	cloud_pos_density2 = LLColor3();
 
-
 	mInitialized = FALSE;
 	mbCanSelect = FALSE;
 	mUpdateTimer.reset();
@@ -385,9 +385,9 @@ LLVOSky::LLVOSky(const LLUUID &id, const LLPCode pcode, LLViewerRegion *regionp)
 	mSun.setIntensity(SUN_INTENSITY);
 	mMoon.setIntensity(0.1f * SUN_INTENSITY);
 
-	mSunTexturep = LLViewerTextureManager::getFetchedTexture(gSunTextureID, TRUE, LLViewerTexture::BOOST_UI);
+	mSunTexturep = LLViewerTextureManager::getFetchedTexture(gSunTextureID, TRUE, LLGLTexture::BOOST_UI);
 	mSunTexturep->setAddressMode(LLTexUnit::TAM_CLAMP);
-	mMoonTexturep = LLViewerTextureManager::getFetchedTexture(gMoonTextureID, TRUE, LLViewerTexture::BOOST_UI);
+	mMoonTexturep = LLViewerTextureManager::getFetchedTexture(gMoonTextureID, TRUE, LLGLTexture::BOOST_UI);
 	mMoonTexturep->setAddressMode(LLTexUnit::TAM_CLAMP);
 	mBloomTexturep = LLViewerTextureManager::getFetchedTexture(IMG_BLOOM1);
 	mBloomTexturep->setNoDelete() ;
@@ -408,7 +408,6 @@ LLVOSky::~LLVOSky()
 
 	mCubeMap = NULL;
 }
-
 
 void LLVOSky::init()
 {
@@ -480,9 +479,9 @@ void LLVOSky::restoreGL()
 	{
 		mSkyTex[i].restoreGL();
 	}
-	mSunTexturep = LLViewerTextureManager::getFetchedTexture(gSunTextureID, TRUE, LLViewerTexture::BOOST_UI);
+	mSunTexturep = LLViewerTextureManager::getFetchedTexture(gSunTextureID, TRUE, LLGLTexture::BOOST_UI);
 	mSunTexturep->setAddressMode(LLTexUnit::TAM_CLAMP);
-	mMoonTexturep = LLViewerTextureManager::getFetchedTexture(gMoonTextureID, TRUE, LLViewerTexture::BOOST_UI);
+	mMoonTexturep = LLViewerTextureManager::getFetchedTexture(gMoonTextureID, TRUE, LLGLTexture::BOOST_UI);
 	mMoonTexturep->setAddressMode(LLTexUnit::TAM_CLAMP);
 	mBloomTexturep = LLViewerTextureManager::getFetchedTexture(IMG_BLOOM1);
 	mBloomTexturep->setNoDelete() ;
@@ -1055,9 +1054,8 @@ void LLVOSky::calcAtmospherics(void)
 	mFadeColor.setAlpha(0);
 }
 
-BOOL LLVOSky::idleUpdate(LLAgent &agent, LLWorld &world, const F64 &time)
+void LLVOSky::idleUpdate(LLAgent &agent, LLWorld &world, const F64 &time)
 {
-	return TRUE;
 }
 
 BOOL LLVOSky::updateSky()
@@ -1250,6 +1248,7 @@ void LLVOSky::createDummyVertexBuffer()
 }
 
 static LLFastTimer::DeclareTimer FTM_RENDER_FAKE_VBO_UPDATE("Fake VBO Update");
+
 void LLVOSky::updateDummyVertexBuffer()
 {	
 	if(!LLVertexBuffer::sEnableVBOs)
@@ -1427,6 +1426,7 @@ BOOL LLVOSky::updateHeavenlyBodyGeometry(LLDrawable *drawable, const S32 f, cons
 	LLStrider<LLVector3> normalsp;
 	LLStrider<LLVector2> texCoordsp;
 	LLStrider<U16> indicesp;
+	LLStrider<LLColor4U> colorsp;
 	S32 index_offset;
 	LLFace *facep;
 
@@ -1483,7 +1483,7 @@ BOOL LLVOSky::updateHeavenlyBodyGeometry(LLDrawable *drawable, const S32 f, cons
 	if (!facep->getVertexBuffer())
 	{
 		facep->setSize(4, 6);	
-		LLVertexBuffer* buff = new LLVertexBuffer(LLDrawPoolSky::VERTEX_DATA_MASK, GL_STREAM_DRAW_ARB);
+		LLVertexBuffer* buff = new LLVertexBuffer(LLDrawPoolWLSky::STAR_VERTEX_DATA_MASK, GL_STREAM_DRAW_ARB); //Singu Note: Using LLDrawPoolWLSky::STAR_VERTEX_DATA_MASK on purpose.
 		buff->allocateBuffer(facep->getGeomCount(), facep->getIndicesCount(), TRUE);
 		facep->setGeomIndex(0);
 		facep->setIndicesIndex(0);
@@ -1491,7 +1491,9 @@ BOOL LLVOSky::updateHeavenlyBodyGeometry(LLDrawable *drawable, const S32 f, cons
 	}
 
 	llassert(facep->getVertexBuffer()->getNumIndices() == 6);
+
 	index_offset = facep->getGeometry(verticesp,normalsp,texCoordsp, indicesp);
+	facep->getColors(colorsp);
 
 	if (-1 == index_offset)
 	{
@@ -1516,6 +1518,11 @@ BOOL LLVOSky::updateHeavenlyBodyGeometry(LLDrawable *drawable, const S32 f, cons
 	*indicesp++ = index_offset + 1;
 	*indicesp++ = index_offset + 2;
 	*indicesp++ = index_offset + 3;
+
+	*(colorsp++) = LLColor4::white;
+	*(colorsp++) = LLColor4::white;
+	*(colorsp++) = LLColor4::white;
+	*(colorsp++) = LLColor4::white;
 
 	facep->getVertexBuffer()->flush();
 

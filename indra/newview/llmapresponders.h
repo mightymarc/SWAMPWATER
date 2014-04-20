@@ -35,9 +35,14 @@
 
 #include "llhttpclient.h"
 
-class LLMapLayerResponder : public LLHTTPClient::Responder
+class AIHTTPTimeoutPolicy;
+extern AIHTTPTimeoutPolicy mapLayerResponder_timeout;
+
+class LLMapLayerResponder : public LLHTTPClient::ResponderWithResult
 {
-	virtual void result(const LLSD& content);
+	/*virtual*/ void result(const LLSD& content);
+	/*virtual*/ AIHTTPTimeoutPolicy const& getHTTPTimeoutPolicy(void) const { return mapLayerResponder_timeout; }
+	/*virtual*/ char const* getName(void) const { return "LLMapLayerResponder"; }
 };
 
 #endif // LL_LLMAPLAYERRESPONDER_H

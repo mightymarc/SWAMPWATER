@@ -5,7 +5,7 @@ usage() {
 	echo "Usage: repackage PLATFORM FILEIN.tar.bz2 [FILEOUT.tar.bz2]
 Repackage an archive from llautobuild format into singularity format
 
-PLATTFORM can be one of windows, linux, mac.
+PLATFORM can be one of windows, windows64 linux, linux64, mac.
 "
 	exit 0
 }
@@ -13,6 +13,8 @@ PLATTFORM can be one of windows, linux, mac.
 TMP="/tmp/pak$$"
 LIBPATH=""
 INCPATH=""
+BINPATH=""
+
 PWD=`pwd`
 
 if [ -z "$1" ]; then
@@ -26,24 +28,35 @@ case "$1" in
 		LIBPATH="libraries/i686-win32/lib/release"
 		LIBDPATH="libraries/i686-win32/lib/debug"
 		INCPATH="libraries/i686-win32/include"
+		BINPATH="libraries/i686-win32/bin"
+		;;
+	--windows64|-w64|windows64|win64)
+		MODE=windows64
+		LIBPATH="libraries/x86_64-win/lib/release"
+		LIBDPATH="libraries/x86_64-win/lib/debug"
+		INCPATH="libraries/x86_64-win/include"
+		BINPATH="libraries/x86_64-win/bin"
 		;;
 	--mac|--osx|--darwin|-x|mac|osx|darwin)
 		MODE=osx
-		LIBPATH="libraries/universal-darwin/lib_release"
+		LIBPATH="libraries/universal-darwin/lib/release"
 		LIBDPATH="libraries/universal-darwin/lib/debug"
 		INCPATH="libraries/universal-darwin/include"
+		BINPATH="libraries/universal-darwin/bin"
 		;;
 	--lin|--linux|-l|linux)
 		MODE=linux
 		LIBPATH="libraries/i686-linux/lib/release"
 		LIBDPATH="libraries/i686-linux/lib/debug"
 		INCPATH="libraries/i686-linux/include"
+		BINPATH="libraries/i686-linux/bin"
 		;;
 	--linux64|-6|linux64)
 		MODE=linux64
 		LIBPATH="libraries/x86_64-linux/lib/release"
 		LIBDPATH="libraries/x86_64-linux/lib/debug"
 		INCPATH="libraries/x86_64-linux/include"
+		BINPATH="libraries/x86_64-linux/bin"
 		;;
 	*)
 		echo ERROR: No mode specified
@@ -76,7 +89,7 @@ case "$FILEIN" in
 	http\:\/\/*|https\:\/\/*)
 		echo "	Downloading..."
 		cd "$TMP"
-		wget "$FILEIN" -O package.tar.bz2
+		curl -L "$FILEIN" > package.tar.bz2
 		echo "	Unpacking..."
 		tar -xjvf package.tar.bz2
 		rm package.tar.bz2
@@ -104,6 +117,10 @@ fi
 if [ -d include ]; then
 	mkdir -p $INCPATH
 	mv -f include/* $INCPATH
+fi
+if [ -d bin ]; then
+	mkdir -p $BINPATH
+	mv -f bin/* $BINPATH
 fi
 
 echo "	Packing..."

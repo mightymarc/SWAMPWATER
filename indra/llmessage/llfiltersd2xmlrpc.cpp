@@ -80,7 +80,6 @@
 
 #include "llbuffer.h"
 #include "llbufferstream.h"
-#include "llfasttimer.h"
 #include "llmemorystream.h"
 #include "llsd.h"
 #include "llsdserialize.h"
@@ -333,7 +332,7 @@ LLIOPipe::EStatus LLFilterSD2XMLRPCResponse::process_impl(
 	// we have everyting in the buffer, so turn the structure data rpc
 	// response into an xml rpc response.
 	LLBufferStream stream(channels, buffer.get());
-	stream << XML_HEADER << XMLRPC_METHOD_RESPONSE_HEADER;
+	stream << XML_HEADER << XMLRPC_METHOD_RESPONSE_HEADER << std::flush;	// Flush, or buffer->count() returns too much!
 	LLSD sd;
 	LLSDSerialize::fromNotation(sd, stream, buffer->count(channels.in()));
 
@@ -485,7 +484,7 @@ LLIOPipe::EStatus LLFilterSD2XMLRPCRequest::process_impl(
 		break;
 	}
 
-	stream << XMLRPC_REQUEST_FOOTER;
+	stream << XMLRPC_REQUEST_FOOTER << std::flush;
 	return STATUS_DONE;
 }
 
@@ -648,7 +647,7 @@ LLIOPipe::EStatus LLFilterXMLRPCResponse2LLSD::process_impl(
 			fault_string.assign(fault_str);
 		}
 		stream << "'" << LLSDNotationFormatter::escapeString(fault_string)
-		   << "'" <<LLSDRPC_FAULT_FOOTER;
+		   << "'" <<LLSDRPC_FAULT_FOOTER << std::flush;
 	}
 	else
 	{
@@ -659,7 +658,7 @@ LLIOPipe::EStatus LLFilterXMLRPCResponse2LLSD::process_impl(
 		{
 			stream_out(stream, param);
 		}
-		stream << LLSDRPC_RESPONSE_FOOTER;
+		stream << LLSDRPC_RESPONSE_FOOTER << std::flush;
 	}
 	PUMP_DEBUG;
 	XMLRPC_RequestFree(response, 1);
@@ -769,7 +768,7 @@ LLIOPipe::EStatus LLFilterXMLRPCRequest2LLSD::process_impl(
 			stream << "]";
 		}
 	}
-	stream << LLSDRPC_REQUEST_FOOTER;
+	stream << LLSDRPC_REQUEST_FOOTER << std::flush;
 	XMLRPC_RequestFree(request, 1);
 	delete[] buf;
 	PUMP_DEBUG;

@@ -1,6 +1,6 @@
 /** 
  * @file llscrollcontainer.h
- * @brief LLScrollableContainerView class header file.
+ * @brief LLScrollContainer class header file.
  *
  * $LicenseInfo:firstyear=2001&license=viewergpl$
  * 
@@ -53,23 +53,24 @@ class LLUICtrlFactory;
  * the width and height of the view you're scrolling.
  *
  *****************************************************************************/
-class LLScrollableContainerView : public LLUICtrl
+class LLScrollContainer : public LLUICtrl
 {
 public:
 	// Note: vertical comes before horizontal because vertical
 	// scrollbars have priority for mouse and keyboard events.
 	enum SCROLL_ORIENTATION { VERTICAL, HORIZONTAL, SCROLLBAR_COUNT };
 
-	LLScrollableContainerView( const std::string& name, const LLRect& rect,
+	LLScrollContainer( const std::string& name, const LLRect& rect,
 							   LLView* scrolled_view, BOOL is_opaque = FALSE,
 							   const LLColor4& bg_color = LLColor4(0,0,0,0) );
-	virtual ~LLScrollableContainerView( void );
+	virtual ~LLScrollContainer( void );
 
 	void setScrolledView(LLView* view) { mScrolledView = view; }
 
 	virtual void setValue(const LLSD& value) { mInnerRect.setValue(value); }
 
 	void			setBorderVisible( BOOL b );
+	void			setPassBackToChildren(bool b) { mPassBackToChildren = b; }
 
 	void			scrollToShowRect( const LLRect& rect, const LLRect& constraint);
 	void			scrollToShowRect( const LLRect& rect) { scrollToShowRect(rect, LLRect(0, mInnerRect.getHeight(), mInnerRect.getWidth(), 0)); }
@@ -128,6 +129,7 @@ private:
 	F32			mMinAutoScrollRate;
 	F32			mMaxAutoScrollRate;
 	bool		mHideScrollbar;
+	bool		mPassBackToChildren;
 };
 
 

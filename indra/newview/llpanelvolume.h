@@ -3,10 +3,9 @@
  * @brief Object editing (position, scale, etc.) in the tools floater
  *
  * $LicenseInfo:firstyear=2001&license=viewergpl$
- * 
+ * Second Life Viewer Source Code
  * Copyright (c) 2001-2009, Linden Research, Inc.
  * 
- * Second Life Viewer Source Code
  * The source code in this file ("Source Code") is provided by Linden Lab
  * to you under the terms of the GNU General Public License, version 2.0
  * ("GPL"), unless you have obtained a separate licensing agreement
@@ -45,7 +44,6 @@ class LLUICtrl;
 class LLButton;
 class LLViewerObject;
 class LLComboBox;
-class LLPanelObjectInventory;
 class LLColorSwatchCtrl;
 
 class LLPanelVolume : public LLPanel
@@ -64,19 +62,19 @@ public:
 	void			sendIsLight();
 	void			sendIsFlexible();
 
-	static BOOL		precommitValidate(LLUICtrl* ctrl,void* userdata);
+	static bool		precommitValidate(const LLSD& data);
 	
 	static void 	onCommitIsLight(		LLUICtrl* ctrl, void* userdata);
 	static void 	onCommitLight(			LLUICtrl* ctrl, void* userdata);
-	static void 	onCommitIsFlexible(		LLUICtrl* ctrl, void* userdata);
+	void			onCommitIsFlexible(		LLUICtrl* ctrl, void* userdata);
 	static void 	onCommitFlexible(		LLUICtrl* ctrl, void* userdata);
 	static void     onCommitPhysicsParam(       LLUICtrl* ctrl, void* userdata);
 
-	static void		onLightCancelColor(LLUICtrl* ctrl, void* userdata);
-	static void		onLightSelectColor(LLUICtrl* ctrl, void* userdata);
+	void		onLightCancelColor(const LLSD& data);
+	void		onLightSelectColor(const LLSD& data);
 
-	static void		onLightCancelTexture(LLUICtrl* ctrl, void* userdata);
-	static void		onLightSelectTexture(LLUICtrl* ctrl, void* userdata);
+	void		onLightCancelTexture(const LLSD& data);
+	void		onLightSelectTexture(const LLSD& data);
 
 
 protected:
@@ -89,6 +87,9 @@ protected:
 	void            sendPhysicsFriction(LLUICtrl* ctrl, void* userdata);
 	void            sendPhysicsRestitution(LLUICtrl* ctrl, void* userdata);
 	void            sendPhysicsDensity(LLUICtrl* ctrl, void* userdata);
+
+	void            handleResponseChangeToFlexible(const LLSD &pNotification, const LLSD &pResponse);
+
 /*
 	LLTextBox*		mLabelSelectSingleMessage;
 	// Light
@@ -114,6 +115,7 @@ protected:
 	LLPointer<LLViewerObject> mObject;
 	LLPointer<LLViewerObject> mRootObject;
 	LLTextBox*		mComboPhysicsShapeLabel;
+
 	LLComboBox*     mComboPhysicsShapeType;
 	LLSpinCtrl*     mSpinPhysicsGravity;
 	LLSpinCtrl*     mSpinPhysicsFriction;

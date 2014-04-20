@@ -30,12 +30,15 @@
 #include "llcurl.h"
 #include "llhttpclient.h"
 
+class AIHTTPTimeoutPolicy;
+extern AIHTTPTimeoutPolicy accountingCostResponder_timeout;
+
 //===============================================================================
 LLAccountingCostManager::LLAccountingCostManager()
 {	
 }
 //===============================================================================
-class LLAccountingCostResponder : public LLCurl::Responder
+class LLAccountingCostResponder : public LLHTTPClient::ResponderWithResult
 {
 public:
 	LLAccountingCostResponder( const LLSD& objectIDs )
@@ -51,13 +54,13 @@ public:
 		}
 	}
 	
-	void error( U32 statusNum, const std::string& reason )
+	/*virtual*/ void error( U32 statusNum, const std::string& reason )
 	{
 		llwarns	<< "Transport error "<<reason<<llendl;	
 		clearPendingRequests();
 	}
 	
-	void result( const LLSD& content )
+	/*virtual*/ void result( const LLSD& content )
 	{
 		//Check for error
 		if ( !content.isMap() || content.has("error") )
@@ -85,10 +88,14 @@ public:
 		clearPendingRequests();
 	}
 	
+	/*virtual*/ AIHTTPTimeoutPolicy const& getHTTPTimeoutPolicy(void) const { return accountingCostResponder_timeout; }
+	/*virtual*/ char const* getName(void) const { return "LLAccountingCostResponder"; }
+
 private:
 	//List of posted objects
 	LLSD mObjectIDs;
 };
+
 //===============================================================================
 void LLAccountingCostManager::fetchCosts( eSelectionType selectionType, const std::string& url )
 {

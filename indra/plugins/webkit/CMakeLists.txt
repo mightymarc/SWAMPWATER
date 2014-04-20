@@ -7,6 +7,7 @@ include(LLCommon)
 include(LLImage)
 include(LLPlugin)
 include(LLMath)
+include(LLQtWebkit)
 include(LLRender)
 include(LLWindow)
 include(UI)
@@ -31,6 +32,14 @@ include_directories(
 )
 
 ### media_plugin_webkit
+
+if(NOT WORD_SIZE EQUAL 32)
+  if(WINDOWS)
+    # add_definitions(/FIXED:NO)
+  else(WINDOWS) # not windows therefore gcc LINUX and DARWIN
+    add_definitions(-fPIC)
+  endif(WINDOWS)
+endif(NOT WORD_SIZE EQUAL 32)
 
 set(media_plugin_webkit_SOURCE_FILES
     media_plugin_webkit.cpp
@@ -115,8 +124,8 @@ if (DARWIN)
   add_custom_command(
     TARGET media_plugin_webkit POST_BUILD
 #    OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/${CMAKE_CFG_INTDIR}/libllqtwebkit.dylib
-    COMMAND ${CMAKE_COMMAND} -E copy ${CMAKE_SOURCE_DIR}/../libraries/universal-darwin/lib_release/libllqtwebkit.dylib ${CMAKE_CURRENT_BINARY_DIR}/${CMAKE_CFG_INTDIR}/
-    DEPENDS media_plugin_webkit ${CMAKE_SOURCE_DIR}/../libraries/universal-darwin/lib_release/libllqtwebkit.dylib
+    COMMAND ${CMAKE_COMMAND} -E copy ${CMAKE_SOURCE_DIR}/../libraries/universal-darwin/lib/release/libllqtwebkit.dylib ${CMAKE_CURRENT_BINARY_DIR}/${CMAKE_CFG_INTDIR}/
+    DEPENDS media_plugin_webkit ${CMAKE_SOURCE_DIR}/../libraries/universal-darwin/lib/release/libllqtwebkit.dylib
     )
     
 endif (DARWIN)

@@ -76,8 +76,6 @@
 
 #include "llagentcamera.h"
 
-#include "curl/curl.h"
-
 LLWaterParamManager::LLWaterParamManager() :
 	mFogColor(22.f/255.f, 43.f/255.f, 54.f/255.f, 0.0f, 0.0f, "waterFogColor", "WaterFogColor"),
 	mFogDensity(4, "waterFogDensity", 2),
@@ -322,12 +320,12 @@ void LLWaterParamManager::updateShaderUniforms(LLGLSLShader * shader)
 	if (shader->mShaderGroup == LLGLSLShader::SG_WATER)
 	{
 		shader->uniform4fv(LLViewerShaderMgr::LIGHTNORM, 1, LLWLParamManager::getInstance()->getRotatedLightDir().mV);
-		shader->uniform3fv("camPosLocal", 1, LLViewerCamera::getInstance()->getOrigin().mV);
-		shader->uniform4fv("waterFogColor", 1, LLDrawPoolWater::sWaterFogColor.mV);
-		shader->uniform4fv("waterPlane", 1, mWaterPlane.mV);
-		shader->uniform1f("waterFogDensity", getFogDensity());
-		shader->uniform1f("waterFogKS", mWaterFogKS);
-		shader->uniform1f("distance_multiplier", 0);
+		shader->uniform3fv(LLShaderMgr::WL_CAMPOSLOCAL, 1, LLViewerCamera::getInstance()->getOrigin().mV);
+		shader->uniform4fv(LLShaderMgr::WATER_FOGCOLOR, 1, LLDrawPoolWater::sWaterFogColor.mV);
+		shader->uniform4fv(LLShaderMgr::WATER_WATERPLANE, 1, mWaterPlane.mV);
+		shader->uniform1f(LLShaderMgr::WATER_FOGDENSITY, getFogDensity());
+		shader->uniform1f(LLShaderMgr::WATER_FOGKS, mWaterFogKS);
+		shader->uniform1f(LLViewerShaderMgr::DISTANCE_MULTIPLIER, 0);
 	}
 }
 
@@ -376,7 +374,7 @@ void LLWaterParamManager::updateShaderLinks()
 void LLWaterParamManager::update(LLViewerCamera * cam)
 {
 	LLFastTimer ftm(FTM_UPDATE_WATERPARAM);
-	
+
 	// update the shaders and the menu
 	propagateParameters();
 	
@@ -523,7 +521,7 @@ bool LLWaterParamManager::removeParamSet(const std::string& name, bool delete_fr
 bool LLWaterParamManager::isSystemPreset(const std::string& preset_name) const
 {
 	// *TODO: file system access is excessive here.
-	return gDirUtilp->fileExists(getSysDir() + LLWeb::curlEscape(preset_name) + ".xml");
+	return gDirUtilp->fileExists(getSysDir() + LLURI::escape(preset_name) + ".xml");
 }
 
 void LLWaterParamManager::getPresetNames(preset_name_list_t& presets) const
@@ -590,7 +588,10 @@ void LLWaterParamManager::initSingleton()
 
 	loadAllPresets();
 
-	LLEnvManagerNew::instance().usePrefs();
+	// This shouldn't be called here. It has nothing to do with the initialization of this singleton.
+	// Instead, call it one-time when the viewer starts. Calling it here causes a recursive entry
+	// of LLWaterParamManager::initSingleton().
+	//LLEnvManagerNew::instance().usePrefs();
 }
 
 // static

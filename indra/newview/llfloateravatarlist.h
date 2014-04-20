@@ -11,6 +11,7 @@
 //
 //
 #include "llavatarname.h"
+#include "llavatarpropertiesprocessor.h"
 #include "llfloater.h"
 #include "llfloaterreporter.h"
 #include "lluuid.h"
@@ -18,10 +19,23 @@
 #include "llscrolllistctrl.h"
 
 #include <time.h>
+#include <bitset>
 #include <map>
 #include <set>
 
+#include <boost/shared_ptr.hpp>
+
 class LLFloaterAvatarList;
+
+enum ERadarStatType
+{
+	STAT_TYPE_SIM,
+	STAT_TYPE_DRAW,
+	STAT_TYPE_SHOUTRANGE,
+	STAT_TYPE_CHATRANGE,
+	STAT_TYPE_AGE,
+	STAT_TYPE_SIZE
+};
 
 /**
  * @brief This class is used to hold data about avatars.
@@ -29,7 +43,8 @@ class LLFloaterAvatarList;
  * Instances are kept in a map<LLAvatarListEntry>. We keep track of the
  * frame where the avatar was last seen.
  */
-class LLAvatarListEntry {
+class LLAvatarListEntry : public LLAvatarPropertiesObserver
+{
 
 public:
 
@@ -52,6 +67,10 @@ enum ACTIVITY_TYPE
 	 * @param position Avatar's current position
 	 */
 	LLAvatarListEntry(const LLUUID& id = LLUUID::null, const std::string &name = "", const LLVector3d &position = LLVector3d::zero);
+	~LLAvatarListEntry();
+
+	// Get properties, such as age and other niceties displayed on profiles.
+	/*virtual*/ void processProperties(void* data, EAvatarProcessorType type);
 
 	/**
 	 * Update world position.
@@ -59,7 +78,7 @@ enum ACTIVITY_TYPE
 	 */	
 	void setPosition(LLVector3d position, bool this_sim, bool drawn, bool chatrange, bool shoutrange);
 
-	LLVector3d getPosition() { return mPosition; }
+	const LLVector3d& getPosition() const { return mPosition; }
 
 	/**
 	 * @brief Returns the age of this entry in frames
@@ -72,55 +91,74 @@ enum ACTIVITY_TYPE
 	/**
 	 * @brief Returns the age of this entry in seconds
 	 */
-	F32 getEntryAgeSeconds();
+	F32 getEntryAgeSeconds() const;
 
 	/**
 	 * @brief Returns the name of the avatar
 	 */
-	std::string getName() { return mName; }
+	const std::string&  getName() const { return mName; }
+	const time_t& getTime() const { return mTime; }
 
 	/**
 	 * @brief Returns the ID of the avatar
 	 */
-	LLUUID getID() { return mID; }
+	const LLUUID& getID() const { return mID; }
 
 	void setActivity(ACTIVITY_TYPE activity);
 
 	/**
 	 * @brief Returns the activity type
 	 */
-	ACTIVITY_TYPE getActivity();
+	const ACTIVITY_TYPE getActivity();
 
 	/**
 	 * @brief Sets the 'focus' status on this entry (camera focused on this avatar)
 	 */
 	void setFocus(BOOL value) { mFocused = value; }
 
-	BOOL isFocused() { return mFocused; }
+	bool isFocused() const { return mFocused; }
 
-	BOOL isMarked() { return mMarked; }
+	bool isMarked() const { return mMarked; }
 
-	BOOL isDrawn() { return (mInDrawFrame != U32_MAX); }
+	/**
+	 * @brief 'InList' signifies that the entry has been displayed in the floaters avatar list
+	 *  Until this happens our focusprev/focusnext logic should ignore this entry.
+	 */
 
-	BOOL isInSim() { return (mInSimFrame != U32_MAX); }
+	void setInList()	{ mIsInList = true; }
 
+	bool isInList() const { return mIsInList; }
 	/**
 	 * @brief Returns whether the item is dead and shouldn't appear in the list
 	 * @returns TRUE if dead
 	 */
-	BOOL isDead();
+	bool isDead() const;
 
 	void toggleMark() { mMarked = !mMarked; }
+
+	struct uuidMatch
+	{
+		uuidMatch(const LLUUID& id) : mID(id) {}
+		bool operator()(const boost::shared_ptr<LLAvatarListEntry>& l) { return l->getID() == mID; }
+		LLUUID mID;
+	};
 
 private:
 	friend class LLFloaterAvatarList;
 
 	LLUUID mID;
 	std::string mName;
+	time_t mTime;
 	LLVector3d mPosition;
-	LLVector3d mDrawPosition;
-	BOOL mMarked;
-	BOOL mFocused;
+	bool mMarked;
+	bool mFocused;
+	bool mIsInList;
+	int mAge;
+
+	/**
+	 * @brief Bitset to keep track of what stats still hold true about the avatar
+	 */
+	std::bitset<STAT_TYPE_SIZE> mStats;
 
 	/**
 	 * @brief Timer to keep track of whether avatars are still there
@@ -136,14 +174,6 @@ private:
 	 * @brief Last frame when this avatar was updated
 	 */
 	U32 mFrame;
-	//last frame when this avatar was in sim
-	U32 mInSimFrame;
-	//last frame when this avatar was in draw
-	U32 mInDrawFrame;
-	//last frame when this avatar was in shout range
-	U32 mInShoutFrame;
-	//last frame when this avatar was in chat range
-	U32 mInChatFrame;
 };
 
 
@@ -171,6 +201,8 @@ private:
 public:
 	~LLFloaterAvatarList();
 
+	virtual BOOL	handleKeyHere(KEY key, MASK mask);
+
 	/*virtual*/ void onClose(bool app_quitting);
 	/*virtual*/ void onOpen();
 	/*virtual*/ BOOL postBuild();
@@ -183,6 +215,9 @@ public:
 	static void toggle(void*);
 
 	static void showInstance();
+
+	// Decides which user-chosen columns to show and hide.
+	void assessColumns();
 
 	/**
 	 * @brief Updates the internal avatar list with the currently present avatars.
@@ -210,9 +245,11 @@ public:
 	static void lookAtAvatar(LLUUID &uuid);
 
 	static void sound_trigger_hook(LLMessageSystem* msg,void **);
-	static void sendKeys();
+	void sendKeys();
 
-private:
+	typedef boost::shared_ptr<LLAvatarListEntry> LLAvatarListEntryPtr;
+	typedef std::vector< LLAvatarListEntryPtr > av_list_t;
+
 	// when a line editor loses keyboard focus, it is committed.
 	// commit callbacks are named onCommitWidgetName by convention.
 	//void onCommitBaz(LLUICtrl* ctrl, void *userdata);
@@ -225,11 +262,12 @@ private:
 		LIST_POSITION,
 		LIST_ALTITUDE,
 		LIST_ACTIVITY,
+		LIST_AGE,
+		LIST_TIME,
 		LIST_CLIENT,
 	};
 
-
-	typedef void (*avlist_command_t)(const LLUUID &avatar, const std::string &name);
+	typedef boost::function<void (LLAvatarListEntry*)> avlist_command_t;
 
 	/**
 	 * @brief Removes focus status from all avatars in list
@@ -237,9 +275,9 @@ private:
 	void removeFocusFromAll();
 
 	/**
-	 * @brief Focus camera on current avatar
+	 * @brief Focus camera on specified avatar
 	 */
-	void focusOnCurrent();
+	void setFocusAvatar(const LLUUID& id);
 
 	/**
 	 * @brief Focus camera on previous avatar
@@ -253,6 +291,9 @@ private:
 	 */
 	void focusOnNext(BOOL marked_only);
 
+	void refreshTracker();
+	void trackAvatar(const LLAvatarListEntry* entry);
+
 	/**
 	 * @brief Handler for the "refresh" button click.
 	 * I am unsure whether this is actually necessary at the time.
@@ -261,40 +302,38 @@ private:
 	 * @param userdata Pointer to user data (LLFloaterAvatarList instance)
 	 */
 
-	static void onClickProfile(void *userdata);
-	static void onClickIM(void *userdata);
-	static void onClickTeleportOffer(void *userdata);
-	static void onClickTrack(void *userdata);
-	static void onClickMark(void *userdata);
-	static void onClickFocus(void *userdata);
+	void onClickIM();
+	void onClickTeleportOffer();
+	void onClickTrack();
+	void onClickMute();
+	void onClickFocus();
+	void onClickGetKey();
 
-	static void onClickPrevInList(void *userdata);
-	static void onClickNextInList(void *userdata);
-	static void onClickPrevMarked(void *userdata);
-	static void onClickNextMarked(void *userdata);
-	static void onClickGetKey(void *userdata);
+	void onSelectName();
+	void onCommitUpdateRate();
 
-	static void onClickFreeze(void *userdata);
-	static void onClickEject(void *userdata);
-	static void onClickMute(void *userdata);
-	static void onClickAR(void *userdata);
-	static void onClickTeleport(void *userdata);
-	static void onClickEjectFromEstate(void *userdata);
+	/**
+	 * @brief These callbacks fire off notifications, which THEN fire the related callback* functions.
+	 */
+	void onClickFreeze();
+	void onClickEject();
+	void onClickEjectFromEstate();
+	void onClickBanFromEstate();
+	void onAvatarSortingChanged();
 
+	/**
+	 * @brief Called via notification feedback.
+	 */
 	static void callbackFreeze(const LLSD& notification, const LLSD& response);
 	static void callbackEject(const LLSD& notification, const LLSD& response);
-	static void callbackAR(void *userdata);
 	static void callbackEjectFromEstate(const LLSD& notification, const LLSD& response);
+	static void callbackBanFromEstate(const LLSD& notification, const LLSD& response);
 
-	static void onSelectName(LLUICtrl*, void *userdata);
-
-	static void onCommitUpdateRate(LLUICtrl*, void *userdata);
-	static void onClickSendKeys(void *userdata);
 	static bool onConfirmRadarChatKeys(const LLSD& notification, const LLSD& response );
 
 	static void callbackIdle(void *userdata);
 
-	void doCommand(avlist_command_t cmd);
+	void doCommand(avlist_command_t cmd, bool single = false);
 
 	/**
 	 * @brief Cleanup avatar list, removing dead entries from it.
@@ -303,28 +342,28 @@ private:
 	 * to do something to them.
 	 */
 	void expireAvatarList();
+	void updateAvatarSorting();
 
 private:
 	/**
 	 * @brief Pointer to the avatar scroll list
 	 */
 	LLScrollListCtrl*			mAvatarList;
-	std::map<LLUUID, LLAvatarListEntry>	mAvatars;
+	av_list_t	mAvatars;
+	bool		mDirtyAvatarSorting;
 
 	/**
 	 * @brief TRUE when Updating
 	 */
-	BOOL mUpdate;
+	const LLCachedControl<bool> mUpdate;
 
 	/**
 	 * @brief Update rate (if min frames per update)
 	 */
 	U32 mUpdateRate;
-	
-	void refreshTracker();
 
 	// tracking data
-	BOOL mTracking;			// Tracking ?
+	bool mTracking;			// Tracking ?
 	LLUUID mTrackedAvatar;		// Who we are tracking
 
 	/**

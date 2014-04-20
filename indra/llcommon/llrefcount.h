@@ -27,10 +27,13 @@
 #define LLREFCOUNT_H
 
 #include <boost/noncopyable.hpp>
+#include "llpreprocessor.h"			// LL_COMMON_API
+#include "stdtypes.h"				// S32
+#include "llerror.h"				// llassert
 
 #define LL_REF_COUNT_DEBUG 0
 #if LL_REF_COUNT_DEBUG
-class LLMutex ;
+#include "llthread.h"			// LLMutexRootPool
 #endif
 
 //----------------------------------------------------------------------------
@@ -80,8 +83,8 @@ private:
 	mutable S32	mRef; 
 
 #if LL_REF_COUNT_DEBUG
-	LLMutex*  mMutexp ;
-	mutable U32  mLockedThreadID ;
+	mutable LLMutexRootPool mMutex ;
+	mutable AIThreadID mLockedThreadID ;
 	mutable BOOL mCrashAtUnlock ; 
 #endif
 };

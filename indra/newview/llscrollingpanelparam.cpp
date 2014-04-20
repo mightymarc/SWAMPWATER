@@ -77,9 +77,8 @@ LLScrollingPanelParam::LLScrollingPanelParam( const std::string& name,
 		mHintMin->setAllowsUpdates( FALSE );
 		mHintMax->setAllowsUpdates( FALSE );
 
-		// *TODO::translate
-		std::string min_name = param->getMinDisplayName();
-		std::string max_name = param->getMaxDisplayName();
+		std::string min_name = LLTrans::getString(param->getMinDisplayName());
+		std::string max_name = LLTrans::getString(param->getMaxDisplayName());
 		childSetValue("min param text", min_name);
 		childSetValue("max param text", max_name);
 		mLess = getChild<LLButton>("less");
@@ -148,7 +147,7 @@ void LLScrollingPanelParam::setVisible( BOOL visible )
 
 void LLScrollingPanelParam::draw()
 {
-	if( !mWearable || gFloaterCustomize->isMinimized() )
+	if( !mWearable || !LLFloaterCustomize::instanceExists() || LLFloaterCustomize::getInstance()->isMinimized() )
 	{
 		return;
 	}
@@ -166,28 +165,28 @@ void LLScrollingPanelParam::draw()
 	// Draw the hints over the "less" and "more" buttons.
 	if(mHintMin)
 	{
-		gGL.pushMatrix();
+		gGL.pushUIMatrix();
 		{
 			const LLRect& r = mHintMin->getRect();
 			F32 left = (F32)(r.mLeft + BTN_BORDER);
 			F32 bot  = (F32)(r.mBottom + BTN_BORDER);
-			gGL.translatef(left, bot, 0.f);
+			gGL.translateUI(left, bot, 0.f);
 			mHintMin->draw();
 		}
-		gGL.popMatrix();
+		gGL.popUIMatrix();
 	}
 
 	if(mHintMax)
 	{
-		gGL.pushMatrix();
+		gGL.pushUIMatrix();
 		{
 			const LLRect& r = mHintMax->getRect();
 			F32 left = (F32)(r.mLeft + BTN_BORDER);
 			F32 bot  = (F32)(r.mBottom + BTN_BORDER);
-			gGL.translatef(left, bot, 0.f);
+			gGL.translateUI(left, bot, 0.f);
 			mHintMax->draw();
 		}
-		gGL.popMatrix();
+		gGL.popUIMatrix();
 	}
 
 
@@ -270,7 +269,7 @@ void LLScrollingPanelParam::onHintHeldDown( bool max )
 				&& new_percent < slider->getMaxValue())
 			{
 				mWearable->setVisualParamWeight(param->getID(), new_weight, FALSE);
-				mWearable->writeToAvatar();
+				mWearable->writeToAvatar(gAgentAvatarp);
 				gAgentAvatarp->updateVisualParams();
 
 				slider->setValue( weightToPercent( new_weight ) );
@@ -309,7 +308,7 @@ void LLScrollingPanelParam::onHintMouseUp( bool max )
 						&& new_percent < slider->getMaxValue())
 					{
 						mWearable->setVisualParamWeight(param->getID(), new_weight, FALSE);
-						mWearable->writeToAvatar();
+						mWearable->writeToAvatar(gAgentAvatarp);
 						slider->setValue( weightToPercent( new_weight ) );
 					}
 				}

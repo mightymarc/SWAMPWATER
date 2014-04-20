@@ -29,24 +29,23 @@
  */
 
 #include "linden_common.h"
+#if LL_WINDOWS
+#include <winsock2.h>
+#include <windows.h>
+#include <shlobj.h>
+#endif
 #include "lltrans.h"
 #include "llpluginclassmedia.h"
 #include "llpluginmessageclasses.h"
 #include "llsdserialize.h"
 #include "aifilepicker.h"
+#include "lldir.h"
 #if LL_WINDOWS
 #include "llviewerwindow.h"
 #endif
 #if LL_GTK && LL_X11
 #include "llwindowsdl.h"
 #endif
-
-enum filepicker_state_type {
-	AIFilePicker_initialize_plugin = AIStateMachine::max_state,
-	AIFilePicker_plugin_running,
-	AIFilePicker_canceled,
-	AIFilePicker_done
-};
 
 char const* AIFilePicker::state_str_impl(state_type run_state) const
 {
@@ -57,10 +56,15 @@ char const* AIFilePicker::state_str_impl(state_type run_state) const
 		AI_CASE_RETURN(AIFilePicker_canceled);
 		AI_CASE_RETURN(AIFilePicker_done);
 	}
+	llassert(false);
 	return "UNKNOWN STATE";
 }
 
-AIFilePicker::AIFilePicker(void) : mPluginManager(NULL), mAutoKill(false), mCanceled(false)
+AIFilePicker::AIFilePicker(CWD_ONLY(bool debug)) :
+#if defined(CWDEBUG) || defined(DEBUG_CURLIO)
+	AIStateMachine(debug),
+#endif
+	mPluginManager(NULL), mCanceled(false)
 {
 }
 
@@ -99,13 +103,22 @@ std::string AIFilePicker::get_folder(std::string const& default_path, std::strin
 	else
 	{
 		// This is the last resort when all else failed. Open the file chooser in directory 'home'.
+		std::string home;
 #if LL_WINDOWS
-		char const* envname = "USERPROFILE";
+		WCHAR w_home[MAX_PATH];
+		HRESULT hr = ::SHGetFolderPath(NULL, CSIDL_PERSONAL, NULL, SHGFP_TYPE_CURRENT, w_home);
+		if(hr == S_OK) {
+			home = utf16str_to_utf8str(w_home);
+		}
 #else
 		char const* envname = "HOME";
+		char const* t_home = getenv(envname);
+		if (t_home)
+		{
+			home.assign(t_home);
+		}
 #endif
-		char const* home = getenv(envname);
-		if (!home || home[0] == '\0')
+		if(home.empty())
 		{
 #if LL_WINDOWS
 			// On windows, the filepicker window won't pop up at all if we pass an empty string.
@@ -114,12 +127,12 @@ std::string AIFilePicker::get_folder(std::string const& default_path, std::strin
 			home = "/";
 #endif
 			LL_DEBUGS("Plugin") << "context \"" << context << "\" not found, default_path empty, context \"savefile\" not found "
-			  "and environment variable \"$" << envname << "\" empty! Returning \"" << home << "\"." << LL_ENDL;
+			  "and $HOME or CSIDL_PERSONAL is empty! Returning \"" << home << "\"." << LL_ENDL;
 		}
 		else
 		{
 			LL_DEBUGS("Plugin") << "context \"" << context << "\" not found, default_path empty and context \"savefile\" not found. "
-			  "Returning environment variable \"$" << envname << "\" (" << home << ")." << LL_ENDL;
+			  "Returning $HOME or CSIDL_PERSONAL (" << home << ")." << LL_ENDL;
 		}
 		return home;
 	}
@@ -161,6 +174,18 @@ void AIFilePicker::open(ELoadFilter filter, std::string const& default_path, std
 	  case FFLOAD_RAW:
 		  mFilter = "raw";
 		  break;
+	  case FFLOAD_MODEL:
+		  mFilter = "model";
+		  break;
+	  case FFLOAD_COLLADA:
+		  mFilter = "collada";
+		  break;
+	  case FFLOAD_SCRIPT:
+		  mFilter = "script";
+		  break;
+	  case FFLOAD_DICTIONARY:
+		  mFilter = "dictionary";
+		  break;
 	  case FFLOAD_INVGZ:
 		  mFilter = "invgz";
 		  break;
@@ -175,9 +200,26 @@ void AIFilePicker::open(ELoadFilter filter, std::string const& default_path, std
 
 void AIFilePicker::open(std::string const& filename, ESaveFilter filter, std::string const& default_path, std::string const& context)
 {
-	mFilename = filename;
+	mFilename = LLDir::getScrubbedFileName(filename);
 	mContext = context;
 	mFolder = AIFilePicker::get_folder(default_path, context);
+	// If the basename of filename ends on "?000", then check if a file with that name exists and if so, increment the number.
+	std::string basename = gDirUtilp->getBaseFileName(filename, true);
+	size_t len = basename.size();
+	if (len >= 4 && basename.substr(len - 4) == "?000")
+	{
+	  basename = LLDir::getScrubbedFileName(basename.substr(0, len - 4));
+	  std::string extension = gDirUtilp->getExtension(mFilename);
+	  for (int n = 0;; ++n)
+	  {
+		mFilename = llformat("%s_%03u.%s", basename.c_str(), n, extension.c_str());
+	    std::string fullpath = mFolder + gDirUtilp->getDirDelimiter() + mFilename;
+		if (n == 999 || !gDirUtilp->fileExists(fullpath))
+		{
+		  break;
+		}
+	  }
+	}
 	mOpenType = save;
 	switch(filter)
 	{
@@ -234,8 +276,8 @@ void AIFilePicker::open(std::string const& filename, ESaveFilter filter, std::st
 		case FFSAVE_GESTURE:
 			mFilter = "gesture";
 			break;
-		case FFSAVE_LSL:
-			mFilter = "lsl";
+		case FFSAVE_SCRIPT:
+			mFilter = "script";
 			break;
 		case FFSAVE_SHAPE:
 			mFilter = "shape";
@@ -291,6 +333,9 @@ void AIFilePicker::open(std::string const& filename, ESaveFilter filter, std::st
 		case FFSAVE_PHYSICS:
 			mFilter = "physics";
 			break;
+		case FFSAVE_IMAGE:
+			mFilter = "image";
+			break;
 	}
 }
 
@@ -318,7 +363,7 @@ void AIFilePicker::initialize_impl(void)
 	set_state(AIFilePicker_initialize_plugin);
 }
 
-void AIFilePicker::multiplex_impl(void)
+void AIFilePicker::multiplex_impl(state_type run_state)
 {
 	mPluginManager->update();										// Give the plugin some CPU for it's messages.
 	LLPluginClassBasic* plugin = mPluginManager->getPlugin();
@@ -328,12 +373,13 @@ void AIFilePicker::multiplex_impl(void)
 		abort();
 		return;
 	}
-	switch (mRunState)
+	switch (run_state)
 	{
 		case AIFilePicker_initialize_plugin:
 		{
 			if (!plugin->isPluginRunning())
 			{
+				yield();
 				break;												// Still initializing.
 			}
 
@@ -399,12 +445,9 @@ void AIFilePicker::multiplex_impl(void)
 			// Store folder of first filename as context.
 			AIFilePicker::store_folder(mContext, getFolder());
 			finish();
+			break;
 		}
 	}
-}
-
-void AIFilePicker::abort_impl(void)
-{
 }
 
 void AIFilePicker::finish_impl(void)
@@ -415,12 +458,6 @@ void AIFilePicker::finish_impl(void)
 		mPluginManager = NULL;
 	}
 	mFilter.clear();		// Check that open is called before calling run (again).
-	if (mAutoKill)
-	{
-		// The default behavior is to delete the plugin. This can be overridden in
-		// the callback by calling run() again.
-		kill();
-	}
 }
 
 // This function is called when a new message is received from the plugin.

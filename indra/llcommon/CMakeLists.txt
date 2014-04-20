@@ -7,24 +7,30 @@ include(00-Common)
 include(LLCommon)
 include(APR)
 include(Linking)
+include(GoogleBreakpad)
 
 include_directories(
     ${EXPAT_INCLUDE_DIRS}
     ${LLCOMMON_INCLUDE_DIRS}
     ${ZLIB_INCLUDE_DIRS}
+    ${BREAKPAD_INCLUDE_DIRECTORIES}
     )
 
 set(llcommon_SOURCE_FILES
-	aiframetimer.cpp
-	imageids.cpp
+    aialert.cpp
+    aifile.cpp
+    aiframetimer.cpp
+    aithreadid.cpp
+    imageids.cpp
     indra_constants.cpp
+    ll_template_cast.h
     llallocator.cpp
     llallocator_heap_profile.cpp
     llapp.cpp
     llapr.cpp
     llaprpool.cpp
     llassettype.cpp
-	llavatarname.cpp
+    llavatarname.cpp
     llbase32.cpp
     llbase64.cpp
     llcommon.cpp
@@ -53,34 +59,35 @@ set(llcommon_SOURCE_FILES
     llformat.cpp
     llframetimer.cpp
     llheartbeat.cpp
-    llinstancetracker.cpp
     llindraconfigfile.cpp
+    llinitparam.cpp
+    llinstancetracker.cpp
     llliveappconfig.cpp
     lllivefile.cpp
     lllog.cpp
     llmd5.cpp
     llmemory.cpp
     llmemorystream.cpp
-    llmemtype.cpp
     llmetrics.cpp
     llmortician.cpp
     lloptioninterface.cpp
-    llptrto.cpp 
     llprocesslauncher.cpp
     llprocessor.cpp
+    llptrto.cpp 
     llqueuedthread.cpp
     llrand.cpp
     llrefcount.cpp
     llrun.cpp
     llscopedvolatileaprpool.h
     llsd.cpp
+    llsdparam.cpp
     llsdserialize.cpp
     llsdserialize_xml.cpp
     llsdutil.cpp
     llsecondlifeurls.cpp
     llsingleton.cpp
-    llstat.cpp
     llstacktrace.cpp
+    llstat.cpp
     llstreamtools.cpp
     llstring.cpp
     llstringtable.cpp
@@ -91,7 +98,6 @@ set(llcommon_SOURCE_FILES
     lluri.cpp
     lluuid.cpp
     llworkerthread.cpp
-    ll_template_cast.h
     metaclass.cpp
     metaproperty.cpp
     reflective.cpp
@@ -102,7 +108,11 @@ set(llcommon_SOURCE_FILES
 set(llcommon_HEADER_FILES
     CMakeLists.txt
 
+    aialert.h
+    aifile.h
     aiframetimer.h
+    airecursive.h
+    aithreadid.h
     aithreadsafe.h
     bitpack.h
     ctype_workaround.h
@@ -112,10 +122,10 @@ set(llcommon_HEADER_FILES
     linden_common.h
     linked_lists.h
     llaccountingcost.h
+    llalignedarray.h
+    llagentconstants.h
     llallocator.h
     llallocator_heap_profile.h
-    llagentconstants.h
-    llavatarname.h
     llapp.h
     llapr.h
     llaprpool.h
@@ -123,6 +133,7 @@ set(llcommon_HEADER_FILES
     llassoclist.h
     llatomic.h
     llavatarconstants.h
+    llavatarname.h
     llbase32.h
     llbase64.h
     llboost.h
@@ -138,8 +149,8 @@ set(llcommon_HEADER_FILES
     lldarrayptr.h
     lldate.h
     lldefs.h
-    lldependencies.h
     lldeleteutils.h
+    lldependencies.h
     lldepthstack.h
     lldictionary.h
     lldlinked.h
@@ -154,11 +165,11 @@ set(llcommon_HEADER_FILES
     lleventapi.h
     lleventcoro.h
     lleventdispatcher.h
+    lleventemitter.h
     lleventfilter.h
     llevents.h
-    lleventemitter.h
-    llextendedstatus.h
     lleventtimer.h
+    llextendedstatus.h
     llfasttimer.h
     llfasttimer_class.h
     llfile.h
@@ -167,12 +178,14 @@ set(llcommon_HEADER_FILES
     llfoldertype.h
     llformat.h
     llframetimer.h
+    llhandle.h
     llhash.h
     llheartbeat.h
     llhttpstatuscodes.h
     llindexedqueue.h
-    llinstancetracker.h
     llindraconfigfile.h
+    llinitparam.h
+    llinstancetracker.h
     llkeythrottle.h
     lllinkedqueue.h
     llliveappconfig.h
@@ -184,7 +197,6 @@ set(llcommon_HEADER_FILES
     llmd5.h
     llmemory.h
     llmemorystream.h
-    llmemtype.h
     llmetrics.h
     llmortician.h
     llnametable.h
@@ -200,10 +212,11 @@ set(llcommon_HEADER_FILES
     llqueuedthread.h
     llrand.h
     llrefcount.h
+    llregistry.h
     llrun.h
-    llrefcount.h
     llsafehandle.h
     llsd.h
+    llsdparam.h
     llsdserialize.h
     llsdserialize_xml.h
     llsdutil.h
@@ -212,6 +225,7 @@ set(llcommon_HEADER_FILES
     llsingleton.h
     llskiplist.h
     llskipmap.h
+    llsortedvector.h
     llstack.h
     llstacktrace.h
     llstat.h
@@ -221,14 +235,16 @@ set(llcommon_HEADER_FILES
     llstrider.h
     llstring.h
     llstringtable.h
+    llstaticstringtable.h
     llsys.h
     llthread.h
     llthreadsafequeue.h
     lltimer.h
     lltreeiterators.h
+    lltypeinfolookup.h
     lluri.h
     lluuid.h
-    lluuidhashmap.h
+    sguuidhash.h
     llversionviewer.h.in
     llworkerthread.h
     metaclass.h
@@ -250,26 +266,23 @@ set(llcommon_HEADER_FILES
 set_source_files_properties(${llcommon_HEADER_FILES}
                             PROPERTIES HEADER_FILE_ONLY TRUE)
 
+list(APPEND llcommon_SOURCE_FILES ${cwdebug_SOURCE_FILES})
 list(APPEND llcommon_SOURCE_FILES ${llcommon_HEADER_FILES})
 
 add_library (llcommon SHARED ${llcommon_SOURCE_FILES})
 add_dependencies(llcommon prepare)
 target_link_libraries(
     llcommon
+    ${BREAKPAD_EXCEPTION_HANDLER_LIBRARIES}
     ${APRUTIL_LIBRARIES}
     ${APR_LIBRARIES}
     ${EXPAT_LIBRARIES}
     ${ZLIB_LIBRARIES}
     ${WINDOWS_LIBRARIES}
-    ${BOOST_REGEX_LIBRARY}
-    ${CWDEBUG_LIBRARIES}
+    ${Boost_CONTEXT_LIBRARY}
+    ${Boost_REGEX_LIBRARY}
     ${CORESERVICES_LIBRARY}
     )
-
-if (LINUX)
-    # When linking with llcommon later, we do not want to link with cwdebug.a again.
-    set_property(TARGET llcommon PROPERTY LINK_INTERFACE_LIBRARIES "-lapr-1 -laprutil-1 -lz")
-endif (LINUX)
 
 if (DARWIN)
     # Don't embed a full path in the library's install name

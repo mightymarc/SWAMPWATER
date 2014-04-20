@@ -2,31 +2,25 @@
  * @file llviewershadermgr.h
  * @brief Viewer Shader Manager
  *
- * $LicenseInfo:firstyear=2001&license=viewergpl$
- * 
- * Copyright (c) 2001-2009, Linden Research, Inc.
- * 
+ * $LicenseInfo:firstyear=2001&license=viewerlgpl$
  * Second Life Viewer Source Code
- * The source code in this file ("Source Code") is provided by Linden Lab
- * to you under the terms of the GNU General Public License, version 2.0
- * ("GPL"), unless you have obtained a separate licensing agreement
- * ("Other License"), formally executed by you and Linden Lab.  Terms of
- * the GPL can be found in doc/GPL-license.txt in this distribution, or
- * online at http://secondlifegrid.net/programs/open_source/licensing/gplv2
+ * Copyright (C) 2010, Linden Research, Inc.
  * 
- * There are special exceptions to the terms and conditions of the GPL as
- * it is applied to this Source Code. View the full text of the exception
- * in the file doc/FLOSS-exception.txt in this software distribution, or
- * online at
- * http://secondlifegrid.net/programs/open_source/licensing/flossexception
+ * This library is free software; you can redistribute it and/or
+ * modify it under the terms of the GNU Lesser General Public
+ * License as published by the Free Software Foundation;
+ * version 2.1 of the License only.
  * 
- * By copying, modifying or distributing this software, you acknowledge
- * that you have read and understood your obligations described above,
- * and agree to abide by those obligations.
+ * This library is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+ * Lesser General Public License for more details.
  * 
- * ALL LINDEN LAB SOURCE CODE IS PROVIDED "AS IS." LINDEN LAB MAKES NO
- * WARRANTIES, EXPRESS, IMPLIED OR OTHERWISE, REGARDING ITS ACCURACY,
- * COMPLETENESS OR PERFORMANCE.
+ * You should have received a copy of the GNU Lesser General Public
+ * License along with this library; if not, write to the Free Software
+ * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301  USA
+ * 
+ * Linden Research, Inc., 945 Battery Street, San Francisco, CA  94111  USA
  * $/LicenseInfo$
  */
 
@@ -34,6 +28,9 @@
 #define LL_VIEWER_SHADER_MGR_H
 
 #include "llshadermgr.h"
+#include "llmaterial.h"
+
+#define LL_DEFERRED_MULTI_LIGHT_COUNT 16
 
 class LLViewerShaderMgr: public LLShaderMgr
 {
@@ -79,57 +76,6 @@ public:
 		SHADER_TRANSFORM,
 		SHADER_COUNT
 	};
-
-	typedef enum
-	{
-		SHINY_ORIGIN = END_RESERVED_UNIFORMS
-	} eShinyUniforms;
-
-	typedef enum
-	{
-		WATER_SCREENTEX = END_RESERVED_UNIFORMS,
-		WATER_SCREENDEPTH,
-		WATER_REFTEX,
-		WATER_EYEVEC,
-		WATER_TIME,
-		WATER_WAVE_DIR1,
-		WATER_WAVE_DIR2,
-		WATER_LIGHT_DIR,
-		WATER_SPECULAR,
-		WATER_SPECULAR_EXP,
-		WATER_FOGCOLOR,
-		WATER_FOGDENSITY,
-		WATER_REFSCALE,
-		WATER_WATERHEIGHT,
-	} eWaterUniforms;
-
-	typedef enum
-	{
-		WL_CAMPOSLOCAL = END_RESERVED_UNIFORMS,
-		WL_WATERHEIGHT
-	} eWLUniforms;
-
-	typedef enum
-	{
-		TERRAIN_DETAIL0 = END_RESERVED_UNIFORMS,
-		TERRAIN_DETAIL1,
-		TERRAIN_DETAIL2,
-		TERRAIN_DETAIL3,
-		TERRAIN_ALPHARAMP
-	} eTerrainUniforms;
-
-	typedef enum
-	{
-		GLOW_DELTA = END_RESERVED_UNIFORMS
-	} eGlowUniforms;
-
-	typedef enum
-	{
-		AVATAR_MATRIX = END_RESERVED_UNIFORMS,
-		AVATAR_WIND,
-		AVATAR_SINWAVE,
-		AVATAR_GRAVITY,
-	} eAvatarUniforms;
 
 	// simple model of forward iterator
 	// http://www.sgi.com/tech/stl/ForwardIterator.html
@@ -229,12 +175,21 @@ inline bool operator != (LLViewerShaderMgr::shader_iter const & a, LLViewerShade
 
 extern LLVector4			gShinyOrigin;
 
+//For arrays, since default ctor must be used for them.
+template <LLViewerShaderMgr::EShaderClass type>
+class LLGLSLShaderArray : public LLGLSLShader
+{
+public:
+	LLGLSLShaderArray() : LLGLSLShader(type)	{};
+};
+
 //transform shaders
 extern LLGLSLShader			gTransformPositionProgram;
 extern LLGLSLShader			gTransformTexCoordProgram;
 extern LLGLSLShader			gTransformNormalProgram;
 extern LLGLSLShader			gTransformColorProgram;
-extern LLGLSLShader			gTransformBinormalProgram;
+extern LLGLSLShader			gTransformTangentProgram;
+
 //utility shaders
 extern LLGLSLShader			gOcclusionProgram;
 extern LLGLSLShader			gOcclusionCubeProgram;
@@ -244,7 +199,8 @@ extern LLGLSLShader			gSplatTextureRectProgram;
 extern LLGLSLShader			gGlowCombineFXAAProgram;
 extern LLGLSLShader			gDebugProgram;
 extern LLGLSLShader			gClipProgram;
-extern LLGLSLShader			gAlphaMaskProgram;
+extern LLGLSLShader			gDownsampleDepthProgram;
+extern LLGLSLShader			gDownsampleDepthRectProgram;
 
 //output tex0[tc0] + tex1[tc1]
 extern LLGLSLShader			gTwoTextureAddProgram;
@@ -253,6 +209,7 @@ extern LLGLSLShader			gOneTextureNoColorProgram;
 
 //object shaders
 extern LLGLSLShader			gObjectSimpleProgram;
+extern LLGLSLShader			gObjectSimpleImpostorProgram;
 extern LLGLSLShader			gObjectPreviewProgram;
 extern LLGLSLShader			gObjectSimpleAlphaMaskProgram;
 extern LLGLSLShader			gObjectSimpleWaterProgram;
@@ -316,6 +273,8 @@ extern LLGLSLShader			gGlowExtractProgram;
 
 //interface shaders
 extern LLGLSLShader			gHighlightProgram;
+extern LLGLSLShader			gHighlightNormalProgram;
+extern LLGLSLShader			gHighlightSpecularProgram;
 
 // avatar shader handles
 extern LLGLSLShader			gAvatarProgram;
@@ -336,6 +295,7 @@ extern LLGLSLShader			gPostGaussianBlurProgram;
 // Deferred rendering shaders
 extern LLGLSLShader			gDeferredImpostorProgram;
 extern LLGLSLShader			gDeferredWaterProgram;
+extern LLGLSLShader			gDeferredUnderWaterProgram;
 extern LLGLSLShader			gDeferredDiffuseProgram;
 extern LLGLSLShader			gDeferredDiffuseAlphaMaskProgram;
 extern LLGLSLShader			gDeferredNonIndexedDiffuseAlphaMaskProgram;
@@ -349,13 +309,14 @@ extern LLGLSLShader			gDeferredTerrainProgram;
 extern LLGLSLShader			gDeferredTreeProgram;
 extern LLGLSLShader			gDeferredTreeShadowProgram;
 extern LLGLSLShader			gDeferredLightProgram;
-extern LLGLSLShader			gDeferredMultiLightProgram;
+extern LLGLSLShaderArray<LLViewerShaderMgr::SHADER_DEFERRED>			gDeferredMultiLightProgram[LL_DEFERRED_MULTI_LIGHT_COUNT];
 extern LLGLSLShader			gDeferredSpotLightProgram;
 extern LLGLSLShader			gDeferredMultiSpotLightProgram;
 extern LLGLSLShader			gDeferredSunProgram;
 extern LLGLSLShader			gDeferredBlurLightProgram;
 extern LLGLSLShader			gDeferredAvatarProgram;
 extern LLGLSLShader			gDeferredSoftenProgram;
+extern LLGLSLShader			gDeferredSoftenWaterProgram;
 extern LLGLSLShader			gDeferredShadowProgram;
 extern LLGLSLShader			gDeferredShadowCubeProgram;
 extern LLGLSLShader			gDeferredShadowAlphaMaskProgram;
@@ -364,15 +325,27 @@ extern LLGLSLShader			gDeferredCoFProgram;
 extern LLGLSLShader			gDeferredDoFCombineProgram;
 extern LLGLSLShader			gFXAAProgram;
 extern LLGLSLShader			gDeferredPostNoDoFProgram;
+extern LLGLSLShader			gDeferredPostGammaCorrectProgram;
 extern LLGLSLShader			gDeferredAvatarShadowProgram;
 extern LLGLSLShader			gDeferredAttachmentShadowProgram;
 extern LLGLSLShader			gDeferredAlphaProgram;
+extern LLGLSLShader			gDeferredAlphaImpostorProgram;
 extern LLGLSLShader			gDeferredFullbrightProgram;
+extern LLGLSLShader			gDeferredFullbrightAlphaMaskProgram;
+extern LLGLSLShader			gDeferredAlphaWaterProgram;
+extern LLGLSLShader			gDeferredFullbrightWaterProgram;
+extern LLGLSLShader			gDeferredFullbrightAlphaMaskWaterProgram;
 extern LLGLSLShader			gDeferredEmissiveProgram;
 extern LLGLSLShader			gDeferredAvatarAlphaProgram;
 extern LLGLSLShader			gDeferredWLSkyProgram;
 extern LLGLSLShader			gDeferredWLCloudProgram;
 extern LLGLSLShader			gDeferredStarProgram;
+extern LLGLSLShader			gDeferredFullbrightShinyProgram;
+extern LLGLSLShader			gDeferredSkinnedFullbrightShinyProgram;
+extern LLGLSLShader			gDeferredSkinnedFullbrightProgram;
 extern LLGLSLShader			gNormalMapGenProgram;
 
+// Deferred materials shaders
+extern LLGLSLShaderArray<LLViewerShaderMgr::SHADER_DEFERRED>			gDeferredMaterialProgram[LLMaterial::SHADER_COUNT*2];
+extern LLGLSLShaderArray<LLViewerShaderMgr::SHADER_DEFERRED>			gDeferredMaterialWaterProgram[LLMaterial::SHADER_COUNT*2];
 #endif

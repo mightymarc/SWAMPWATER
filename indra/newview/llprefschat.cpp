@@ -55,6 +55,7 @@ private:
 	S32	mChatSize;
 	F32	mChatPersist;
 	S32	mChatMaxLines;
+	S32	mChatBottomOffset;
 	LLColor4 mSystemChatColor;
 	LLColor4 mUserChatColor;
 	LLColor4 mAgentChatColor;
@@ -73,8 +74,6 @@ private:
 	BOOL mScriptErrorAsChat;
 	F32	mConsoleOpacity;
 	F32	mBubbleOpacity;
-	std::string mTranslateLanguage;
-	BOOL mTranslateChat;
 };
 
 
@@ -109,8 +108,6 @@ LLPrefsChatImpl::LLPrefsChatImpl()
 	childSetValue("play_typing_animation", gSavedSettings.getBOOL("PlayTypingAnim"));
 	childSetValue("console_opacity", gSavedSettings.getF32("ConsoleBackgroundOpacity"));
 	childSetValue("bubble_chat_opacity", gSavedSettings.getF32("ChatBubbleOpacity"));
-	childSetValue("translate_language_combobox", 	gSavedSettings.getString("TranslateLanguage"));
-	childSetValue("translate_chat", 	gSavedSettings.getBOOL("TranslateChat"));
 }
 
 void LLPrefsChatImpl::refreshValues()
@@ -119,6 +116,7 @@ void LLPrefsChatImpl::refreshValues()
 	mChatSize = gSavedSettings.getS32("ChatFontSize");
 	mChatPersist = gSavedSettings.getF32("ChatPersistTime");
 	mChatMaxLines = gSavedSettings.getS32("ConsoleMaxLines");
+	mChatBottomOffset = gSavedSettings.getS32("ConsoleBottomOffset");
 	mSystemChatColor = gSavedSettings.getColor4("SystemChatColor");
 	mUserChatColor = gSavedSettings.getColor4("UserChatColor");
 	mAgentChatColor = gSavedSettings.getColor4("AgentChatColor");
@@ -137,8 +135,6 @@ void LLPrefsChatImpl::refreshValues()
 	mPlayTypingAnim = gSavedSettings.getBOOL("PlayTypingAnim"); 
 	mConsoleOpacity = gSavedSettings.getF32("ConsoleBackgroundOpacity");
 	mBubbleOpacity = gSavedSettings.getF32("ChatBubbleOpacity");
-	mTranslateLanguage = gSavedSettings.getString("TranslateLanguage");
-	mTranslateChat = gSavedSettings.getBOOL("TranslateChat");
 }
 
 void LLPrefsChatImpl::cancel()
@@ -146,6 +142,7 @@ void LLPrefsChatImpl::cancel()
 	gSavedSettings.setS32("ChatFontSize", mChatSize);
 	gSavedSettings.setF32("ChatPersistTime", mChatPersist);
 	gSavedSettings.setS32("ConsoleMaxLines", mChatMaxLines);
+	gSavedSettings.setS32("ConsoleBottomOffset", mChatBottomOffset);
 	gSavedSettings.setColor4("SystemChatColor", mSystemChatColor);
 	gSavedSettings.setColor4("UserChatColor", mUserChatColor);
 	gSavedSettings.setColor4("AgentChatColor", mAgentChatColor);
@@ -164,8 +161,6 @@ void LLPrefsChatImpl::cancel()
 	gSavedSettings.setBOOL("PlayTypingAnim", mPlayTypingAnim); 
 	gSavedSettings.setF32("ConsoleBackgroundOpacity", mConsoleOpacity);
 	gSavedSettings.setF32("ChatBubbleOpacity", mBubbleOpacity);	
-	gSavedSettings.setString("TranslateLanguage", mTranslateLanguage);	
-	gSavedSettings.setBOOL("TranslateChat", mTranslateChat);
 }
 
 void LLPrefsChatImpl::apply()
@@ -196,9 +191,6 @@ void LLPrefsChatImpl::apply()
 
 	gSavedSettings.setF32("ConsoleBackgroundOpacity", childGetValue("console_opacity").asReal());
 	gSavedSettings.setF32("ChatBubbleOpacity", childGetValue("bubble_chat_opacity").asReal());
-
-	gSavedSettings.setString("TranslateLanguage", childGetValue("translate_language_combobox"));
-	gSavedSettings.setBOOL("TranslateChat", childGetValue("translate_chat"));
 
 	refreshValues(); // member values become the official values and cancel becomes a no-op.
 }

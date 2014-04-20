@@ -2,36 +2,36 @@
  * @file llthread.h
  * @brief Base classes for thread, mutex and condition handling.
  *
- * $LicenseInfo:firstyear=2004&license=viewergpl$
- * 
- * Copyright (c) 2004-2009, Linden Research, Inc.
- * 
+ * $LicenseInfo:firstyear=2004&license=viewerlgpl$
  * Second Life Viewer Source Code
- * The source code in this file ("Source Code") is provided by Linden Lab
- * to you under the terms of the GNU General Public License, version 2.0
- * ("GPL"), unless you have obtained a separate licensing agreement
- * ("Other License"), formally executed by you and Linden Lab.  Terms of
- * the GPL can be found in doc/GPL-license.txt in this distribution, or
- * online at http://secondlifegrid.net/programs/open_source/licensing/gplv2
+ * Copyright (C) 2010, Linden Research, Inc.
  * 
- * There are special exceptions to the terms and conditions of the GPL as
- * it is applied to this Source Code. View the full text of the exception
- * in the file doc/FLOSS-exception.txt in this software distribution, or
- * online at
- * http://secondlifegrid.net/programs/open_source/licensing/flossexception
+ * This library is free software; you can redistribute it and/or
+ * modify it under the terms of the GNU Lesser General Public
+ * License as published by the Free Software Foundation;
+ * version 2.1 of the License only.
  * 
- * By copying, modifying or distributing this software, you acknowledge
- * that you have read and understood your obligations described above,
- * and agree to abide by those obligations.
+ * This library is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+ * Lesser General Public License for more details.
  * 
- * ALL LINDEN LAB SOURCE CODE IS PROVIDED "AS IS." LINDEN LAB MAKES NO
- * WARRANTIES, EXPRESS, IMPLIED OR OTHERWISE, REGARDING ITS ACCURACY,
- * COMPLETENESS OR PERFORMANCE.
+ * You should have received a copy of the GNU Lesser General Public
+ * License along with this library; if not, write to the Free Software
+ * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301  USA
+ * 
+ * Linden Research, Inc., 945 Battery Street, San Francisco, CA  94111  USA
  * $/LicenseInfo$
  */
 
 #ifndef LL_LLTHREAD_H
 #define LL_LLTHREAD_H
+
+#if LL_GNUC
+// Needed for is_main_thread() when compiling with optimization (relwithdebinfo).
+// It doesn't hurt to just always specify it though.
+#pragma interface
+#endif
 
 #include "llapp.h"
 #include "llapr.h"
@@ -39,23 +39,17 @@
 #include "apr_thread_cond.h"
 #include "llaprpool.h"
 #include "llatomic.h"
-
-#ifdef SHOW_ASSERT
-extern LL_COMMON_API bool is_main_thread(void);
-#define ASSERT_SINGLE_THREAD do { static apr_os_thread_t first_thread_id = apr_os_thread_current(); llassert(apr_os_thread_equal(first_thread_id, apr_os_thread_current())); } while(0)
-#else
-#define ASSERT_SINGLE_THREAD do { } while(0)
-#endif
+#include "aithreadid.h"
 
 class LLThread;
 class LLMutex;
 class LLCondition;
 
-#if LL_WINDOWS
-#define ll_thread_local __declspec(thread)
-#else
-#define ll_thread_local __thread
-#endif
+class LL_COMMON_API LLThreadLocalDataMember
+{
+public:
+	virtual ~LLThreadLocalDataMember() { };
+};
 
 class LL_COMMON_API LLThreadLocalData
 {
@@ -66,12 +60,22 @@ public:
 	// Thread-local memory pool.
 	LLAPRRootPool mRootPool;
 	LLVolatileAPRPool mVolatileAPRPool;
+	LLThreadLocalDataMember* mCurlMultiHandle;	// Initialized by AICurlMultiHandle::getInstance
+	char* mCurlErrorBuffer;						// NULL, or pointing to a buffer used by libcurl.
+	std::string mName;							// "main thread", or a copy of LLThread::mName.
 
 	static void init(void);
 	static void destroy(void* thread_local_data);
 	static void create(LLThread* pthread);
 	static LLThreadLocalData& tldata(void);
+
+private:
+	LLThreadLocalData(char const* name);
+	~LLThreadLocalData();
 };
+
+// Print to llerrs if the current thread is not the main thread.
+LL_COMMON_API void assert_main_thread();
 
 class LL_COMMON_API LLThread
 {
@@ -95,7 +99,6 @@ public:
 	bool isQuitting() const { return (QUITTING == mStatus); }
 	bool isStopped() const { return (STOPPED == mStatus); }
 	
-	static U32 currentID(); // Return ID of current thread
 	static S32 getCount() { return sCount; }	
 	static S32 getRunning() { return sRunning; }
 	static void yield(); // Static because it can be called by the main thread, which doesn't have an LLThread data structure.
@@ -119,10 +122,11 @@ public:
 	// this kicks off the apr thread
 	void start(void);
 
+	// Can be used to tell the thread we're not interested anymore and it should abort.
+	void setQuitting();
+	
 	// Return thread-local data for the current thread.
 	static LLThreadLocalData& tldata(void) { return LLThreadLocalData::tldata(); }
-
-	U32 getID() const { return mID; }
 
 private:
 	bool				mPaused;
@@ -136,16 +140,16 @@ protected:
 
 	apr_thread_t		*mAPRThreadp;
 	volatile EThreadStatus		mStatus;
-	U32					mID;
 	
 	friend void LLThreadLocalData::create(LLThread* threadp);
 	LLThreadLocalData*  mThreadLocalData;
 
-	void setQuitting();
-	
 	// virtual function overridden by subclass -- this will be called when the thread runs
 	virtual void run(void) = 0; 
 	
+	// This class is completely done (called from THREAD!).
+	virtual void terminated(void) { mStatus = STOPPED; }
+
 	// virtual predicate function -- returns true if the thread should wake up, false if it should sleep.
 	virtual bool runCondition(void);
 
@@ -165,6 +169,12 @@ protected:
 	// mRunCondition->unlock();
 };
 
+#ifdef SHOW_ASSERT
+#define ASSERT_SINGLE_THREAD do { static AIThreadID first_thread_id; llassert(first_thread_id.equals_current_thread()); } while(0)
+#else
+#define ASSERT_SINGLE_THREAD do { } while(0)
+#endif
+
 //============================================================================
 
 #define MUTEX_DEBUG (LL_DEBUG || LL_RELEASE_WITH_DEBUG_INFO)
@@ -180,32 +190,29 @@ protected:
 class LL_COMMON_API LLMutexBase
 {
 public:
-	typedef enum
-	{
-		NO_THREAD = 0xFFFFFFFF
-	} e_locking_thread;
-
 	LLMutexBase() ;
 	
 	void lock();		// blocks
 	void unlock();
 	// Returns true if lock was obtained successfully.
-	bool tryLock() { return !APR_STATUS_IS_EBUSY(apr_thread_mutex_trylock(mAPRMutexp)); }
+	bool tryLock();
 
-	// non-blocking, but does do a lock/unlock so not free
-	bool isLocked() { bool is_not_locked = tryLock(); if (is_not_locked) unlock(); return !is_not_locked; }
+	// Returns true if a call to lock() would block (returns false if self-locked()).
+	bool isLocked() const;
 
 	// Returns true if locked by this thread.
 	bool isSelfLocked() const;
-
-	// get ID of locking thread
-	U32 lockingThread() const { return mLockingThread; }
 
 protected:
 	// mAPRMutexp is initialized and uninitialized in the derived class.
 	apr_thread_mutex_t* mAPRMutexp;
 	mutable U32			mCount;
-	mutable U32			mLockingThread;
+	mutable AIThreadID	mLockingThread;
+
+private:
+	// Disallow copy construction and assignment.
+	LLMutexBase(LLMutexBase const&);
+	LLMutexBase& operator=(LLMutexBase const&);
 };
 
 class LL_COMMON_API LLMutex : public LLMutexBase
@@ -225,10 +232,6 @@ public:
 
 protected:
 	LLAPRPool mPool;
-private:
-	// Disable copy construction, as si teh bomb!!! -SG
-	LLMutex(const LLMutex&);
-	LLMutex& operator=(const LLMutex&);
 };
 
 #if APR_HAS_THREADS
@@ -289,7 +292,7 @@ private:
 	LLMutexBase* mMutex;
 };
 
-class AIRWLock
+class LL_COMMON_API AIRWLock
 {
 public:
 	AIRWLock(LLAPRPool& parent = LLThread::tldata().mRootPool) :
@@ -394,6 +397,43 @@ public:
 #endif
 };
 
+#if LL_DEBUG
+class LL_COMMON_API AINRLock
+{
+private:
+	int read_locked;
+	int write_locked;
+
+	mutable bool mAccessed;
+	mutable AIThreadID mTheadID;
+
+	void accessed(void) const
+	{
+	  if (!mAccessed)
+	  {
+		mAccessed = true;
+		mTheadID.reset();
+	  }
+	  else
+	  {
+		llassert_always(mTheadID.equals_current_thread());
+	  }
+	}
+
+public:
+	AINRLock(void) : read_locked(false), write_locked(false), mAccessed(false) { }
+
+	bool isLocked() const { return read_locked || write_locked; }
+
+	void rdlock(bool high_priority = false) { accessed(); ++read_locked; }
+	void rdunlock() { --read_locked; }
+	void wrlock() { llassert(!isLocked()); accessed(); ++write_locked; }
+	void wrunlock() { --write_locked; }
+	void wr2rdlock() { llassert(false); }
+	void rd2wrlock() { llassert(false); }
+};
+#endif
+
 //============================================================================
 
 void LLThread::lockData()
@@ -430,6 +470,7 @@ public:
 
 	void unref()
 	{
+		llassert(mRef > 0);
 		if (!--mRef) delete this;
 	}
 	S32 getNumRefs() const

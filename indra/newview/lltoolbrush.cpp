@@ -35,10 +35,10 @@
 #include "lltoolbrush.h"
 #include "lltoolselectland.h"
 
+// library headers
 #include "llgl.h"
 #include "llnotificationsutil.h"
 #include "llrender.h"
-
 #include "message.h"
 
 #include "llagent.h"
@@ -664,7 +664,7 @@ bool LLToolBrushLand::canTerraform(LLViewerRegion* regionp) const
 {
 	if (!regionp) return false;
 	if (regionp->canManageEstate()) return true;
-	return !(regionp->getRegionFlags() & REGION_FLAGS_BLOCK_TERRAFORM);
+	return !regionp->getRegionFlag(REGION_FLAGS_BLOCK_TERRAFORM);
 }
 
 // static

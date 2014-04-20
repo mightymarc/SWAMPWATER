@@ -4,20 +4,34 @@ project(llmessage)
 
 include(00-Common)
 include(LLCommon)
+include(AIStateMachine)
 include(LLMath)
 include(LLMessage)
 include(LLVFS)
+include(LLXML)
 
 include_directories (${CMAKE_CURRENT_SOURCE_DIR})
 
 include_directories(
     ${LLCOMMON_INCLUDE_DIRS}
+    ${AISTATEMACHINE_INCLUDE_DIRS}
     ${LLMATH_INCLUDE_DIRS}
     ${LLMESSAGE_INCLUDE_DIRS}
     ${LLVFS_INCLUDE_DIRS}
+    ${LLXML_INCLUDE_DIRS}
     )
 
 set(llmessage_SOURCE_FILES
+    aiaverage.cpp
+    aicurl.cpp
+    aicurleasyrequeststatemachine.cpp
+    aicurlperservice.cpp
+    aicurlthread.cpp
+    aicurltimer.cpp
+    aihttpheaders.cpp
+    aihttptimeout.cpp
+    aihttptimeoutpolicy.cpp
+    debug_libcurl.cpp
     llares.cpp
     llareslistener.cpp
     llassetstorage.cpp
@@ -29,13 +43,11 @@ set(llmessage_SOURCE_FILES
     llchainio.cpp
     llcircuit.cpp
     llclassifiedflags.cpp
-    llcurl.cpp
     lldatapacker.cpp
     lldispatcher.cpp
     llfiltersd2xmlrpc.cpp
     llhost.cpp
     llhttpclient.cpp
-    llhttpclientadapter.cpp
     llhttpnode.cpp
     llhttpsender.cpp
     llinstantmessage.cpp
@@ -47,6 +59,7 @@ set(llmessage_SOURCE_FILES
     llmail.cpp
     llmessagebuilder.cpp
     llmessageconfig.cpp
+    llmessagelog.cpp
     llmessagereader.cpp
     llmessagetemplate.cpp
     llmessagetemplateparser.cpp
@@ -60,16 +73,11 @@ set(llmessage_SOURCE_FILES
     llpartdata.cpp
     llproxy.cpp
     llpumpio.cpp
-    llregionpresenceverifier.cpp
     llsdappservices.cpp
     llsdhttpserver.cpp
     llsdmessage.cpp
     llsdmessagebuilder.cpp
     llsdmessagereader.cpp
-    llsdrpcclient.cpp
-    llsdrpcserver.cpp
-    llservicebuilder.cpp
-    llservice.cpp
     llstoredmessage.cpp
     lltemplatemessagebuilder.cpp
     lltemplatemessagedispatcher.cpp
@@ -85,16 +93,15 @@ set(llmessage_SOURCE_FILES
     lluseroperation.cpp
     llxfer.cpp
     llxfer_file.cpp
-    llxfermanager.cpp
     llxfer_mem.cpp
     llxfer_vfile.cpp
+    llxfermanager.cpp
     llxorcipher.cpp
     machine.cpp
     message.cpp
     message_prehash.cpp
     message_string_table.cpp
     net.cpp
-    partsyspacket.cpp
     patch_code.cpp
     patch_dct.cpp
     patch_idct.cpp
@@ -104,6 +111,17 @@ set(llmessage_SOURCE_FILES
 set(llmessage_HEADER_FILES
     CMakeLists.txt
 
+    aiaverage.h
+    aicurl.h
+    aicurleasyrequeststatemachine.h
+    aicurlperservice.h
+    aicurlprivate.h
+    aicurlthread.h
+    aicurltimer.h
+    aihttpheaders.h
+    aihttptimeout.h
+    aihttptimeoutpolicy.h
+    debug_libcurl.h
     llares.h
     llareslistener.h
     llassetstorage.h
@@ -125,8 +143,6 @@ set(llmessage_HEADER_FILES
     llfollowcamparams.h
     llhost.h
     llhttpclient.h
-    llhttpclientinterface.h
-    llhttpclientadapter.h
     llhttpnode.h
     llhttpnodeadapter.h
     llhttpsender.h
@@ -141,6 +157,7 @@ set(llmessage_HEADER_FILES
     llmail.h
     llmessagebuilder.h
     llmessageconfig.h
+    llmessagelog.h
     llmessagereader.h
     llmessagetemplate.h
     llmessagetemplateparser.h
@@ -153,21 +170,16 @@ set(llmessage_HEADER_FILES
     llpacketbuffer.h
     llpacketring.h
     llpartdata.h
-    llpumpio.h
     llproxy.h
+    llpumpio.h
     llqueryflags.h
     llregionflags.h
     llregionhandle.h
-    llregionpresenceverifier.h
     llsdappservices.h
     llsdhttpserver.h
     llsdmessage.h
     llsdmessagebuilder.h
     llsdmessagereader.h
-    llsdrpcclient.h
-    llsdrpcserver.h
-    llservice.h
-    llservicebuilder.h
     llstoredmessage.h
     lltaskname.h
     llteleportflags.h
@@ -185,17 +197,16 @@ set(llmessage_HEADER_FILES
     lluseroperation.h
     llvehicleparams.h
     llxfer.h
-    llxfermanager.h
     llxfer_file.h
     llxfer_mem.h
     llxfer_vfile.h
+    llxfermanager.h
     llxorcipher.h
     machine.h
     mean_collision_data.h
     message.h
     message_prehash.h
     net.h
-    partsyspacket.h
     patch_code.h
     patch_dct.h
     sound_ids.h
@@ -225,12 +236,10 @@ if (LL_TESTS)
   include(Tut)
 
   SET(llmessage_TEST_SOURCE_FILES
-    # llhttpclientadapter.cpp
     llmime.cpp
     llnamevalue.cpp
     lltrustedmessageservice.cpp
     lltemplatemessagedispatcher.cpp
-      llregionpresenceverifier.cpp
     )
   LL_ADD_PROJECT_UNIT_TESTS(llmessage "${llmessage_TEST_SOURCE_FILES}")
 
@@ -241,7 +250,8 @@ if (LL_TESTS)
     ${LLVFS_LIBRARIES}
     ${LLMATH_LIBRARIES}
     ${LLCOMMON_LIBRARIES}
-      ${GOOGLEMOCK_LIBRARIES}
+    ${GOOGLEMOCK_LIBRARIES}
+    ${LLXML_LIBRARIES}
     )
 
   LL_ADD_INTEGRATION_TEST(

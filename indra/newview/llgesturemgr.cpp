@@ -33,6 +33,7 @@
 #include <algorithm>
 
 // library
+#include "llanimationstates.h"
 #include "llaudioengine.h"
 #include "lldatapacker.h"
 #include "llinventory.h"
@@ -341,7 +342,7 @@ void LLGestureMgr::deactivateGesture(const LLUUID& item_id)
 
 	gAgent.sendReliableMessage();
 
-	LLAppearanceMgr::instance().removeCOFItemLinks(base_item_id, false);
+	LLAppearanceMgr::instance().removeCOFItemLinks(base_item_id);
 
 	notifyObservers();
 }
@@ -551,6 +552,13 @@ void LLGestureMgr::playGesture(LLMultiGesture* gesture)
 					  || anim_step->mFlags & ANIM_FLAG_STOP
 					  || gAssetStorage->hasLocalAsset(anim_id, LLAssetType::AT_ANIMATION)))
 				{
+					//Singu note: Don't attempt to fetch expressions/emotes.
+					const char* emote_name = gAnimLibrary.animStateToString(anim_id);
+					if(emote_name && strstr(emote_name,"express_")==emote_name)
+					{
+						break;
+					}
+
 					mLoadingAssets.insert(anim_id);
 
 					LLUUID* id = new LLUUID(gAgentID);
@@ -784,7 +792,7 @@ void LLGestureMgr::update()
 
 			if (gesture->mDoneCallback)
 			{
-				gesture->mDoneCallback(gesture, gesture->mCallbackData);
+				gesture->mDoneCallback(gesture);
 
 				// callback might have deleted gesture, can't
 				// rely on this pointer any more
@@ -1291,7 +1299,7 @@ void LLGestureMgr::stopGesture(LLMultiGesture* gesture)
 
 	if (gesture->mDoneCallback)
 	{
-		gesture->mDoneCallback(gesture, gesture->mCallbackData);
+		gesture->mDoneCallback(gesture);
 
 		// callback might have deleted gesture, can't
 		// rely on this pointer any more

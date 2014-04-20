@@ -36,6 +36,8 @@
 #include <map>
 #include "llmultifloater.h"
 #include "lliconctrl.h"
+#include "llinstancetracker.h"
+#include "lluuid.h"
 
 //~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 // Class LLFloaterProperties
@@ -50,7 +52,7 @@ class LLTextBox;
 
 class LLPropertiesObserver;
 
-class LLFloaterProperties : public LLFloater
+class LLFloaterProperties : public LLFloater, public LLInstanceTracker<LLFloaterProperties, LLUUID>
 {
 public:
 	static LLFloaterProperties* find(const LLUUID& item_id,
@@ -61,30 +63,25 @@ public:
 
 	static void closeByID(const LLUUID& item_id, const LLUUID& object_id);
 
-	// <edit>
-	static void onClickMore(void* user_data);
-	static void onClickLess(void* user_data);
-	static void onClickCopy(void* user_data);
-	static void onClickUpdate(void* user_data);
-	void setExpanded(BOOL expanded);
-	// </edit>
-
 	LLFloaterProperties(const std::string& name, const LLRect& rect, const std::string& title, const LLUUID& item_id, const LLUUID& object_id);
-	virtual ~LLFloaterProperties();
+	/*virtual*/ ~LLFloaterProperties();
+	/*virtual*/ BOOL postBuild();
+	/*virtual*/ void onOpen();
 
 	// do everything necessary
 	void dirty() { mDirty = TRUE; }
 	void refresh();
-
+	
 protected:
 	// ui callbacks
-	static void onClickCreator(void* data);
-	static void onClickOwner(void* data);
-	static void onCommitName(LLUICtrl* ctrl, void* data);
-	static void onCommitDescription(LLUICtrl* ctrl, void* data);
-	static void onCommitPermissions(LLUICtrl* ctrl, void* data);
-	static void onCommitSaleInfo(LLUICtrl* ctrl, void* data);
-	static void onCommitSaleType(LLUICtrl* ctrl, void* data);
+	void onClickCreator();
+	void onClickOwner();
+	void onClickLastOwner();
+	void onCommitName();
+	void onCommitDescription();
+	void onCommitPermissions();
+	void onCommitSaleInfo();
+	void onCommitSaleType();
 	void updateSaleInfo();
 
 	LLInventoryItem* findItem() const;
@@ -102,25 +99,14 @@ protected:
 	LLUUID mObjectID;
 
 	BOOL	mDirty;
-	// <edit>
-	BOOL	mExpanded;
-	// </edit>
 
-	typedef std::map<LLUUID, LLFloaterProperties*, lluuid_less> instance_map;
-	static instance_map sInstances;
-	static LLPropertiesObserver* sPropertiesObserver;
-	static S32 sPropertiesObserverCount;
+	LLPropertiesObserver* mPropertiesObserver;
 };
 
 class LLMultiProperties : public LLMultiFloater
 {
 public:
 	LLMultiProperties(const LLRect& rect);
-	// <edit>
-	void setExpanded(BOOL expanded);
-protected:
-	BOOL mExpanded;
-	// </edit>
 };
 
 #endif // LL_LLFLOATERPROPERTIES_H

@@ -45,16 +45,9 @@ class LLImageGL : public LLRefCount
 {
 	friend class LLTexUnit;
 public:
-	static U32 sCurTexName;
-
-	//previously used but now available texture names
-	// sDeadTextureList[<usage>][<internal format>]
-	typedef std::map<U32, std::list<U32> > dead_texturelist_t;
-	static dead_texturelist_t sDeadTextureList[LLTexUnit::TT_NONE];
-
 	// These 2 functions replace glGenTextures() and glDeleteTextures()
-	static void generateTextures(LLTexUnit::eTextureType type, U32 format, S32 numTextures, U32 *textures);
-	static void deleteTextures(LLTexUnit::eTextureType type, U32 format, S32 mip_levels, S32 numTextures, U32 *textures, bool immediate = false);
+	static void generateTextures(S32 numTextures, U32 *textures);
+	static void deleteTextures(S32 numTextures, U32 *textures);
 	static void deleteDeadTextures();
 
 	// Size calculation
@@ -100,7 +93,7 @@ protected:
 public:
 	virtual void dump();	// debugging info to llinfos
 	
-	void setSize(S32 width, S32 height, S32 ncomponents);
+	void setSize(S32 width, S32 height, S32 ncomponents, S32 discard_level = -1);
 	void setComponents(S32 ncomponents) { mComponents = (S8)ncomponents ;}
 	void setAllowCompression(bool allow) { mAllowCompression = allow; }
 
@@ -119,6 +112,7 @@ public:
 	// Read back a raw image for this discard level, if it exists
 	BOOL readBackRaw(S32 discard_level, LLImageRaw* imageraw, bool compressed_ok); 
 	void destroyGLTexture();
+	void forceToInvalidateGLTexture();
 
 	void setExplicitFormat(LLGLint internal_format, LLGLenum primary_format, LLGLenum type_format = 0, BOOL swap_bytes = FALSE);
 	void setComponents(S8 ncomponents) { mComponents = ncomponents; }
@@ -141,7 +135,7 @@ public:
 	BOOL getHasGLTexture() const { return mTexName != 0; }
 	LLGLuint getTexName() const { return mTexName; }
 
-	BOOL getIsAlphaMask() const { return mIsMask; }
+	BOOL getIsAlphaMask(const F32 max_rmse) const { return mCanMask && (max_rmse < 0.f ? (bool)mIsMask : (mMaskRMSE <= max_rmse)); }
 
 	BOOL getIsResident(BOOL test_now = FALSE); // not const
 
@@ -191,7 +185,9 @@ private:
 	S8 mHasExplicitFormat; // If false (default), GL format is f(mComponents)
 	S8 mAutoGenMips;
 
+	BOOL mCanMask;
 	BOOL mIsMask;
+	F32  mMaskRMSE;
 	BOOL mNeedsAlphaAndPickMask;
 	S8   mAlphaStride ;
 	S8   mAlphaOffset ;

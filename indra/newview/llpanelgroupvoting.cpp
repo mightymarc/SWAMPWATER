@@ -32,25 +32,24 @@
 
 #include "llviewerprecompiledheaders.h"
 
-#include "roles_constants.h"
+#include "llpanelgroupvoting.h"
 
-#include "lllineeditor.h"
+#include "llbutton.h"
 #include "llnotificationsutil.h"
+#include "llradiogroup.h"
+#include "llscrolllistctrl.h"
+#include "llscrolllistitem.h"
+#include "llspinctrl.h"
 #include "lltextbox.h"
 #include "lltexteditor.h"
-#include "llscrolllistctrl.h"
-#include "llradiogroup.h"
-#include "llspinctrl.h"
-#include "llpanelgroupvoting.h"
-#include "llnamelistctrl.h"
-#include "llbutton.h"
-#include "llnotify.h"
 
 #include "llagent.h"
-#include "llfocusmgr.h"
 #include "llviewercontrol.h"
-#include "llviewerwindow.h"
 #include "llviewerregion.h"
+
+class AIHTTPTimeoutPolicy;
+extern AIHTTPTimeoutPolicy startGroupVoteResponder_timeout;
+extern AIHTTPTimeoutPolicy groupProposalBallotResponder_timeout;
 
 class LLPanelGroupVoting::impl
 {
@@ -680,7 +679,7 @@ void LLPanelGroupVoting::handleFailure(
 	}
 }
 
-class LLStartGroupVoteResponder : public LLHTTPClient::Responder
+class LLStartGroupVoteResponder : public LLHTTPClient::ResponderWithResult
 {
 public:
 	LLStartGroupVoteResponder(const LLUUID& group_id)
@@ -689,7 +688,7 @@ public:
 	}
 
 	//If we get back a normal response, handle it here
-	virtual void result(const LLSD& content)
+	/*virtual*/ void result(const LLSD& content)
 	{
 		//Ack'd the proposal initialization, now let's finish up.
 		LLPanelGroupVoting::handleResponse(
@@ -698,18 +697,22 @@ public:
 	}
 
 	//If we get back an error (not found, etc...), handle it here
-	virtual void error(U32 status, const std::string& reason)
+	/*virtual*/ void error(U32 status, const std::string& reason)
 	{
 		llinfos << "LLPanelGroupVotingResponder::error "
 			<< status << ": " << reason << llendl;
 
 		LLPanelGroupVoting::handleFailure(mGroupID);
 	}
+
+	/*virtual*/ AIHTTPTimeoutPolicy const& getHTTPTimeoutPolicy(void) const { return startGroupVoteResponder_timeout; }
+	/*virtual*/ char const* getName(void) const { return "LLStartGroupVoteResponder"; }
+
 private:
 	LLUUID mGroupID;
 };
 
-class LLGroupProposalBallotResponder : public LLHTTPClient::Responder
+class LLGroupProposalBallotResponder : public LLHTTPClient::ResponderWithResult
 {
 public:
 	LLGroupProposalBallotResponder(const LLUUID& group_id)
@@ -718,7 +721,7 @@ public:
 	}
 
 	//If we get back a normal response, handle it here
-	virtual void result(const LLSD& content)
+	/*virtual*/ void result(const LLSD& content)
 	{
 		//Ack'd the proposal initialization, now let's finish up.
 		LLPanelGroupVoting::handleResponse(
@@ -728,13 +731,18 @@ public:
 	}
 
 	//If we get back an error (not found, etc...), handle it here
-	virtual void error(U32 status, const std::string& reason)
+	/*virtual*/ void error(U32 status, const std::string& reason)
 	{
 		llinfos << "LLPanelGroupVotingResponder::error "
 			<< status << ": " << reason << llendl;
 
 		LLPanelGroupVoting::handleFailure(mGroupID);
 	}
+
+	//Return out timeout policy.
+	/*virtual*/ AIHTTPTimeoutPolicy const& getHTTPTimeoutPolicy(void) const { return groupProposalBallotResponder_timeout; }
+	/*virtual*/ char const* getName(void) const { return "LLGroupProposalBallotResponder"; }
+
 private:
 	LLUUID mGroupID;
 };
@@ -781,8 +789,7 @@ void LLPanelGroupVoting::impl::sendStartGroupProposal()
 		LLHTTPClient::post(
 			url,
 			body,
-			new LLStartGroupVoteResponder(mGroupID),
-			300);
+			new LLStartGroupVoteResponder(mGroupID));
 	}
 	else
 	{	//DEPRECATED!!!!!!!  This is a fallback just in case our backend cap is not there.  Delete this block ASAP!
@@ -828,8 +835,7 @@ void LLPanelGroupVoting::impl::sendGroupProposalBallot(const std::string& vote)
 		LLHTTPClient::post(
 			url,
 			body,
-			new LLGroupProposalBallotResponder(mGroupID),
-			300);
+			new LLGroupProposalBallotResponder(mGroupID));
 	}
 	else
 	{	//DEPRECATED!!!!!!!  This is a fallback just in case our backend cap is not there.  Delete this block ASAP!
@@ -906,19 +912,19 @@ void LLPanelGroupVoting::impl::addPendingActiveScrollListItem(unsigned int curre
 			<< current
 			<< "\\" << expected  << ")";
 
-	mProposals->addCommentText(pending.str());
+	mProposals->setCommentText(pending.str());
 }
 
 void LLPanelGroupVoting::impl::addNoActiveScrollListItem(EAddPosition pos)
 {
 	// *TODO: translate
-	mProposals->addCommentText(std::string("There are currently no active proposals"), pos);
+	mProposals->setCommentText(std::string("There are currently no active proposals"));
 }
 
 void LLPanelGroupVoting::impl::addNoHistoryScrollListItem(EAddPosition pos)
 {
 	// *TODO: translate
-	mVotesHistory->addCommentText(std::string("There are currently no archived proposals"), pos);
+	mVotesHistory->setCommentText(std::string("There are currently no archived proposals"));
 }
 
 void LLPanelGroupVoting::impl::addPendingHistoryScrollListItem(unsigned int current,
@@ -931,7 +937,7 @@ void LLPanelGroupVoting::impl::addPendingHistoryScrollListItem(unsigned int curr
 			<< current
 			<< "\\" << expected  << ")";
 
-	mVotesHistory->addCommentText(pending.str());
+	mVotesHistory->setCommentText(pending.str());
 }
 																		
 
@@ -1480,7 +1486,7 @@ LLPanelGroupVoting::~LLPanelGroupVoting()
 BOOL LLPanelGroupVoting::isVisibleByAgent(LLAgent* agentp)
 {
 	 //if they are in the group, the panel is viewable
-	return mAllowEdit && agentp->isInGroup(mGroupID);
+	return agentp->isInGroup(mGroupID);
 }
 
 BOOL LLPanelGroupVoting::postBuild()
@@ -1569,11 +1575,9 @@ BOOL LLPanelGroupVoting::postBuild()
 	//associate callbacks
 	if ( success )
 	{
-		mImpl->mProposals->setDoubleClickCallback(impl::onDoubleClickProposal);
-		mImpl->mProposals->setCallbackUserData(mImpl);
+		mImpl->mProposals->setDoubleClickCallback(boost::bind(&LLPanelGroupVoting::impl::onDoubleClickProposal,mImpl));
 
-		mImpl->mVotesHistory->setDoubleClickCallback(impl::onDoubleClickHistoryItem);
-		mImpl->mVotesHistory->setCallbackUserData(mImpl);
+		mImpl->mVotesHistory->setDoubleClickCallback(boost::bind(&LLPanelGroupVoting::impl::onDoubleClickHistoryItem,mImpl));
 
 		mImpl->mBtnAbstain->setClickedCallback(boost::bind(&impl::onClickAbstain,mImpl));
 

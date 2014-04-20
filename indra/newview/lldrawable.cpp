@@ -2,31 +2,25 @@
  * @file lldrawable.cpp
  * @brief LLDrawable class implementation
  *
- * $LicenseInfo:firstyear=2002&license=viewergpl$
- * 
- * Copyright (c) 2002-2009, Linden Research, Inc.
- * 
+ * $LicenseInfo:firstyear=2002&license=viewerlgpl$
  * Second Life Viewer Source Code
- * The source code in this file ("Source Code") is provided by Linden Lab
- * to you under the terms of the GNU General Public License, version 2.0
- * ("GPL"), unless you have obtained a separate licensing agreement
- * ("Other License"), formally executed by you and Linden Lab.  Terms of
- * the GPL can be found in doc/GPL-license.txt in this distribution, or
- * online at http://secondlifegrid.net/programs/open_source/licensing/gplv2
+ * Copyright (C) 2010, Linden Research, Inc.
  * 
- * There are special exceptions to the terms and conditions of the GPL as
- * it is applied to this Source Code. View the full text of the exception
- * in the file doc/FLOSS-exception.txt in this software distribution, or
- * online at
- * http://secondlifegrid.net/programs/open_source/licensing/flossexception
+ * This library is free software; you can redistribute it and/or
+ * modify it under the terms of the GNU Lesser General Public
+ * License as published by the Free Software Foundation;
+ * version 2.1 of the License only.
  * 
- * By copying, modifying or distributing this software, you acknowledge
- * that you have read and understood your obligations described above,
- * and agree to abide by those obligations.
+ * This library is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+ * Lesser General Public License for more details.
  * 
- * ALL LINDEN LAB SOURCE CODE IS PROVIDED "AS IS." LINDEN LAB MAKES NO
- * WARRANTIES, EXPRESS, IMPLIED OR OTHERWISE, REGARDING ITS ACCURACY,
- * COMPLETENESS OR PERFORMANCE.
+ * You should have received a copy of the GNU Lesser General Public
+ * License along with this library; if not, write to the Free Software
+ * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301  USA
+ * 
+ * Linden Research, Inc., 945 Battery Street, San Francisco, CA  94111  USA
  * $/LicenseInfo$
  */
 
@@ -62,6 +56,8 @@ const F32 OBJECT_DAMPING_TIME_CONSTANT = 0.06f;
 const F32 MIN_SHADOW_CASTER_RADIUS = 2.0f;
 
 static LLFastTimer::DeclareTimer FTM_CULL_REBOUND("Cull Rebound");
+
+extern bool gShiftFrame;
 
 
 ////////////////////////
@@ -102,7 +98,6 @@ void LLDrawable::init()
 	mPositionGroup.clear();
 	mExtents[0].clear();
 	mExtents[1].clear();
-	mQuietCount = 0;
 
 	mState     = 0;
 	mVObjp   = NULL;
@@ -113,6 +108,7 @@ void LLDrawable::init()
 	
 	mGeneration = -1;
 	mBinRadius = 1.f;
+	mBinIndex = -1;
 	mSpatialBridge = NULL;
 }
 
@@ -254,11 +250,17 @@ S32 LLDrawable::findReferences(LLDrawable *drawablep)
 	return count;
 }
 
+static LLFastTimer::DeclareTimer FTM_ALLOCATE_FACE("Allocate Face", true);
+
 LLFace*	LLDrawable::addFace(LLFacePool *poolp, LLViewerTexture *texturep)
 {
-	LLMemType mt(LLMemType::MTYPE_DRAWABLE);
 	
-	LLFace *face = new LLFace(this, mVObjp);
+	LLFace *face;
+	{
+		LLFastTimer t(FTM_ALLOCATE_FACE);
+		face = new LLFace(this, mVObjp);
+	}
+
 	if (!face) llerrs << "Allocating new Face: " << mFaces.size() << llendl;
 	
 	if (face)
@@ -280,10 +282,12 @@ LLFace*	LLDrawable::addFace(LLFacePool *poolp, LLViewerTexture *texturep)
 
 LLFace*	LLDrawable::addFace(const LLTextureEntry *te, LLViewerTexture *texturep)
 {
-	LLMemType mt(LLMemType::MTYPE_DRAWABLE);
-	
 	LLFace *face;
-	face = new LLFace(this, mVObjp);
+
+	{
+		LLFastTimer t(FTM_ALLOCATE_FACE);
+		face = new LLFace(this, mVObjp);
+	}
 
 	face->setTEOffset(mFaces.size());
 	face->setTexture(texturep);
@@ -298,6 +302,49 @@ LLFace*	LLDrawable::addFace(const LLTextureEntry *te, LLViewerTexture *texturep)
 
 	return face;
 
+}
+
+LLFace*	LLDrawable::addFace(const LLTextureEntry *te, LLViewerTexture *texturep, LLViewerTexture *normalp)
+{
+	LLFace *face;
+	face = new LLFace(this, mVObjp);
+	
+	face->setTEOffset(mFaces.size());
+	face->setTexture(texturep);
+	face->setNormalMap(normalp);
+	face->setPoolType(gPipeline.getPoolTypeFromTE(te, texturep));
+	
+	mFaces.push_back(face);
+	
+	if (isState(UNLIT))
+	{
+		face->setState(LLFace::FULLBRIGHT);
+	}
+	
+	return face;
+	
+}
+
+LLFace*	LLDrawable::addFace(const LLTextureEntry *te, LLViewerTexture *texturep, LLViewerTexture *normalp, LLViewerTexture *specularp)
+{
+	LLFace *face;
+	face = new LLFace(this, mVObjp);
+	
+	face->setTEOffset(mFaces.size());
+	face->setTexture(texturep);
+	face->setNormalMap(normalp);
+	face->setSpecularMap(specularp);
+	face->setPoolType(gPipeline.getPoolTypeFromTE(te, texturep));
+	
+	mFaces.push_back(face);
+	
+	if (isState(UNLIT))
+	{
+		face->setState(LLFace::FULLBRIGHT);
+	}
+	
+	return face;
+	
 }
 
 void LLDrawable::setNumFaces(const S32 newFaces, LLFacePool *poolp, LLViewerTexture *texturep)
@@ -409,6 +456,8 @@ void LLDrawable::makeActive()
 		if (!isRoot() && !mParent->isActive())
 		{
 			mParent->makeActive();
+			//NOTE: linked set will now NEVER become static
+			mParent->setState(LLDrawable::ACTIVE_CHILD);
 		}
 
 		//all child objects must also be active
@@ -428,41 +477,27 @@ void LLDrawable::makeActive()
 
 		if (mVObjp->getPCode() == LL_PCODE_VOLUME)
 		{
-			if (mVObjp->isFlexible())
-			{
-				return;
-			}
-		}
-	
-		if (mVObjp->getPCode() == LL_PCODE_VOLUME)
-		{
 			gPipeline.markRebuild(this, LLDrawable::REBUILD_VOLUME, TRUE);
 		}
 		updatePartition();
 	}
 
-	if (isRoot())
-	{
-		mQuietCount = 0;
-	}
-	else
-	{
-		getParent()->mQuietCount = 0;
-	}
+	llassert(isAvatar() || isRoot() || mParent->isActive());
 }
 
 
 void LLDrawable::makeStatic(BOOL warning_enabled)
 {
-	if (isState(ACTIVE))
+	if (isState(ACTIVE) && 
+		!isState(ACTIVE_CHILD) && 
+		!mVObjp->isAttachment() && 
+		!mVObjp->isFlexible())
 	{
 		clearState(ACTIVE | ANIMATED_CHILD);
 
-		if (mParent.notNull() && mParent->isActive() && warning_enabled)
-		{
-			LL_WARNS_ONCE("Drawable") << "Drawable becomes static with active parent!" << LL_ENDL;
-		}
-
+		//drawable became static with active parent, not acceptable
+		llassert(mParent.isNull() || !mParent->isActive() || !warning_enabled);
+		
 		LLViewerObject::const_child_list_t& child_list = mVObjp->getChildren();
 		for (LLViewerObject::child_list_t::const_iterator iter = child_list.begin();
 			 iter != child_list.end(); iter++)
@@ -489,8 +524,8 @@ void LLDrawable::makeStatic(BOOL warning_enabled)
 			mSpatialBridge->markDead();
 			setSpatialBridge(NULL);
 		}
+		updatePartition();
 	}
-	updatePartition();
 }
 
 // Returns "distance" between target destination and resulting xfrom
@@ -518,7 +553,6 @@ F32 LLDrawable::updateXform(BOOL undamped)
 	//scaling
 	LLVector3 target_scale = mVObjp->getScale();
 	LLVector3 old_scale = mCurrentScale;
-	LLVector3 dest_scale = target_scale;
 	
 	// Damping
 	F32 dist_squared = 0.f;
@@ -573,6 +607,12 @@ F32 LLDrawable::updateXform(BOOL undamped)
 			gPipeline.markRebuild(this, LLDrawable::REBUILD_ALL, TRUE);
 			mVObjp->dirtySpatialGroup();
 		}
+	}
+	else if (!isRoot() &&
+			((dist_vec_squared(old_pos, target_pos) > 0.f)
+			|| (1.f - dot(old_rot, target_rot)) > 0.f))
+	{ //fix for BUG-840, MAINT-2275, MAINT-1742, MAINT-2247
+		gPipeline.markRebuild(this, LLDrawable::REBUILD_POSITION, TRUE);
 	}
 	else if (!getVOVolume() && !isAvatar())
 	{
@@ -641,7 +681,7 @@ BOOL LLDrawable::updateMove()
 	}
 	
 	makeActive();
-	
+
 	BOOL done;
 
 	if (isState(MOVE_UNDAMPED))
@@ -663,7 +703,7 @@ BOOL LLDrawable::updateMoveUndamped()
 
 	if (!isState(LLDrawable::INVISIBLE))
 	{
-		BOOL moved = (dist_squared > 0.001f && dist_squared < 255.99f);	
+		BOOL moved = (dist_squared > 0.001f);	
 		moveUpdatePipeline(moved);
 		mVObjp->updateText();
 	}
@@ -698,7 +738,7 @@ BOOL LLDrawable::updateMoveDamped()
 
 	if (!isState(LLDrawable::INVISIBLE))
 	{
-		BOOL moved = (dist_squared > 0.001f && dist_squared < 128.0f);
+		BOOL moved = (dist_squared > 0.001f);
 		moveUpdatePipeline(moved);
 		mVObjp->updateText();
 	}
@@ -718,6 +758,11 @@ void LLDrawable::updateDistance(LLCamera& camera, bool force_update)
 	if (LLViewerCamera::sCurCameraID != LLViewerCamera::CAMERA_WORLD)
 	{
 		llwarns << "Attempted to update distance for non-world camera." << llendl;
+		return;
+	}
+
+	if (gShiftFrame)
+	{
 		return;
 	}
 
@@ -775,8 +820,6 @@ void LLDrawable::updateDistance(LLCamera& camera, bool force_update)
 
 void LLDrawable::updateTexture()
 {
-	LLMemType mt(LLMemType::MTYPE_DRAWABLE);
-	
 	if (isDead())
 	{
 		llwarns << "Dead drawable updating texture!" << llendl;
@@ -790,18 +833,7 @@ void LLDrawable::updateTexture()
 
 	if (getVOVolume())
 	{
-		/*if (isActive())
-		{
-			if (isRoot())
-			{
-				mQuietCount = 0;
-			}
-			else
-			{
-				getParent()->mQuietCount = 0;
-			}
-		}*/
-				
+		//getVOVolume()->mFaceMappingChanged = TRUE;
 		gPipeline.markRebuild(this, LLDrawable::REBUILD_MATERIAL, TRUE);
 	}
 }
@@ -830,14 +862,19 @@ void LLDrawable::shiftPos(const LLVector4a &shift_vector)
 		mXform.setPosition(mVObjp->getPositionAgent());
 	}
 
-	mXform.setRotation(mVObjp->getRotation());
-	mXform.setScale(1,1,1);
 	mXform.updateMatrix();
 
 	if (isStatic())
 	{
 		LLVOVolume* volume = getVOVolume();
-		if (!volume)
+
+		bool rebuild = (!volume && 
+						getRenderType() != LLPipeline::RENDER_TYPE_TREE &&
+						getRenderType() != LLPipeline::RENDER_TYPE_TERRAIN &&
+						getRenderType() != LLPipeline::RENDER_TYPE_SKY &&
+						getRenderType() != LLPipeline::RENDER_TYPE_GROUND);
+
+		if (rebuild)
 		{
 			gPipeline.markRebuild(this, LLDrawable::REBUILD_ALL, TRUE);
 		}
@@ -851,7 +888,7 @@ void LLDrawable::shiftPos(const LLVector4a &shift_vector)
 				facep->mExtents[0].add(shift_vector);
 				facep->mExtents[1].add(shift_vector);
 			
-				if (!volume && facep->hasGeometry())
+				if (rebuild && facep->hasGeometry())
 				{
 					facep->clearVertexBuffer();
 				}
@@ -962,8 +999,20 @@ void LLDrawable::updateUVMinMax()
 {
 }
 
+LLSpatialGroup* LLDrawable::getSpatialGroup() const
+{ 
+	llassert((mSpatialGroupp == NULL) ? getBinIndex() == -1 : getBinIndex() != -1);
+	return mSpatialGroupp; 
+}
+
 void LLDrawable::setSpatialGroup(LLSpatialGroup *groupp)
 {
+	//precondition: mSpatialGroupp MUST be null or DEAD or mSpatialGroupp MUST NOT contain this
+	llassert(!mSpatialGroupp || mSpatialGroupp->isDead() || !mSpatialGroupp->hasElement(this));
+
+	//precondition: groupp MUST be null or groupp MUST contain this
+	llassert(!groupp || groupp->hasElement(this));
+
 /*if (mSpatialGroupp && (groupp != mSpatialGroupp))
 	{
 		mSpatialGroupp->setState(LLSpatialGroup::GEOM_DIRTY);
@@ -982,6 +1031,11 @@ void LLDrawable::setSpatialGroup(LLSpatialGroup *groupp)
 			}
 		}
 	}
+
+	//postcondition: if next group is NULL, previous group must be dead OR NULL OR binIndex must be -1
+	//postcondition: if next group is NOT NULL, binIndex must not be -1
+	llassert(groupp == NULL ? (mSpatialGroupp == NULL || mSpatialGroupp->isDead()) || getBinIndex() == -1 :
+							getBinIndex() != -1);
 
 	mSpatialGroupp = groupp;
 }
@@ -1106,6 +1160,8 @@ LLSpatialBridge::LLSpatialBridge(LLDrawable* root, BOOL render_by_group, U32 dat
 	mDrawable = root;
 	root->setSpatialBridge(this);
 	
+	mBinIndex = -1;
+
 	mRenderType = mDrawable->mRenderType;
 	mDrawableType = mDrawable->mRenderType;
 	
@@ -1224,7 +1280,6 @@ LLCamera LLSpatialBridge::transformCamera(LLCamera& camera)
 	LLCamera ret = camera;
 	LLXformMatrix* mat = mDrawable->getXform();
 	LLVector3 center = LLVector3(0,0,0) * mat->getWorldMatrix();
-	LLQuaternion rotation = LLQuaternion(mat->getWorldMatrix());
 
 	LLVector3 delta = ret.getOrigin() - center;
 	LLQuaternion rot = ~mat->getRotation();
@@ -1416,6 +1471,11 @@ void LLSpatialBridge::updateDistance(LLCamera& camera_in, bool force_update)
 		return;
 	}
 
+	if (gShiftFrame)
+	{
+		return;
+	}
+
 	if (mDrawable->getVObj())
 	{
 		if (mDrawable->getVObj()->isAttachment())
@@ -1499,6 +1559,10 @@ void LLSpatialBridge::cleanupReferences()
 	LLDrawable::cleanupReferences();
 	if (mDrawable)
 	{
+		/*
+		
+		DON'T DO THIS -- this should happen through octree destruction
+
 		mDrawable->setSpatialGroup(NULL);
 		if (mDrawable->getVObj())
 		{
@@ -1513,7 +1577,7 @@ void LLSpatialBridge::cleanupReferences()
 					drawable->setSpatialGroup(NULL);
 				}
 			}
-		}
+		}*/
 
 		LLDrawable* drawablep = mDrawable;
 		mDrawable = NULL;

@@ -8,8 +8,6 @@
 #include "lleventtimer.h"
 
 
-class AONoteCardDropTarget;
-
 const int STATE_AGENT_IDLE = 0;
 const int STATE_AGENT_WALK = 1;
 const int STATE_AGENT_RUN = 2;
@@ -68,8 +66,8 @@ public:
 	static void show(void*);
 	static void init();
 
-	static void onClickToggleAO(LLUICtrl *, void*);
-	static void onClickToggleSits(LLUICtrl *, void*);
+	static void onClickToggleAO();
+	static void onClickToggleSits();
 	static void run();
 	static void updateLayout(LLFloaterAO* floater);
 
@@ -113,10 +111,8 @@ private:
 	static int mAnimationState;
 	static LLUUID mCurrentStandId;
 
-	static AONoteCardDropTarget* mAOItemDropTarget;
-	static void AOItemDrop(LLViewerInventoryItem* item);
-	static void onSpinnerCommit(LLUICtrl* ctrl, void* userdata);
-	static void onComboBoxCommit(LLUICtrl* ctrl, void* userdata);
+	static void onSpinnerCommit(LLUICtrl* ctrl);
+	static void onComboBoxCommit(LLUICtrl* ctrl);
 	static BOOL SetDefault(void *userdata, LLUUID ao_id, std::string defaultanim);
 
 	BOOL					mDirty;

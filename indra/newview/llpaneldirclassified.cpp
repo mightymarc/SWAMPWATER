@@ -106,20 +106,20 @@ BOOL LLPanelDirClassified::postBuild()
 	}
 
 	// 0 or 3+ character searches allowed, exciting
-	childSetKeystrokeCallback("name", onKeystrokeNameClassified, this);
-	
-	childSetAction("Search", onClickSearchCore, this);
-	childSetAction("Browse", onClickSearchCore, this);
+	getChild<LLLineEditor>("name")->setKeystrokeCallback(boost::bind(&LLPanelDirClassified::onKeystrokeNameClassified,this,_1));
+
+	getChild<LLButton>("Search")->setClickedCallback(boost::bind(&LLPanelDirBrowser::onClickSearchCore,this));
+	getChild<LLButton>("Browse")->setClickedCallback(boost::bind(&LLPanelDirBrowser::onClickSearchCore,this));
 	setDefaultBtn( "Browse" );
 
-	childSetAction("Place an Ad...", onClickCreateNewClassified, this);
-
-	childSetAction("Delete", onClickDelete, this);
+	getChild<LLButton>("Delete")->setClickedCallback(boost::bind(&LLPanelDirClassified::onClickDelete,this));
 	childDisable("Delete");
 	childHide("Delete");
 
 	// Don't do this every time we open find, it's expensive; require clicking 'search'
 	//requestClassified();
+
+	childSetVisible("filter_gaming", (gAgent.getRegion()->getGamingFlags() & REGION_GAMING_PRESENT) && !(gAgent.getRegion()->getGamingFlags() & REGION_GAMING_HIDE_FIND_CLASSIFIEDS));
 
 	return TRUE;
 }
@@ -147,25 +147,16 @@ void LLPanelDirClassified::refresh()
 	updateMaturityCheckbox();
 }
 
-//Open Profile to Classifieds tab
-void LLPanelDirClassified::onClickCreateNewClassified(void *userdata)
+void LLPanelDirClassified::onClickDelete()
 {
-	LLFloaterAvatarInfo::showFromObject(gAgent.getID(), "Classified");
-}
-
-// static
-void LLPanelDirClassified::onClickDelete(void *userdata)
-{
-	LLPanelDirClassified *self = (LLPanelDirClassified *)userdata;
-
 	LLUUID classified_id;
 	S32 type;
 
-	self->getSelectedInfo(&classified_id, &type);
+	getSelectedInfo(&classified_id, &type);
 
 	// Clear out the list.  Deleting a classified will cause a refresh to be
 	// sent.
-	self->setupNewSearch();
+	setupNewSearch();
 
 	LLMessageSystem* msg = gMessageSystem;
 
@@ -175,7 +166,7 @@ void LLPanelDirClassified::onClickDelete(void *userdata)
 	msg->addUUIDFast(_PREHASH_SessionID, gAgent.getSessionID());
 	msg->nextBlockFast(_PREHASH_Data);
 	msg->addUUIDFast(_PREHASH_ClassifiedID, classified_id);
-	msg->addUUIDFast(_PREHASH_QueryID, self->mSearchID);
+	msg->addUUIDFast(_PREHASH_QueryID, mSearchID);
 	gAgent.sendReliableMessage();
 }
 
@@ -206,6 +197,7 @@ void LLPanelDirClassified::performQuery()
 	BOOL filter_auto_renew = FALSE;
 	U32 query_flags = pack_classified_flags_request(filter_auto_renew, inc_pg, inc_mature, inc_adult);
 	//if (gAgent.isTeen()) query_flags |= DFQ_PG_SIMS_ONLY;
+	if (childGetValue("filter_gaming")) query_flags |= DFQ_FILTER_GAMING;
 
 	U32 category = childGetValue("Category").asInteger();
 	
@@ -219,34 +211,32 @@ void LLPanelDirClassified::performQuery()
 	gAgent.sendReliableMessage();
 }
 
-void LLPanelDirClassified::onKeystrokeNameClassified(LLLineEditor* line, void* data)
+void LLPanelDirClassified::onKeystrokeNameClassified(LLLineEditor* line)
 {
-	LLPanelDirClassified *self = (LLPanelDirClassified*)data;
-
 	S32 len = line->getLength();
 	if (len == 0
 		|| len >= 3)
 	{
 		// no text searches are cheap, as are longer searches
-		self->setDefaultBtn( "Search" );
-		self->childEnable("Search");
+		setDefaultBtn( "Search" );
+		childEnable("Search");
 	}
 	else
 	{
-		self->setDefaultBtn();
-		self->childDisable("Search");
+		setDefaultBtn();
+		childDisable("Search");
 	}
 
 	// Change the Browse to Search or vice versa
 	if (len > 0)
 	{
-		self->childSetVisible("Search", TRUE);
-		self->childSetVisible("Browse", FALSE);
+		childSetVisible("Search", TRUE);
+		childSetVisible("Browse", FALSE);
 	}
 	else
 	{
-		self->setDefaultBtn( "Browse" );
-		self->childSetVisible("Search", FALSE);
-		self->childSetVisible("Browse", TRUE);
+		setDefaultBtn( "Browse" );
+		childSetVisible("Search", FALSE);
+		childSetVisible("Browse", TRUE);
 	}
 }

@@ -42,11 +42,13 @@
 #include "llagentdata.h" 			// gAgentID, gAgentSessionID
 #include "llcharacter.h"
 #include "llcoordframe.h"			// for mFrameAgent
-#include "llvoavatardefines.h"
+#include "llavatarappearancedefines.h"
 #include "llviewerinventory.h"
 #include "llinventorymodel.h"
 #include "v3dmath.h"
 
+#include <boost/function.hpp>
+#include <boost/shared_ptr.hpp>
 #include <boost/signals2.hpp>
 
 extern const BOOL 	ANIMATE;
@@ -66,9 +68,12 @@ class LLPickInfo;
 class LLViewerObject;
 class LLAgentDropGroupViewerNode;
 class LLAgentAccess;
+class LLSLURL;
 class LLSimInfo;
+class LLTeleportRequest;
 
 typedef std::vector<LLViewerObject*> llvo_vec_t;
+typedef boost::shared_ptr<LLTeleportRequest> LLTeleportRequestPtr;
 
 enum EAnimRequest
 {
@@ -90,12 +95,13 @@ struct LLGroupData
 
 // forward declarations
 
-//
-
+//------------------------------------------------------------------------
+// LLAgent
+//------------------------------------------------------------------------
 class LLAgent : public LLOldEvents::LLObservable
 {
 	LOG_CLASS(LLAgent);
-	
+
 public:
 	friend class LLAgentDropGroupViewerNode;
 
@@ -156,7 +162,7 @@ public:
 public:
 	void			getName(std::string& name);	//Legacy
 	void			buildFullname(std::string &name) const; //Legacy
-	// *TODO remove, is not used as of August 20, 2009
+	//*TODO remove, is not used as of August 20, 2009
 	void			buildFullnameAndTitle(std::string &name) const;
 
 	//--------------------------------------------------------------------
@@ -165,11 +171,11 @@ public:
 public:
 	// On the very first login, gender isn't chosen until the user clicks
 	// in a dialog.  We don't render the avatar until they choose.
- 	BOOL isGenderChosen() const { return mGenderChosen; }
-	void			setGenderChosen(BOOL b)		{ mGenderChosen = b; }
- private:
+	BOOL			isGenderChosen() const { return mGenderChosen; }
+	void			setGenderChosen(BOOL b)	{ mGenderChosen = b; }
+private:
 	BOOL			mGenderChosen;
- 
+
 /**                    Identity
  **                                                                            **
  *******************************************************************************/
@@ -178,7 +184,7 @@ public:
  **                                                                            **
  **                    POSITION
  **/
- 
+
   	//--------------------------------------------------------------------
  	// Position
 	//--------------------------------------------------------------------
@@ -211,9 +217,9 @@ public:
 	void			resetAxes();
 	void			resetAxes(const LLVector3 &look_at); // Makes reasonable left and up
 	// The following three get*Axis functions return direction avatar is looking, not camera.
-	const LLVector3&	getAtAxis()		const	{ return mFrameAgent.getAtAxis(); }
-	const LLVector3&	getUpAxis()		const	{ return mFrameAgent.getUpAxis(); }
-	const LLVector3&	getLeftAxis()	const	{ return mFrameAgent.getLeftAxis(); }
+	const LLVector3& getAtAxis() const		{ return mFrameAgent.getAtAxis(); }
+	const LLVector3& getUpAxis() const		{ return mFrameAgent.getUpAxis(); }
+	const LLVector3& getLeftAxis() const	{ return mFrameAgent.getLeftAxis(); }
 	LLQuaternion	getQuat() const; 		// Returns the quat that represents the rotation of the agent in the absolute frame
 private:
 	LLVector3d		mAgentOriginGlobal;		// Origin of agent coords from global coords
@@ -225,7 +231,7 @@ private:
 	//--------------------------------------------------------------------
 public:
 	void			setStartPosition(U32 location_id); // Marks current location as start, sends information to servers
-	void			setHomePosRegion( const U64& region_handle, const LLVector3& pos_region );
+	void			setHomePosRegion(const U64& region_handle, const LLVector3& pos_region);
 	BOOL			getHomePosGlobal(LLVector3d* pos_global);
 private:
 	BOOL 			mHaveHomePosition;
@@ -237,27 +243,22 @@ private:
 	//--------------------------------------------------------------------
 public:
 	void			setRegion(LLViewerRegion *regionp);
-	LLViewerRegion	*getRegion() const;
+	LLViewerRegion	*getRegion() const  	{ return mRegionp; }
 	const LLHost&	getRegionHost() const;
 	BOOL			inPrelude();
-	std::string		getSLURL() const; //Return uri for current region
-	
+
 	// <edit>
 	struct SHLureRequest
 	{
-		SHLureRequest(const std::string& avatar_name, const LLVector3d& pos_global, const int x, const int y, const int z) :
-			mAvatarName(avatar_name), mPosGlobal(pos_global)
-			{ mPosLocal[0] = x; mPosLocal[1] = y; mPosLocal[2] = z;}
+		SHLureRequest(const std::string& avatar_name, U64& handle, const U32 x, const U32 y, const U32 z) :
+			mAvatarName(avatar_name), mRegionHandle(handle), mPosLocal(x,y,z) {}
 		const std::string mAvatarName;
-		const LLVector3d mPosGlobal;
-		int mPosLocal[3];
+		const U64 mRegionHandle;
+		LLVector3 mPosLocal;
 	};
 	SHLureRequest *mPendingLure;
-	void showLureDestination(const std::string fromname, const int global_x, const int global_y, const int x, const int y, const int z, const std::string maturity);
+	void showLureDestination(const std::string fromname, U64& handle, U32 x, U32 y, U32 z);
 	void onFoundLureDestination(LLSimInfo *siminfo = NULL);
-
-	static LLVector3 exlStartMeasurePoint;
-	static LLVector3 exlEndMeasurePoint;
 	// </edit>
 	
 private:
@@ -276,18 +277,18 @@ public:
 private:
 	std::set<U64>	mRegionsVisited;		// Stat - what distinct regions has the avatar been to?
 	F64				mDistanceTraveled;		// Stat - how far has the avatar moved?
-	LLVector3d		mLastPositionGlobal;	// Used to calculate travel distance	
+	LLVector3d		mLastPositionGlobal;	// Used to calculate travel distance
 	
 /**                    Position
  **                                                                            **
  *******************************************************************************/
- 
+
 /********************************************************************************
  **                                                                            **
  **                    ACTIONS
  **/
- 
- 	//--------------------------------------------------------------------
+
+	//--------------------------------------------------------------------
 	// Fidget
 	//--------------------------------------------------------------------
 	// Trigger random fidget animations
@@ -310,7 +311,23 @@ public:
 	static void		toggleFlying();
 	static bool		enableFlying();
 	BOOL			canFly(); 			// Does this parcel allow you to fly?
-	
+
+	//--------------------------------------------------------------------
+	// Voice
+	//--------------------------------------------------------------------
+public:
+	bool			isVoiceConnected() const { return mVoiceConnected; }
+	void			setVoiceConnected(const bool b)	{ mVoiceConnected = b; }
+
+	static void		pressMicrophone(const LLSD& name);
+	static void		releaseMicrophone(const LLSD& name);
+	static void		toggleMicrophone(const LLSD& name);
+	static bool		isMicrophoneOn(const LLSD& sdname);
+	static bool		isActionAllowed(const LLSD& sdname);
+
+private:
+	bool			mVoiceConnected;
+
 	//--------------------------------------------------------------------
 	// Chat
 	//--------------------------------------------------------------------
@@ -404,7 +421,7 @@ public:
 	BOOL			getBusy() const;
 private:
 	BOOL			mIsBusy;
-	
+
 	//--------------------------------------------------------------------
 	// Grab
 	//--------------------------------------------------------------------
@@ -442,13 +459,16 @@ private:
 
 	//--------------------------------------------------------------------
 	// Animations
-	//--------------------------------------------------------------------	
+	//--------------------------------------------------------------------
 public:
 	void            stopCurrentAnimations();
 	void			requestStopMotion(LLMotion* motion);
 	void			onAnimStop(const LLUUID& id);
-	void			sendAnimationRequests(LLDynamicArray<LLUUID> &anim_ids, EAnimRequest request);
+	void			sendAnimationRequests(const std::vector<LLUUID> &anim_ids, EAnimRequest request);
 	void			sendAnimationRequest(const LLUUID &anim_id, EAnimRequest request);
+	void			sendAnimationStateReset();
+	void			sendRevokePermissions(const LLUUID & target, U32 permissions);
+
 	void			endAnimationUpdateUI();
 	void			unpauseAnimation() { mPauseRequest = NULL; }
 	BOOL			getCustomAnim() const { return mCustomAnim; }
@@ -560,25 +580,24 @@ public:
 		TELEPORT_MOVING = 3,		// Viewer has received destination location from source simulator
 		TELEPORT_START_ARRIVAL = 4,	// Transition to ARRIVING.  Viewer has received avatar update, etc., from destination simulator
 		TELEPORT_ARRIVING = 5,		// Make the user wait while content "pre-caches"
-		TELEPORT_LOCAL = 6			// Teleporting in-sim without showing the progress screen
+		TELEPORT_LOCAL = 6,			// Teleporting in-sim without showing the progress screen
+		TELEPORT_PENDING = 7
 	};
 
 public:
 	static void 	parseTeleportMessages(const std::string& xml_filename);
-	const std::string& getTeleportSourceSLURL() const { return mTeleportSourceSLURL; }
+	const void getTeleportSourceSLURL(LLSLURL& slurl) const;
 public:
 	// ! TODO ! Define ERROR and PROGRESS enums here instead of exposing the mappings.
 	static std::map<std::string, std::string> sTeleportErrorMessages;
 	static std::map<std::string, std::string> sTeleportProgressMessages;
-public:
-	std::string		mTeleportSourceSLURL;			// SLURL where last TP began.
+private:
+	LLSLURL * mTeleportSourceSLURL; 			// SLURL where last TP began
+
 	//--------------------------------------------------------------------
 	// Teleport Actions
 	//--------------------------------------------------------------------
 public:
-	void 			teleportRequest(const U64& region_handle,
-									const LLVector3& pos_local,				// Go to a named location home
-									bool look_at_from_camera = false);
 	void 			teleportViaLandmark(const LLUUID& landmark_id);			// Teleport to a landmark
 	void 			teleportHome()	{ teleportViaLandmark(LLUUID::null); }	// Go home
 	void 			teleportViaLure(const LLUUID& lure_id, BOOL godlike);	// To an invited location
@@ -588,6 +607,45 @@ public:
 	bool			getTeleportKeepsLookAt() { return mbTeleportKeepsLookAt; } // Whether look-at reset after teleport
 protected:
 	bool 			teleportCore(bool is_local = false); 					// Stuff for all teleports; returns true if the teleport can proceed
+
+	//--------------------------------------------------------------------
+	// Teleport State
+	//--------------------------------------------------------------------
+
+public:
+	bool            hasRestartableFailedTeleportRequest();
+	void            restartFailedTeleportRequest();
+	void            clearTeleportRequest();
+	void            setMaturityRatingChangeDuringTeleport(U8 pMaturityRatingChange);
+
+private:
+	friend class LLTeleportRequest;
+	friend class LLTeleportRequestViaLandmark;
+	friend class LLTeleportRequestViaLure;
+	friend class LLTeleportRequestViaLocation;
+	friend class LLTeleportRequestViaLocationLookAt;
+
+	LLTeleportRequestPtr        mTeleportRequest;
+	boost::signals2::connection mTeleportFinishedSlot;
+	boost::signals2::connection mTeleportFailedSlot;
+
+	bool            mIsMaturityRatingChangingDuringTeleport;
+	U8              mMaturityRatingChange;
+
+	bool            hasPendingTeleportRequest();
+	void            startTeleportRequest();
+
+	void 			teleportRequest(const U64& region_handle,
+									const LLVector3& pos_local,				// Go to a named location home
+									bool look_at_from_camera = false);
+	void 			doTeleportViaLandmark(const LLUUID& landmark_id);			// Teleport to a landmark
+	void 			doTeleportViaLure(const LLUUID& lure_id, BOOL godlike);	// To an invited location
+	void 			doTeleportViaLocation(const LLVector3d& pos_global);		// To a global location - this will probably need to be deprecated
+	void			doTeleportViaLocationLookAt(const LLVector3d& pos_global);// To a global location, preserving camera rotation
+
+	void            handleTeleportFinished();
+	void            handleTeleportFailed();
+	void			handleServerBakeRegionTransition(const LLUUID& region_id);
 
 	//--------------------------------------------------------------------
 	// Teleport State
@@ -637,7 +695,7 @@ public:
 	// ! BACKWARDS COMPATIBILITY ! This function can go away after the AO transition (see llstartup.cpp).
 	void 			setAOTransition();
 private:
-	LLAgentAccess   *mAgentAccess;
+	LLAgentAccess * mAgentAccess;
 	
 	//--------------------------------------------------------------------
 	// God
@@ -650,6 +708,16 @@ public:
 	void			setGodLevel(U8 god_level);
 	void			requestEnterGodMode();
 	void			requestLeaveGodMode();
+
+	typedef boost::function<void (U8)>         god_level_change_callback_t;
+	typedef boost::signals2::signal<void (U8)> god_level_change_signal_t;
+	typedef boost::signals2::connection        god_level_change_slot_t;
+
+	god_level_change_slot_t registerGodLevelChanageListener(god_level_change_callback_t pGodLevelChangeCallback);
+
+private:
+	god_level_change_signal_t mGodLevelChangeSignal;
+	
 
 	//--------------------------------------------------------------------
 	// Maturity
@@ -672,13 +740,28 @@ public:
 	bool 			isAdult() const;
 	void 			setTeen(bool teen);
 	void 			setMaturity(char text);
-	static int 		convertTextToMaturity(char text); 
-	bool 			sendMaturityPreferenceToServer(int preferredMaturity); // ! "U8" instead of "int"?
+	static int 		convertTextToMaturity(char text);
+
+private:
+	bool                            mIsDoSendMaturityPreferenceToServer;
+	unsigned int                    mMaturityPreferenceRequestId;
+	unsigned int                    mMaturityPreferenceResponseId;
+	unsigned int                    mMaturityPreferenceNumRetries;
+	U8                              mLastKnownRequestMaturity;
+	U8                              mLastKnownResponseMaturity;
+
+	bool            isMaturityPreferenceSyncedWithServer() const;
+	void 			sendMaturityPreferenceToServer(U8 pPreferredMaturity);
+
+	friend class LLMaturityPreferencesResponder;
+	void            handlePreferredMaturityResult(U8 pServerMaturity);
+	void            handlePreferredMaturityError();
+	void            reportPreferredMaturitySuccess();
+	void            reportPreferredMaturityError();
 
 	// Maturity callbacks for PreferredMaturity control variable
-	void 			handleMaturity(const LLSD& newvalue);
+	void 			handleMaturity(const LLSD &pNewValue);
 	bool 			validateMaturity(const LLSD& newvalue);
-
 
 
 /**                    Access
@@ -715,20 +798,20 @@ private:
 	// HUD
 	//--------------------------------------------------------------------
 public:
-	const LLColor4		&getEffectColor();
-	void				setEffectColor(const LLColor4 &color);
+	const LLColor4	&getEffectColor();
+	void			setEffectColor(const LLColor4 &color);
 private:
 	LLColor4 *mEffectColor;
 
 /**                    Rendering
  **                                                                            **
  *******************************************************************************/
- 
+
 /********************************************************************************
  **                                                                            **
  **                    GROUPS
  **/
- 
+
 public:
 	const LLUUID	&getGroupID() const			{ return mGroupID; }
 	// Get group information by group_id, or FALSE if not in group.
@@ -748,7 +831,7 @@ private:
 	//--------------------------------------------------------------------
 public:
 	// Checks against all groups in the entire agent group list.
-	BOOL isInGroup(const LLUUID& group_id) const;
+	BOOL 			isInGroup(const LLUUID& group_id, BOOL ingnore_God_mod = FALSE) const;
 protected:
 	// Only used for building titles.
 	BOOL			isGroupMember() const 		{ return !mGroupID.isNull(); } 
@@ -765,7 +848,7 @@ public:
 private:
 	std::string		mGroupTitle; 					// Honorific, like "Sir"
 	BOOL			mHideGroupTitle;
-		
+
 	//--------------------------------------------------------------------
 	// Group Powers
 	//--------------------------------------------------------------------
@@ -798,8 +881,9 @@ private:
 	// Send
 	//--------------------------------------------------------------------
 public:
-	void			sendMessage();						// Send message to this agent's region.
+	void			sendMessage(); // Send message to this agent's region
 	void			sendReliableMessage();
+	void 			dumpSentAppearance(const std::string& dump_prefix);
 	void			sendAgentSetAppearance();
 	void 			sendAgentDataUpdateRequest();
 	void 			sendAgentUserInfoRequest();
@@ -818,54 +902,22 @@ public:
 	
 /**                    Messaging
  **                                                                            **
- *******************************************************************************/	
+ *******************************************************************************/
 
 /********************************************************************************
  **                                                                            **
  **                    DEBUGGING
  **/
-	
+
 public:
-	static void		clearVisualParams(void *); 
+	void			dumpGroupInfo();
+	static void		clearVisualParams(void *);
 	friend std::ostream& operator<<(std::ostream &s, const LLAgent &sphere);
 
 /**                    Debugging
  **                                                                            **
  *******************************************************************************/
 
-/********************************************************************************
- **                                                                            **
- **                   Phantom mode!
- **/
-
- public:
-	static BOOL			getPhantom();
-	static void			setPhantom(BOOL phantom);
-	static void			togglePhantom();
-private:
-	static BOOL exlPhantom;
-/**                    PHANTOM
- **                                                                            **
- *******************************************************************************/
- 	
-/********************************************************************************
- **                                                                            **
- **                    Depreciated stuff. Move when ready.
- **/
-public:
-	//What's this t-posed stuff from?
-	static BOOL			isTPosed() { return mForceTPose; }
-	static void			setTPosed(BOOL TPose) { mForceTPose = TPose; }
-	static void			toggleTPosed();
-	
-private:
- 	static BOOL 	mForceTPose;
-	
-
-/**                    DEPRECIATED
- **                                                                            **
- *******************************************************************************/
- 
 };
 
 extern LLAgent gAgent;
@@ -890,16 +942,12 @@ private:
 	S32				mNumPendingQueries;
 	S32				mWearablesCacheQueryID; //mTextureCacheQueryID;
 	U32				mUpdateSerialNum; //mAgentWearablesUpdateSerialNum
-	S32		    	mActiveCacheQueries[LLVOAvatarDefines::BAKED_NUM_INDICES];
+	S32		    	mActiveCacheQueries[LLAvatarAppearanceDefines::BAKED_NUM_INDICES];
 };
 
 extern LLAgentQueryManager gAgentQueryManager;
 
 extern std::string gAuthString;
 
-// <edit>
-extern LLUUID gReSitTargetID;
-extern LLVector3 gReSitOffset;
-// </edit>
 void update_group_floaters(const LLUUID& group_id);
 #endif

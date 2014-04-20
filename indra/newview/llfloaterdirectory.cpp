@@ -34,6 +34,7 @@
 
 #include "llfloaterdirectory.h"
 
+#include "llfloatersearch.h" // For callback to open web search
 #include "llpaneldirfind.h"
 #include "llpaneldirevents.h"
 #include "llpaneldirland.h"
@@ -42,30 +43,141 @@
 #include "llpaneldirgroups.h"
 #include "llpaneldirplaces.h"
 #include "llpaneldirclassified.h"
-#include "llresizehandle.h"
-#include "llresmgr.h"
-#include "llscrollbar.h"
-#include "llbutton.h"
-
-#include "llkeyboard.h"
-#include "llscrollcontainer.h"
-#include "llcheckboxctrl.h"
-#include "lluiconstants.h"
-#include "llviewercontrol.h"
 
 #include "llagent.h"
 #include "llpanelavatar.h"
 #include "llpanelevent.h"
 #include "llpanelclassified.h"
 #include "llpanelgroup.h"
-#include "llpanelpick.h"
 #include "llpanelplace.h"
-#include "llpaneldirland.h"
-#include "llfloateravatarinfo.h"
-#include "lldir.h"
 #include "lluictrlfactory.h"
 
 #include "hippogridmanager.h"
+#include "llenvmanager.h"
+#include "llnotificationsutil.h"
+#include "llviewerregion.h"
+
+const char* market_panel = "market_panel";
+
+class LLPanelDirMarket : public LLPanelDirFind
+{
+public:
+	LLPanelDirMarket(const std::string& name, LLFloaterDirectory* floater)
+	: LLPanelDirFind(name, floater, "market_browser")
+	{}
+
+	/*virtual*/ void search(const std::string& url)
+	{
+		if (url.empty()) navigateToDefaultPage();
+	}
+
+	/*virtual*/ void navigateToDefaultPage()
+	{
+		if (mWebBrowser && !mMarketplaceURL.empty()) mWebBrowser->navigateTo(mMarketplaceURL);
+	}
+
+	/*virtual*/ BOOL postBuild()
+	{
+		if (gHippoGridManager->getConnectedGrid()->isSecondLife())
+		{
+			mMarketplaceURL = getString("default_search_page");
+		}
+		else
+		{
+			getChild<LLUICtrl>("reset_btn")->setCommitCallback(boost::bind(&LLPanelDirMarket::navigateToDefaultPage, this));
+		}
+		return LLPanelDirFind::postBuild();
+	}
+
+	void handleRegionChange(LLTabContainer* container)
+	{
+		if (LLViewerRegion* region = gAgent.getRegion())
+		{
+			if (region->getFeaturesReceived())
+			{
+				setMarketplaceURL(container);
+			}
+			else
+			{
+				region->setFeaturesReceivedCallback(boost::bind(&LLPanelDirMarket::setMarketplaceURL, this, container));
+			}
+		}
+	}
+
+	void setMarketplaceURL(LLTabContainer* container)
+	{
+		if (LLViewerRegion* region = gAgent.getRegion())
+		{
+			LLSD info;
+			region->getSimulatorFeatures(info);
+			if (info.has("MarketplaceURL"))
+			{
+				std::string url = info["MarketplaceURL"].asString();
+				if (mMarketplaceURL == url) return;
+
+				if (mMarketplaceURL.empty())
+				{
+					container->addTabPanel(this, getLabel());
+					mMarketplaceURL = url;
+					navigateToDefaultPage();
+				}
+				else
+				{
+					LLNotificationsUtil::add("MarketplaceURLChanged", LLSD(), LLSD(),
+							boost::bind(&LLPanelDirMarket::onConfirmChangeMarketplaceURL, this, boost::bind(LLNotificationsUtil::getSelectedOption, _1, _2), url));
+				}
+			}
+			else if (!mMarketplaceURL.empty())
+			{
+				if (gFloaterView->getParentFloater(this)->getVisible()) // Notify the user that they're no longer on the region with the marketplace when search is open
+				{
+					LLNotificationsUtil::add("MarketplaceURLGone");
+				}
+				else // Search is not in use, remove the marketplace
+				{
+					mMarketplaceURL = "";
+					container->removeTabPanel(this);
+				}
+			}
+		}
+	}
+
+	void onConfirmChangeMarketplaceURL(const S32 option, const std::string& url)
+	{
+		if (option == 1) return; //no
+		else //yes
+		{
+			mMarketplaceURL = url;
+			if (option == 2) navigateToDefaultPage();
+		}
+	}
+
+	static void* create(void* data)
+	{
+		return new LLPanelDirMarket(market_panel, static_cast<LLFloaterDirectory*>(data));
+	}
+
+private:
+	std::string mMarketplaceURL;
+};
+
+namespace {
+
+void* createWebPanel(void* data)
+{
+	struct LLPanelDirWeb : public LLPanelDirFind
+	{
+		LLPanelDirWeb(LLFloaterDirectory* f) : LLPanelDirFind("web_panel", f, "web_search_browser") {}
+		/*virtual*/ void search(const std::string& url) {}
+		/*virtual*/ void navigateToDefaultPage()
+		{
+			if (mWebBrowser) mWebBrowser->navigateTo(getString("default_search_page"));
+		}
+	};
+	return new LLPanelDirWeb(static_cast<LLFloaterDirectory*>(data));
+}
+
+} // namespace
 
 LLFloaterDirectory* LLFloaterDirectory::sInstance = NULL;
 //static
@@ -105,11 +217,13 @@ LLFloaterDirectory::LLFloaterDirectory(const std::string& name)
 	factory_map["land_sales_panel"] = LLCallbackMap(createLand, this);
 	factory_map["people_panel"] = LLCallbackMap(createPeople, this);
 	factory_map["groups_panel"] = LLCallbackMap(createGroups, this);
+	factory_map[market_panel] = LLCallbackMap(LLPanelDirMarket::create, this);
 	if (enableWebSearch)
 	{
 		// web search and showcase only for SecondLife
 		factory_map["find_all_panel"] = LLCallbackMap(createFindAll, this);
 		factory_map["showcase_panel"] = LLCallbackMap(createShowcase, this);		
+		if (!enableClassicAllSearch) factory_map["web_panel"] = LLCallbackMap(createWebPanel, this);
 	}
 
 	if (enableClassicAllSearch)
@@ -128,6 +242,7 @@ LLFloaterDirectory::LLFloaterDirectory(const std::string& name)
 	
 	if (enableWebSearch)
 	{
+		mCommitCallbackRegistrar.add("Search.WebFloater", boost::bind(&LLFloaterSearch::open, boost::bind(LLFloaterSearch::getInstance)));
 		if (enableClassicAllSearch)
 			LLUICtrlFactory::getInstance()->buildFloater(this, "floater_directory3.xml", &factory_map);
 		else
@@ -144,7 +259,15 @@ LLFloaterDirectory::LLFloaterDirectory(const std::string& name)
 		mPanelAvatarp->selectTab(0);
 	}
 	
-	getChild<LLTabContainer>("Directory Tabs")->setCommitCallback(boost::bind(&LLFloaterDirectory::onTabChanged,_2));
+	LLTabContainer* container = getChild<LLTabContainer>("Directory Tabs");
+	if (enableClassicAllSearch)
+	{
+		LLPanelDirMarket* marketp = static_cast<LLPanelDirMarket*>(container->getPanelByName(market_panel));
+		container->removeTabPanel(marketp); // Until we get a MarketPlace URL, tab is removed.
+		marketp->handleRegionChange(container);
+		LLEnvManagerNew::instance().setRegionChangeCallback(boost::bind(&LLPanelDirMarket::handleRegionChange, marketp, container));
+	}
+	container->setCommitCallback(boost::bind(&LLFloaterDirectory::onTabChanged,_2));
 }
 
 LLFloaterDirectory::~LLFloaterDirectory()
@@ -272,10 +395,8 @@ void* LLFloaterDirectory::createEventDetail(void* userdata)
 void* LLFloaterDirectory::createGroupDetail(void* userdata)
 {
 	LLFloaterDirectory *self = (LLFloaterDirectory*)userdata;
-	self->mPanelGroupp = new LLPanelGroup("panel_group.xml",
-										  "PanelGroup",
-										  gAgent.getGroupID());
-	self->mPanelGroupp->setAllowEdit(FALSE || gAgent.isGodlike()); // Gods can always edit panels
+	self->mPanelGroupp = new LLPanelGroup(gAgent.getGroupID());
+	self->mPanelGroupp->setAllowEdit(false); // Singu Note: This setting actually just tells the panel whether or not it is in search
 	self->mPanelGroupp->setVisible(FALSE);
 	return self->mPanelGroupp;
 }
@@ -335,6 +456,11 @@ void LLFloaterDirectory::showClassified(const LLUUID& classified_id)
 	}
 }
 
+// static
+void LLFloaterDirectory::showClassified(const std::string& search_text)
+{
+	performQueryOn("classified_panel", search_text);
+}
 
 // static
 void LLFloaterDirectory::showEvents(S32 event_id)
@@ -354,6 +480,12 @@ void LLFloaterDirectory::showEvents(S32 event_id)
 }
 
 // static
+void LLFloaterDirectory::showEvents(const std::string& search_text)
+{
+	performQueryOn("events_panel", search_text);
+}
+
+// static
 void LLFloaterDirectory::showLandForSale(const LLUUID& parcel_id)
 {
 	showPanel("land_sales_panel");
@@ -365,9 +497,37 @@ void LLFloaterDirectory::showLandForSale(const LLUUID& parcel_id)
 }
 
 // static
-void LLFloaterDirectory::showGroups()
+void LLFloaterDirectory::showDestinations()
 {
-	showPanel("groups_panel");
+	showPanel("showcase_panel");
+}
+
+// static
+void LLFloaterDirectory::showGroups(const std::string& search_text)
+{
+	performQueryOn("groups_panel", search_text);
+}
+
+// static
+void LLFloaterDirectory::showPeople(const std::string& search_text)
+{
+	performQueryOn("people_panel", search_text);
+}
+
+// static
+void LLFloaterDirectory::showPlaces(const std::string& search_text)
+{
+	performQueryOn("places_panel", search_text);
+}
+
+//static
+void LLFloaterDirectory::performQueryOn(const std::string& name, const std::string& search_text)
+{
+	showPanel(name);
+	if (search_text.empty()) return; // We're done here.
+	LLPanelDirBrowser* panel = sInstance->getChild<LLPanelDirBrowser>(name);
+	panel->getChild<LLUICtrl>("name")->setValue(search_text);
+	panel->performQuery();
 }
 
 // static

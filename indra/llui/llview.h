@@ -55,7 +55,10 @@
 #include "lluistring.h"
 #include "llcursortypes.h"
 #include "llinitparam.h"
+#include "lltreeiterators.h"
 #include "llfocusmgr.h"
+#include <boost/unordered_map.hpp>
+#include "ailist.h"
 
 const U32	FOLLOWS_NONE	= 0x00;
 const U32	FOLLOWS_LEFT	= 0x01;
@@ -128,11 +131,40 @@ public:
 	}
 };
 
+// maintains render state during traversal of UI tree
+class LLViewDrawContext
+{
+public:
+	F32 mAlpha;
+
+	LLViewDrawContext(F32 alpha = 1.f)
+	:	mAlpha(alpha)
+	{
+		if (!sDrawContextStack.empty())
+		{
+			LLViewDrawContext* context_top = sDrawContextStack.back();
+			// merge with top of stack
+			mAlpha *= context_top->mAlpha;
+		}
+		sDrawContextStack.push_back(this);
+	}
+
+	~LLViewDrawContext()
+	{
+		sDrawContextStack.pop_back();
+	}
+
+	static const LLViewDrawContext& getCurrentContext();
+
+private:
+	static std::vector<LLViewDrawContext*> sDrawContextStack;
+};
+
 class LLView 
 :	public LLMouseHandler,			// handles mouse events
 	public LLFocusableElement,		// handles keyboard events
-	public LLMortician				// lazy deletion
-	//public LLHandleProvider<LLView>	// passes out weak references to self
+	public LLMortician,				// lazy deletion
+	public LLHandleProvider<LLView>	// passes out weak references to self
 {
 public:
 	struct Follows : public LLInitParam::ChoiceBlock<Follows>
@@ -186,6 +218,15 @@ public:
 
 	void initFromParams(const LLView::Params&);
 
+	template<typename T>
+	struct CachedUICtrl
+	{
+		CachedUICtrl():mPtr(NULL){}
+		T* connect(LLView* parent,const char* pName){return mPtr = parent->getChild<T>(pName);}
+		T* operator->(){return mPtr;}
+		operator T*() const{return mPtr;}
+		T* mPtr;
+	};
 protected:
 	LLView(const LLView::Params&);
 	//friend class LLUICtrlFactory;
@@ -221,7 +262,7 @@ public:
 		SNAP_BOTTOM
 	};
 
-	typedef std::list<LLView*> child_list_t;
+	typedef AIList<LLView*> child_list_t;
 	typedef child_list_t::iterator					child_list_iter_t;
 	typedef child_list_t::const_iterator  			child_list_const_iter_t;
 	typedef child_list_t::reverse_iterator 			child_list_reverse_iter_t;
@@ -296,7 +337,9 @@ public:
 	// remove the specified child from the view, and set it's parent to NULL.
 	virtual void	removeChild(LLView* view);
 
-	child_tab_order_t getCtrlOrder() const		{ return mCtrlOrder; }
+	virtual BOOL	postBuild() { return TRUE; }
+
+	const child_tab_order_t& getCtrlOrder() const		{ return mCtrlOrder; }
 	ctrl_list_t getCtrlList() const;
 	ctrl_list_t getCtrlListSorted() const;
 	
@@ -313,6 +356,11 @@ public:
 
 	BOOL focusNextRoot();
 	BOOL focusPrevRoot();
+
+	// Normally we want the app menus to get priority on accelerated keys
+	// However, sometimes we want to give specific views a first chance
+	// at handling them. (eg. the script editor)
+	virtual bool	hasAccelerators() const { return false; }
 
 	virtual void deleteAllChildren();
 
@@ -333,8 +381,6 @@ public:
 	void			pushVisible(BOOL visible)	{ mLastVisible = mVisible; setVisible(visible); }
 	void			popVisible()				{ setVisible(mLastVisible); }
 	BOOL			getLastVisible()	const	{ return mLastVisible; }
-
-	LLHandle<LLView>	getHandle()				{ mHandle.bind(this); return mHandle; }
 
 	U32			getFollows() const				{ return mReshapeFlags; }
 	BOOL		followsLeft() const				{ return mReshapeFlags & FOLLOWS_LEFT; }
@@ -367,7 +413,24 @@ public:
 	BOOL		hasAncestor(const LLView* parentp) const;
 	BOOL		hasChild(const std::string& childname, BOOL recurse = FALSE) const;
 	BOOL 		childHasKeyboardFocus( const std::string& childname ) const;
+	
+	// these iterators are used for collapsing various tree traversals into for loops
+	typedef LLTreeDFSIter<LLView, child_list_const_iter_t> tree_iterator_t;
+	tree_iterator_t beginTreeDFS();
+	tree_iterator_t endTreeDFS();
 
+	typedef LLTreeDFSPostIter<LLView, child_list_const_iter_t> tree_post_iterator_t;
+	tree_post_iterator_t beginTreeDFSPost();
+	tree_post_iterator_t endTreeDFSPost();
+
+	typedef LLTreeBFSIter<LLView, child_list_const_iter_t> bfs_tree_iterator_t;
+	bfs_tree_iterator_t beginTreeBFS();
+	bfs_tree_iterator_t endTreeBFS();
+
+
+	typedef LLTreeDownIter<LLView> root_to_view_iterator_t;
+	root_to_view_iterator_t beginRootToView();
+	root_to_view_iterator_t endRootToView();
 
 	//
 	// UTILITIES
@@ -384,11 +447,9 @@ public:
 	void	setShape(const LLRect& new_rect, bool by_user = false);
 	virtual LLView*	findSnapRect(LLRect& new_rect, const LLCoordGL& mouse_dir, LLView::ESnapType snap_type, S32 threshold, S32 padding = 0);
 	virtual LLView*	findSnapEdge(S32& new_edge_val, const LLCoordGL& mouse_dir, ESnapEdge snap_edge, ESnapType snap_type, S32 threshold, S32 padding = 0);
-
 	virtual BOOL	canSnapTo(const LLView* other_view);
-
 	virtual void	setSnappedTo(const LLView* snap_view);
-	
+
 	// inherited from LLFocusableElement
 	/* virtual */ BOOL	handleKey(KEY key, MASK mask, BOOL called_from_parent);
 	/* virtual */ BOOL	handleUnicodeChar(llwchar uni_char, BOOL called_from_parent);
@@ -402,6 +463,8 @@ public:
 	std::string getShowNamesToolTip();
 
 	virtual void	draw();
+
+	void parseFollowsFlags(const LLView::Params& params);
 
 	virtual LLXMLNodePtr getXML(bool save_children = true) const;
 	//FIXME: make LLView non-instantiable from XML
@@ -454,6 +517,7 @@ public:
 	const child_list_t*	getChildList() const { return &mChildList; }
 	child_list_const_iter_t	beginChild() const { return mChildList.begin(); }
 	child_list_const_iter_t	endChild() const { return mChildList.end(); }
+	boost::unordered_map<const std::string, LLView*> mChildHashMap;
 
 	// LLMouseHandler functions
 	//  Default behavior is to pass events to children
@@ -467,13 +531,23 @@ public:
 	/*virtual*/ BOOL	handleRightMouseDown(S32 x, S32 y, MASK mask);
 	/*virtual*/ BOOL	handleRightMouseUp(S32 x, S32 y, MASK mask);	
 	/*virtual*/ BOOL	handleToolTip(S32 x, S32 y, std::string& msg, LLRect* sticky_rect); // Display mToolTipMsg if no child handles it.
-	/*virtual*/ const std::string&	getName() const;
+
+	/*virtual*/ const std::string& getName() const;
 	/*virtual*/ void	onMouseCaptureLost();
 	/*virtual*/ BOOL	hasMouseCapture();
 	/*virtual*/ BOOL isView(); // Hack to support LLFocusMgr
 	/*virtual*/ void	screenPointToLocal(S32 screen_x, S32 screen_y, S32* local_x, S32* local_y) const;
 	/*virtual*/ void	localPointToScreen(S32 local_x, S32 local_y, S32* screen_x, S32* screen_y) const;
 
+	virtual		LLView*	childFromPoint(S32 x, S32 y, bool recur=false);
+
+	// view-specific handlers 
+	virtual void	onMouseEnter(S32 x, S32 y, MASK mask);
+	virtual void	onMouseLeave(S32 x, S32 y, MASK mask);
+	template <class T> T* findChild(const std::string& name)
+	{
+		return getChild<T>(name,true,false);
+	}
 	template <class T> T* getChild(const std::string& name, BOOL recurse = TRUE, BOOL create_if_missing = TRUE) const
 	{
 		LLView* child = getChildView(name, recurse, FALSE);
@@ -568,9 +642,9 @@ public:
 	static std::string escapeXML(const std::string& xml, std::string& indent);
 
 	// focuses the item in the list after the currently-focused item, wrapping if necessary
-	static	BOOL focusNext(LLView::child_list_t & result);
+	static	BOOL focusNext(viewList_t& result);
 	// focuses the item in the list before the currently-focused item, wrapping if necessary
-	static	BOOL focusPrev(LLView::child_list_t & result);
+	static	BOOL focusPrev(viewList_t& result);
 
 	// returns query for iterating over controls in tab order	
 	static const LLCtrlQuery & getTabOrderQuery();
@@ -588,6 +662,16 @@ public:
 
 	//send custom notification to LLView parent
 	virtual S32	notifyParent(const LLSD& info);
+
+	//send custom notification to all view childrend
+	// return true if _any_ children return true. otherwise false.
+	virtual bool	notifyChildren(const LLSD& info);
+
+	//send custom notification to current view
+	virtual S32	notify(const LLSD& info) { return 0;};
+
+	static const LLViewDrawContext& getDrawContext();
+	
 protected:
 	void			drawDebugRect();
 	void			drawChild(LLView* childp, S32 x_offset = 0, S32 y_offset = 0, BOOL force_draw = FALSE);
@@ -663,7 +747,6 @@ private:
 	BOOL		mIsFocusRoot;
 	BOOL		mUseBoundingRect; // hit test against bounding rectangle that includes all child elements
 
-	LLRootHandle<LLView> mHandle;
 	BOOL		mLastVisible;
 
 	S32			mNextInsertionOrdinal;

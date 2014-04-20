@@ -2,6 +2,9 @@
 <floater can_close="true" can_drag_on_left="false" can_minimize="true"
      can_resize="false" height="590" min_height="100" min_width="100"
      name="floater_report_abuse" title="Report Abuse" width="390">
+    <string name="Screenshot">
+        Screenshot
+    </string>
 	<texture_picker allow_no_texture="true" bottom="-150" default_image_name="None"
 	     follows="left|top" height="114" label="" left="238" mouse_opaque="true"
 	     name="screenshot" width="134" />
@@ -122,7 +125,7 @@
     Fraud > Pyramid scheme or chain letter
     </combo_item><combo_item name="Fraud__US$" value="50">
     Fraud > US$
-    </combo_item><combo_item name="Ridiculous3" value="71">
+    </combo_item><combo_item name="Ridiculous3" value="100">
     Freud > User has taken an interest in their mother
     </combo_item><combo_item name="Harassment__Advert_farms___visual_spam" value="51">
     Harassment > Advert farms / visual spam
@@ -136,7 +139,7 @@
     Harassment > Solicting/inciting others to violate ToS
     </combo_item><combo_item name="Harassment__Verbal_abuse" value="56">
     Harassment > Verbal abuse
-    </combo_item><combo_item name="Ridiculous1" value="69">
+    </combo_item><combo_item name="Ridiculous1" value="100">
     Harassment > User keeps licking finger and touching me
     </combo_item><combo_item name="Indecency__Broadly_offensive_content_or_conduct" value="57">
     Indecency > Broadly offensive content or conduct
@@ -161,7 +164,7 @@
     Land > Encroachment > Particles
     </combo_item><combo_item name="Land__Encroachment__Trees_plants" value="65">
     Land > Encroachment > Trees/plants
-    </combo_item><combo_item name="Ridiculous2" value="70">
+    </combo_item><combo_item name="Ridiculous2" value="100">
     Land > Encroachment > User won't stay on their side of the car
     </combo_item><combo_item name="Wagering_gambling" value="67">
     Wagering/gambling

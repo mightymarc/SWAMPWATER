@@ -41,12 +41,12 @@ if (LINUX)
   LIST(APPEND llvfs_SOURCE_FILES lldir_linux.cpp)
   LIST(APPEND llvfs_HEADER_FILES lldir_linux.h)
 
-  if (VIEWER AND INSTALL)
+  if (INSTALL)
     set_source_files_properties(lldir_linux.cpp
                                 PROPERTIES COMPILE_FLAGS
                                 "-DAPP_RO_DATA_DIR=\\\"${APP_SHARE_DIR}\\\""
                                 )
-  endif (VIEWER AND INSTALL)
+  endif (INSTALL)
 endif (LINUX)
 
 if (WINDOWS)
@@ -63,8 +63,8 @@ add_library (llvfs ${llvfs_SOURCE_FILES})
 add_dependencies(llvfs prepare)
 
 target_link_libraries(llvfs
-    ${BOOST_FILESYSTEM_LIBRARY}
-    ${BOOST_SYSTEM_LIBRARY}
+    ${Boost_FILESYSTEM_LIBRARY}
+    ${Boost_SYSTEM_LIBRARY}
     )
 
 if (DARWIN)

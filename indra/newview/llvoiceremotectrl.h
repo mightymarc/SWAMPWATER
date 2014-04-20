@@ -36,6 +36,8 @@
 #include "llpanel.h"
 
 class LLButton;
+class LLIconCtrl;
+class LLTextBox;
 
 class LLVoiceRemoteCtrl : public LLPanel
 {
@@ -52,13 +54,15 @@ public:
 	static void onBtnTalkClicked();
 	static void onClickSpeakers();
 	static void onClickPopupBtn(void* user_data);
-	static void onClickVoiceChannel(void* user_data);
-	static void onClickEndCall(void* user_data);
+	static void onClickVoiceChannel();
+	static void onClickEndCall();
 
 protected:
 	LLButton* mTalkBtn;
 	LLButton* mTalkLockBtn;
 	LLButton* mSpeakersBtn;
+	CachedUICtrl<LLIconCtrl> mVoiceVolIcon;
+	CachedUICtrl<LLButton> mShowChanBtn;
 };
 
 #endif // LL_LLVOICEREMOTECTRL_H

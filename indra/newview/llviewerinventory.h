@@ -3,10 +3,9 @@
  * @brief Declaration of the inventory bits that only used on the viewer.
  *
  * $LicenseInfo:firstyear=2002&license=viewergpl$
- * 
+ * Second Life Viewer Source Code
  * Copyright (c) 2002-2009, Linden Research, Inc.
  * 
- * Second Life Viewer Source Code
  * The source code in this file ("Source Code") is provided by Linden Lab
  * to you under the terms of the GNU General Public License, version 2.0
  * ("GPL"), unless you have obtained a separate licensing agreement
@@ -163,6 +162,11 @@ public:
 	// If this is a broken link, try to fix it and any other identical link.
 	BOOL regenerateLink();
 
+	//<singu>
+	// Change WT_UNKNOWN to the type retrieved from the asset.
+	void setWearableType(LLWearableType::EType type);
+	//</singu>
+
 public:
 	BOOL mIsComplete;
 	LLTransactionID mTransactionID;
@@ -211,7 +215,7 @@ public:
 	// Returns true if a fetch was issued.
 	bool fetch();
 
-	// used to help make cacheing more robust - for example, if
+	// used to help make caching more robust - for example, if
 	// someone is getting 4 packets but logs out after 3. the viewer
 	// may never know the cache is wrong.
 	enum { DESCENDENT_COUNT_UNKNOWN = -1 };
@@ -219,7 +223,7 @@ public:
 	void setDescendentCount(S32 descendents) { mDescendentCount = descendents; }
 
 	// file handling on the viewer. These are not meant for anything
-	// other than cacheing.
+	// other than caching.
 	bool exportFileLocal(LLFILE* fp) const;
 	bool importFileLocal(LLFILE* fp);
 	void determineFolderType();
@@ -227,6 +231,7 @@ public:
 
 private:
 	friend class LLInventoryModel;
+	void localizeName(); // intended to be called from the LLInventoryModel
 
 protected:
 	LLUUID mOwnerID;
@@ -241,53 +246,16 @@ public:
 	virtual void fire(const LLUUID& inv_item) = 0;
 };
 
-class WearOnAvatarCallback : public LLInventoryCallback
-{
-public:
-	WearOnAvatarCallback(bool do_replace = false) : mReplace(do_replace) {}
-	
-	void fire(const LLUUID& inv_item);
-
-protected:
-	bool mReplace;
-};
-
-class ModifiedCOFCallback : public LLInventoryCallback
-{
-	void fire(const LLUUID& inv_item);
-};
 class LLViewerJointAttachment;
 
-class RezAttachmentCallback : public LLInventoryCallback
-{
-public:
-//	RezAttachmentCallback(LLViewerJointAttachment *attachmentp);
+//void rez_attachment_cb(const LLUUID& inv_item, LLViewerJointAttachment *attachmentp);
 // [SL:KB] - Patch: Appearance-DnDWear | Checked: 2010-09-28 (Catznip-3.0.0a) | Added: Catznip-2.2.0a
-	RezAttachmentCallback(LLViewerJointAttachment *attachmentp, bool replace = false);
+void rez_attachment_cb(const LLUUID& inv_item, LLViewerJointAttachment *attachmentp, bool replace);
 // [/SL:KB]
-	void fire(const LLUUID& inv_item);
 
-protected:
-	~RezAttachmentCallback();
+void activate_gesture_cb(const LLUUID& inv_item);
 
-private:
-	LLViewerJointAttachment* mAttach;
-// [SL:KB] - Patch: Appearance-DnDWear | Checked: 2010-09-28 (Catznip-3.0.0a) | Added: Catznip-2.2.0a
-	bool mReplace;
-// [/SL:KB]
-};
-
-class ActivateGestureCallback : public LLInventoryCallback
-{
-public:
-	void fire(const LLUUID& inv_item);
-};
-
-class CreateGestureCallback : public LLInventoryCallback
-{
-public:
-	void fire(const LLUUID& inv_item);
-};
+void create_gesture_cb(const LLUUID& inv_item);
 
 class AddFavoriteLandmarkCallback : public LLInventoryCallback
 {
@@ -299,6 +267,42 @@ private:
 	void fire(const LLUUID& inv_item);
 
 	LLUUID mTargetLandmarkId;
+};
+
+typedef boost::function<void(const LLUUID&)> inventory_func_type;
+void no_op_inventory_func(const LLUUID&); // A do-nothing inventory_func
+
+typedef boost::function<void()> nullary_func_type;
+void no_op(); // A do-nothing nullary func.
+
+// Shim between inventory callback and boost function/callable
+class LLBoostFuncInventoryCallback: public LLInventoryCallback
+{
+public:
+
+	LLBoostFuncInventoryCallback(inventory_func_type fire_func,
+								 nullary_func_type destroy_func = no_op):
+		mFireFunc(fire_func),
+		mDestroyFunc(destroy_func)
+	{
+	}
+
+	// virtual
+	void fire(const LLUUID& item_id)
+	{
+		mFireFunc(item_id);
+	}
+
+	// virtual
+	~LLBoostFuncInventoryCallback()
+	{
+		mDestroyFunc();
+	}
+	
+
+private:
+	inventory_func_type mFireFunc;
+	nullary_func_type mDestroyFunc;
 };
 
 // misc functions
@@ -328,6 +332,7 @@ extern LLInventoryCallbackManager gInventoryCallbacks;
 
 #define NOT_WEARABLE (LLWearableType::EType)0
 
+// *TODO: Find a home for these
 void create_inventory_item(const LLUUID& agent_id, const LLUUID& session_id,
 						   const LLUUID& parent, const LLTransactionID& transaction_id,
 						   const std::string& name,

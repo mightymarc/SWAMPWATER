@@ -7,13 +7,14 @@ include(00-Common)
 
 # OPENJPEG version number, useful for packaging and doxygen doc:
 set(OPENJPEG_VERSION_MAJOR 1)
-set(OPENJPEG_VERSION_MINOR 4)
-set(OPENJPEG_VERSION_BUILD 0)
+set(OPENJPEG_VERSION_MINOR 5)
+set(OPENJPEG_VERSION_BUILD 2)
 set(OPENJPEG_VERSION
   "${OPENJPEG_VERSION_MAJOR}.${OPENJPEG_VERSION_MINOR}.${OPENJPEG_VERSION_BUILD}")
 
 set(openjpeg_SOURCE_FILES
     bio.c
+    cidx_manager.c
     cio.c
     dwt.c
     event.c
@@ -25,21 +26,27 @@ set(openjpeg_SOURCE_FILES
     mct.c
     mqc.c
     openjpeg.c
+    phix_manager.c
     pi.c
+    ppix_manager.c
     raw.c
     t1.c
     t2.c
     tcd.c
     tgt.c
+    thix_manager.c
+    tpix_manager.c
 )
 
 set(openjpeg_HEADER_FILES
     bio.h
+    cidx_manager.h
     cio.h
     dwt.h
-    event.h 
+    event.h
     fix.h
     image.h
+    indexbox_manager.h
     int.h
     j2k.h
     j2k_lib.h
@@ -48,6 +55,7 @@ set(openjpeg_HEADER_FILES
     mct.h
     mqc.h
     openjpeg.h
+    opj_config.h
     opj_includes.h
     opj_malloc.h
     pi.h

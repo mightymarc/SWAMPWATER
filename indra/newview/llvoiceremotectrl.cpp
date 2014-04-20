@@ -37,9 +37,8 @@
 #include "llui.h"
 #include "llbutton.h"
 #include "lluictrlfactory.h"
-#include "llviewercontrol.h"
+#include "llvoicechannel.h"
 #include "llvoiceclient.h"
-#include "llimpanel.h"
 #include "llfloateractivespeakers.h"
 #include "llfloaterchatterbox.h"
 #include "lliconctrl.h"
@@ -80,17 +79,20 @@ BOOL LLVoiceRemoteCtrl::postBuild()
 	mSpeakersBtn->setClickedCallback(boost::bind(&LLVoiceRemoteCtrl::onClickSpeakers));
 
 	childSetAction("show_channel", onClickPopupBtn, this);
-	childSetAction("end_call_btn", onClickEndCall, this);
+	if (LLButton* end_call_btn = findChild<LLButton>("end_call_btn"))
+		end_call_btn->setClickedCallback(boost::bind(&LLVoiceRemoteCtrl::onClickEndCall));
 
-	LLTextBox* text = getChild<LLTextBox>("channel_label");
+	LLTextBox* text = findChild<LLTextBox>("channel_label");
 	if (text)
 	{
 		text->setUseEllipses(TRUE);
 	}
 
-	childSetAction("voice_channel_bg", onClickVoiceChannel, this);
+	if (LLButton* voice_channel_bg = findChild<LLButton>("voice_channel_bg"))
+		voice_channel_bg->setClickedCallback(boost::bind(&LLVoiceRemoteCtrl::onClickVoiceChannel));
 
-
+	mVoiceVolIcon.connect(this,"voice_volume");
+	mShowChanBtn.connect(this,"show_channel");
 	return TRUE;
 }
 
@@ -106,19 +108,20 @@ void LLVoiceRemoteCtrl::draw()
 	mTalkBtn->setEnabled(voice_active);
 	mTalkLockBtn->setEnabled(voice_active);
 
+	static LLCachedControl<bool> ptt_currently_enabled("PTTCurrentlyEnabled",false);
 	// propagate ptt state to button display,
 	if (!mTalkBtn->hasMouseCapture())
 	{
 		// not in push to talk mode, or push to talk is active means I'm talking
-		mTalkBtn->setToggleState(!gSavedSettings.getBOOL("PTTCurrentlyEnabled") || gVoiceClient->getUserPTTState());
+		mTalkBtn->setToggleState(!ptt_currently_enabled || LLVoiceClient::getInstance()->getUserPTTState());
 	}
 	mSpeakersBtn->setToggleState(LLFloaterActiveSpeakers::instanceVisible(LLSD()));
-	mTalkLockBtn->setToggleState(!gSavedSettings.getBOOL("PTTCurrentlyEnabled"));
+	mTalkLockBtn->setToggleState(!ptt_currently_enabled);
 
 	std::string talk_blip_image;
-	if (gVoiceClient->getIsSpeaking(gAgent.getID()))
+	if (LLVoiceClient::getInstance()->getIsSpeaking(gAgent.getID()))
 	{
-		F32 voice_power = gVoiceClient->getCurrentPower(gAgent.getID());
+		F32 voice_power = LLVoiceClient::getInstance()->getCurrentPower(gAgent.getID());
 
 		if (voice_power > LLVoiceClient::OVERDRIVEN_POWER_LEVEL)
 		{
@@ -126,7 +129,7 @@ void LLVoiceRemoteCtrl::draw()
 		}
 		else
 		{
-			F32 power = gVoiceClient->getCurrentPower(gAgent.getID());
+			F32 power = LLVoiceClient::getInstance()->getCurrentPower(gAgent.getID());
 			S32 icon_image_idx = llmin(2, llfloor((power / LLVoiceClient::OVERDRIVEN_POWER_LEVEL) * 3.f));
 
 			switch(icon_image_idx)
@@ -148,37 +151,43 @@ void LLVoiceRemoteCtrl::draw()
 		talk_blip_image = "icn_voice_ptt-off.tga";
 	}
 
-	LLIconCtrl* icon = getChild<LLIconCtrl>("voice_volume");
+	LLIconCtrl* icon = mVoiceVolIcon;
 	if (icon)
 	{
 		icon->setImage(talk_blip_image);
 	}
 
 	LLFloater* voice_floater = LLFloaterChatterBox::getInstance()->getCurrentVoiceFloater();
+	LLVoiceChannel* current_channel = LLVoiceChannel::getCurrentVoiceChannel();
+	if (!voice_floater) // Maybe it's undocked
+	{
+		voice_floater = gIMMgr->findFloaterBySession(current_channel->getSessionID());
+	}
 	std::string active_channel_name;
 	if (voice_floater)
 	{
 		active_channel_name = voice_floater->getShortTitle();
 	}
 
-	LLVoiceChannel* current_channel = LLVoiceChannel::getCurrentVoiceChannel();
-	childSetEnabled("end_call_btn", LLVoiceClient::voiceEnabled() 
+	if (LLButton* end_call_btn = findChild<LLButton>("end_call_btn"))
+		end_call_btn->setEnabled(LLVoiceClient::getInstance()->voiceEnabled()
 								&& current_channel
 								&& current_channel->isActive()
 								&& current_channel != LLVoiceChannelProximal::getInstance());
 
-	childSetValue("channel_label", active_channel_name);
-	childSetToolTip("voice_channel_bg", active_channel_name);
+	if (LLTextBox* text = findChild<LLTextBox>("channel_label"))
+		text->setValue(active_channel_name);
+	LLButton* voice_channel_bg = findChild<LLButton>("voice_channel_bg");
+	if (voice_channel_bg) voice_channel_bg->setToolTip(active_channel_name);
 
 	if (current_channel)
 	{
-		LLIconCtrl* voice_channel_icon = getChild<LLIconCtrl>("voice_channel_icon");
+		LLIconCtrl* voice_channel_icon = findChild<LLIconCtrl>("voice_channel_icon");
 		if (voice_channel_icon && voice_floater)
 		{
 			voice_channel_icon->setImage(voice_floater->getString("voice_icon"));
 		}
 
-		LLButton* voice_channel_bg = getChild<LLButton>("voice_channel_bg");
 		if (voice_channel_bg)
 		{
 			LLColor4 bg_color;
@@ -198,7 +207,7 @@ void LLVoiceRemoteCtrl::draw()
 		}
 	}
 
-	LLButton* expand_button = getChild<LLButton>("show_channel");
+	LLButton* expand_button = mShowChanBtn;
 	if (expand_button)
 	{
 		if (expand_button->getToggleState())
@@ -219,7 +228,7 @@ void LLVoiceRemoteCtrl::onBtnTalkClicked()
 	// when in toggle mode, clicking talk button turns mic on/off
 	if (gSavedSettings.getBOOL("PushToTalkToggle"))
 	{
-		gVoiceClient->toggleUserPTTState();
+		LLVoiceClient::getInstance()->toggleUserPTTState();
 	}
 }
 
@@ -228,7 +237,7 @@ void LLVoiceRemoteCtrl::onBtnTalkHeld()
 	// when not in toggle mode, holding down talk button turns on mic
 	if (!gSavedSettings.getBOOL("PushToTalkToggle"))
 	{
-		gVoiceClient->setUserPTTState(true);
+		LLVoiceClient::getInstance()->setUserPTTState(true);
 	}
 }
 
@@ -237,7 +246,7 @@ void LLVoiceRemoteCtrl::onBtnTalkReleased()
 	// when not in toggle mode, releasing talk button turns off mic
 	if (!gSavedSettings.getBOOL("PushToTalkToggle"))
 	{
-		gVoiceClient->setUserPTTState(false);
+		LLVoiceClient::getInstance()->setUserPTTState(false);
 	}
 }
 
@@ -266,7 +275,7 @@ void LLVoiceRemoteCtrl::onClickPopupBtn(void* user_data)
 }
 
 //static
-void LLVoiceRemoteCtrl::onClickEndCall(void* user_data)
+void LLVoiceRemoteCtrl::onClickEndCall()
 {
 	LLVoiceChannel* current_channel = LLVoiceChannel::getCurrentVoiceChannel();
 
@@ -283,7 +292,18 @@ void LLVoiceRemoteCtrl::onClickSpeakers()
 }
 
 //static 
-void LLVoiceRemoteCtrl::onClickVoiceChannel(void* user_data)
+void LLVoiceRemoteCtrl::onClickVoiceChannel()
 {
-	LLFloaterChatterBox::showInstance();
+	if (LLFloater* floater = LLFloaterChatterBox::getInstance()->getCurrentVoiceFloater())
+	{
+		if (LLMultiFloater* mf = floater->getHost()) // Docked
+			mf->showFloater(floater);
+		else // Probably only local chat
+			floater->open();
+	}
+	else if (LLVoiceChannel* chan = LLVoiceChannel::getCurrentVoiceChannel()) // Detached chat floater
+	{
+		if (LLFloaterIMPanel* floater = gIMMgr->findFloaterBySession(chan->getSessionID()))
+			floater->open();
+	}
 }

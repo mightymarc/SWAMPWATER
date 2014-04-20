@@ -107,13 +107,22 @@ LLPanelDirBrowser::LLPanelDirBrowser(const std::string& name, LLFloaterDirectory
 
 BOOL LLPanelDirBrowser::postBuild()
 {
-	childSetCommitCallback("results", onCommitList, this);
+	if (LLUICtrl* ctrl = findChild<LLUICtrl>("results"))
+	{
+		ctrl->setCommitCallback(boost::bind(&LLPanelDirBrowser::onCommitList,this));
+	}
 
-	childSetAction("< Prev", onClickPrev, this);
-	childHide("< Prev");
+	if (LLButton* btn = findChild<LLButton>("< Prev"))
+	{
+		btn->setClickedCallback(boost::bind(&LLPanelDirBrowser::prevPage,this));
+		btn->setVisible(false);
+	}
 
-	childSetAction("Next >", onClickNext, this);
-	childHide("Next >");
+	if (LLButton* btn = findChild<LLButton>("Next >"))
+	{
+		btn->setClickedCallback(boost::bind(&LLPanelDirBrowser::nextPage,this));
+		btn->setVisible(false);
+	}
 
 	return TRUE;
 }
@@ -136,7 +145,7 @@ void LLPanelDirBrowser::draw()
 	if (mLastResultTimer.getElapsedTimeF32() > 0.5)
 	{
 		if (!mDidAutoSelect &&
-			!childHasFocus("results"))
+			hasChild("results") && !childHasFocus("results"))
 		{
 			LLCtrlListInterface *list = childGetListInterface("results");
 			if (list)
@@ -147,7 +156,7 @@ void LLPanelDirBrowser::draw()
 					childSetFocus("results", TRUE);
 				}
 				// Request specific data from the server
-				onCommitList(NULL, this);
+				onCommitList();
 			}
 		}
 		mDidAutoSelect = TRUE;
@@ -171,7 +180,8 @@ void LLPanelDirBrowser::nextPage()
 void LLPanelDirBrowser::prevPage()
 {
 	mSearchStart -= mResultsPerPage;
-	childSetVisible("< Prev", mSearchStart > 0);
+	if (LLUICtrl* ctrl = findChild<LLUICtrl>("< Prev"))
+		ctrl->setVisible(mSearchStart > 0);
 
 	performQuery();
 }
@@ -180,14 +190,17 @@ void LLPanelDirBrowser::prevPage()
 void LLPanelDirBrowser::resetSearchStart()
 {
 	mSearchStart = 0;
-	childHide("Next >");
-	childHide("< Prev");
+	if (LLUICtrl* ctrl = findChild<LLUICtrl>("Next >"))
+		ctrl->setVisible(false);
+	if (LLUICtrl* ctrl = findChild<LLUICtrl>("< Prev"))
+		ctrl->setVisible(false);
 }
 
 // protected
 void LLPanelDirBrowser::updateResultCount()
 {
-	LLScrollListCtrl* list = getChild<LLScrollListCtrl>("results");
+	LLScrollListCtrl* list = findChild<LLScrollListCtrl>("results");
+	if (!list) return;
 
 	S32 result_count = list->getItemCount();
 	std::string result_text;
@@ -212,29 +225,14 @@ void LLPanelDirBrowser::updateResultCount()
 		// add none found response
 		if (list->getItemCount() == 0)
 		{
-			list->addCommentText(std::string("None found.")); // *TODO: Translate
+			list->setCommentText(LLTrans::getString("NoneFound"));
 			list->operateOnAll(LLCtrlListInterface::OP_DESELECT);
 		}
 	}
 	else
 	{
-		childEnable("results");
+		list->setEnabled(true);
 	}
-}
-
-// static
-void LLPanelDirBrowser::onClickPrev(void* data)
-{
-	LLPanelDirBrowser* self = (LLPanelDirBrowser*)data;
-	self->prevPage();
-}
-
-
-// static
-void LLPanelDirBrowser::onClickNext(void* data)
-{
-	LLPanelDirBrowser* self = (LLPanelDirBrowser*)data;
-	self->nextPage();
 }
 
 // static
@@ -319,7 +317,7 @@ void LLPanelDirBrowser::updateMaturityCheckbox()
 
 void LLPanelDirBrowser::selectByUUID(const LLUUID& id)
 {
-	LLCtrlListInterface *list = childGetListInterface("results");
+	LLScrollListCtrl* list = findChild<LLScrollListCtrl>("results");
 	if (!list) return;
 	BOOL found = list->setCurrentByID(id);
 	if (found)
@@ -328,7 +326,7 @@ void LLPanelDirBrowser::selectByUUID(const LLUUID& id)
 		// Don't bother looking for this in the draw loop.
 		mWantSelectID.setNull();
 		// Make sure UI updates.
-		onCommitList(NULL, this);
+		onCommitList();
 	}
 	else
 	{
@@ -363,7 +361,7 @@ U32 LLPanelDirBrowser::getSelectedEventID() const
 
 void LLPanelDirBrowser::getSelectedInfo(LLUUID* id, S32 *type)
 {
-	LLCtrlListInterface *list = childGetListInterface("results");
+	LLScrollListCtrl* list = findChild<LLScrollListCtrl>("results");
 	if (!list) return;
 
 	LLSD id_sd = childGetValue("results");
@@ -374,18 +372,15 @@ void LLPanelDirBrowser::getSelectedInfo(LLUUID* id, S32 *type)
 	*type = mResultsContents[id_str]["type"];
 }
 
-
-// static
-void LLPanelDirBrowser::onCommitList(LLUICtrl* ctrl, void* data)
+void LLPanelDirBrowser::onCommitList()
 {
-	LLPanelDirBrowser* self = (LLPanelDirBrowser*)data;
-	LLCtrlListInterface *list = self->childGetListInterface("results");
+	LLScrollListCtrl* list = findChild<LLScrollListCtrl>("results");
 	if (!list) return;
 
 	// Start with everyone invisible
-	if (self->mFloaterDirectory)
+	if (mFloaterDirectory)
 	{
-		self->mFloaterDirectory->hideAllDetailPanels();
+		mFloaterDirectory->hideAllDetailPanels();
 	}
 	
 	if (FALSE == list->getCanSelect())
@@ -393,28 +388,28 @@ void LLPanelDirBrowser::onCommitList(LLUICtrl* ctrl, void* data)
 		return;
 	}
 
-	std::string id_str = self->childGetValue("results").asString();
+	std::string id_str = childGetValue("results").asString();
 	if (id_str.empty())
 	{
 		return;
 	}
 
 	LLSD item_id = list->getCurrentID();
-	S32 type = self->mResultsContents[id_str]["type"];
+	S32 type = mResultsContents[id_str]["type"];
 	if (type == EVENT_CODE)
 	{
 		// all but events use the UUID above
-		item_id = self->mResultsContents[id_str]["event_id"];
+		item_id = mResultsContents[id_str]["event_id"];
 	}
 	//std::string name = self->mResultsContents[id_str]["name"].asString();
-	self->showDetailPanel(type, item_id);
+	showDetailPanel(type, item_id);
 
 	if (type == FOR_SALE_CODE)
 	{
-		std::string land_type = self->mResultsContents[id_str]["landtype"].asString();
-		if (self->mFloaterDirectory && self->mFloaterDirectory->mPanelPlaceSmallp)
+		std::string land_type = mResultsContents[id_str]["landtype"].asString();
+		if (mFloaterDirectory && mFloaterDirectory->mPanelPlaceSmallp)
 		{
-			self->mFloaterDirectory->mPanelPlaceSmallp->setLandTypeString(land_type);
+			mFloaterDirectory->mPanelPlaceSmallp->setLandTypeString(land_type);
 		}	
 	}
 }
@@ -427,7 +422,7 @@ void LLPanelDirBrowser::showDetailPanel(S32 type, LLSD id)
 		if (mFloaterDirectory && mFloaterDirectory->mPanelAvatarp)
 		{
 			mFloaterDirectory->mPanelAvatarp->setVisible(TRUE);
-			mFloaterDirectory->mPanelAvatarp->setAvatarID(id.asUUID(), LLStringUtil::null, ONLINE_STATUS_NO);
+			mFloaterDirectory->mPanelAvatarp->setAvatarID(id.asUUID());
 		}
 		break;
 	case EVENT_CODE:
@@ -515,7 +510,7 @@ void LLPanelDirBrowser::processDirPeopleReply(LLMessageSystem *msg, void**)
 
 	self->mHaveSearchResults = TRUE;
 
-	LLCtrlListInterface *list = self->childGetListInterface("results");
+	LLScrollListCtrl* list = self->findChild<LLScrollListCtrl>("results");
 	if (!list) return;
 
 	if (!list->getCanSelect())
@@ -610,7 +605,7 @@ void LLPanelDirBrowser::processDirPlacesReply(LLMessageSystem* msg, void**)
 
 	self->mHaveSearchResults = TRUE;
 
-	LLCtrlListInterface *list = self->childGetListInterface("results");
+	LLScrollListCtrl* list = self->findChild<LLScrollListCtrl>("results");
 	if (!list) return;
 
 	if (!list->getCanSelect())
@@ -646,9 +641,9 @@ void LLPanelDirBrowser::processDirPlacesReply(LLMessageSystem* msg, void**)
 		content["name"] = name;
 
 		std::string buffer = llformat("%.0f", (F64)dwell);
-		row["columns"][3]["column"] = "dwell";
-		row["columns"][3]["value"] = buffer;
-		row["columns"][3]["font"] = "SANSSERIFSMALL";
+		row["columns"][2]["column"] = "dwell";
+		row["columns"][2]["value"] = buffer;
+		row["columns"][2]["font"] = "SANSSERIF_SMALL";
 
 		list->addElement(row);
 		self->mResultsContents[parcel_id.asString()] = content;
@@ -696,7 +691,7 @@ void LLPanelDirBrowser::processDirEventsReply(LLMessageSystem* msg, void**)
 
 	self->mHaveSearchResults = TRUE;
 
-	LLCtrlListInterface *list = self->childGetListInterface("results");
+	LLScrollListCtrl* list = self->findChild<LLScrollListCtrl>("results");
 	if (!list) return;
 
 	if (!list->getCanSelect())
@@ -792,11 +787,11 @@ void LLPanelDirBrowser::processDirEventsReply(LLMessageSystem* msg, void**)
 
 		row["columns"][2]["column"] = "date";
 		row["columns"][2]["value"] = date;
-		row["columns"][2]["font"] = "SANSSERIFSMALL";
+		row["columns"][2]["font"] = "SANSSERIF_SMALL";
 
 		row["columns"][3]["column"] = "time";
 		row["columns"][3]["value"] = llformat("%u", unix_time);
-		row["columns"][3]["font"] = "SANSSERIFSMALL";
+		row["columns"][3]["font"] = "SANSSERIF_SMALL";
 
 		list->addElement(row, ADD_SORTED);
 
@@ -835,7 +830,7 @@ void LLPanelDirBrowser::processDirGroupsReply(LLMessageSystem* msg, void**)
 
 	self->mHaveSearchResults = TRUE;
 
-	LLCtrlListInterface *list = self->childGetListInterface("results");
+	LLScrollListCtrl* list = self->findChild<LLScrollListCtrl>("results");
 	if (!list) return;
 
 	if (!list->getCanSelect())
@@ -879,7 +874,7 @@ void LLPanelDirBrowser::processDirGroupsReply(LLMessageSystem* msg, void**)
 
 		row["columns"][2]["column"] = "members";
 		row["columns"][2]["value"] = members;
-		row["columns"][2]["font"] = "SANSSERIFSMALL";
+		row["columns"][2]["font"] = "SANSSERIF_SMALL";
 
 		row["columns"][3]["column"] = "score";
 		row["columns"][3]["value"] = search_order;
@@ -932,7 +927,7 @@ void LLPanelDirBrowser::processDirClassifiedReply(LLMessageSystem* msg, void**)
 
 	self->mHaveSearchResults = TRUE;
 
-	LLCtrlListInterface *list = self->childGetListInterface("results");
+	LLScrollListCtrl* list = self->findChild<LLScrollListCtrl>("results");
 	if (!list) return;
 
 	if (!list->getCanSelect())
@@ -1005,7 +1000,7 @@ void LLPanelDirBrowser::processDirLandReply(LLMessageSystem *msg, void**)
 
 	self->mHaveSearchResults = TRUE;
 
-	LLCtrlListInterface *list = self->childGetListInterface("results");
+	LLScrollListCtrl* list = self->findChild<LLScrollListCtrl>("results");
 	if (!list) return;
 
 	if (!list->getCanSelect())
@@ -1067,15 +1062,17 @@ void LLPanelDirBrowser::processDirLandReply(LLMessageSystem *msg, void**)
 			buffer = llformat("%d", sale_price);
 			non_auction_count++;
 		}
-		row["columns"][3]["column"] = "price";
-		row["columns"][3]["value"] = buffer;
-		row["columns"][3]["font"] = "SANSSERIFSMALL";
+		row["columns"][2]["column"] = "price";
+		row["columns"][2]["value"] = buffer;
+		row["columns"][2]["font"] = "SANSSERIF_SMALL";
 
 		buffer = llformat("%d", actual_area);
-		row["columns"][4]["column"] = "area";
-		row["columns"][4]["value"] = buffer;
-		row["columns"][4]["font"] = "SANSSERIFSMALL";
+		row["columns"][3]["column"] = "area";
+		row["columns"][3]["value"] = buffer;
+		row["columns"][3]["font"] = "SANSSERIF_SMALL";
 
+		row["columns"][4]["column"] = "per_meter";
+		row["columns"][4]["font"] = "SANSSERIF_SMALL";
 		if (!auction)
 		{
 			F32 price_per_meter;
@@ -1089,21 +1086,17 @@ void LLPanelDirBrowser::processDirLandReply(LLMessageSystem *msg, void**)
 			}
 			// Prices are usually L$1 - L$10 / meter
 			buffer = llformat("%.1f", price_per_meter);
-			row["columns"][5]["column"] = "per_meter";
-			row["columns"][5]["value"] = buffer;
-			row["columns"][5]["font"] = "SANSSERIFSMALL";
+			row["columns"][4]["value"] = buffer;
 		}
 		else
 		{
 			// Auctions start at L$1 per meter
-			row["columns"][5]["column"] = "per_meter";
-			row["columns"][5]["value"] = "1.0";
-			row["columns"][5]["font"] = "SANSSERIFSMALL";
+			row["columns"][4]["value"] = "1.0";
 		}
 
-		row["columns"][6]["column"] = "landtype";
-		row["columns"][6]["value"] = land_type;
-		row["columns"][6]["font"] = "SANSSERIFSMALL";
+		row["columns"][5]["column"] = "landtype";
+		row["columns"][5]["value"] = land_type;
+		row["columns"][5]["font"] = "SANSSERIF_SMALL";
 
 		list->addElement(row);
 		self->mResultsContents[parcel_id.asString()] = content;
@@ -1138,7 +1131,7 @@ void LLPanelDirBrowser::addClassified(LLCtrlListInterface *list, const LLUUID& p
 
 	row["columns"][2]["column"] = "price";
 	row["columns"][2]["value"] = price_for_listing;
-	row["columns"][2]["font"] = "SANSSERIFSMALL";
+	row["columns"][2]["font"] = "SANSSERIF_SMALL";
 
 	list->addElement(row);
 }
@@ -1149,42 +1142,38 @@ LLSD LLPanelDirBrowser::createLandSale(const LLUUID& parcel_id, BOOL is_auction,
 	row["id"] = parcel_id;
 	LLUUID image_id;
 
+	row["columns"][0]["column"] = "icon";
+	row["columns"][0]["type"] = "icon";
 	// Icon and type
 	if(is_auction)
 	{
-		row["columns"][0]["column"] = "icon";
-		row["columns"][0]["type"] = "icon";
 		row["columns"][0]["value"] = "icon_auction.tga";
 
 		*type = AUCTION_CODE;
 	}
 	else if (is_for_sale)
 	{
-		row["columns"][0]["column"] = "icon";
-		row["columns"][0]["type"] = "icon";
 		row["columns"][0]["value"] = "icon_for_sale.tga";
 
 		*type = FOR_SALE_CODE;
 	}
 	else
 	{
-		row["columns"][0]["column"] = "icon";
-		row["columns"][0]["type"] = "icon";
 		row["columns"][0]["value"] = "icon_place.tga";
 
 		*type = PLACE_CODE;
 	}
 
-	row["columns"][2]["column"] = "name";
-	row["columns"][2]["value"] = name;
-	row["columns"][2]["font"] = "SANSSERIF";
+	row["columns"][1]["column"] = "name";
+	row["columns"][1]["value"] = name;
+	row["columns"][1]["font"] = "SANSSERIF";
 
 	return row;
 }
 
 void LLPanelDirBrowser::newClassified()
 {
-	LLCtrlListInterface *list = childGetListInterface("results");
+	LLScrollListCtrl* list = findChild<LLScrollListCtrl>("results");
 	if (!list) return;
 
 	if (mFloaterDirectory->mPanelClassifiedp)
@@ -1212,8 +1201,6 @@ void LLPanelDirBrowser::newClassified()
 
 void LLPanelDirBrowser::setupNewSearch()
 {
-	LLScrollListCtrl* list = getChild<LLScrollListCtrl>("results");
-
 	gDirBrowserInstances.removeData(mSearchID);
 	// Make a new query ID
 	mSearchID.generate();
@@ -1221,9 +1208,12 @@ void LLPanelDirBrowser::setupNewSearch()
 	gDirBrowserInstances.addData(mSearchID, this);
 
 	// ready the list for results
-	list->operateOnAll(LLCtrlListInterface::OP_DELETE);
-	list->addCommentText(std::string("Searching...")); // *TODO: Translate
-	childDisable("results");
+	if (LLScrollListCtrl* list = findChild<LLScrollListCtrl>("results"))
+	{
+		list->operateOnAll(LLCtrlListInterface::OP_DELETE);
+		list->setCommentText(LLTrans::getString("Searching"));
+		list->setEnabled(false);
+	}
 
 	mResultsReceived = 0;
 	mHaveSearchResults = FALSE;
@@ -1235,15 +1225,11 @@ void LLPanelDirBrowser::setupNewSearch()
 }
 
 
-// static
 // called from calssifieds, events, groups, land, people, and places
-void LLPanelDirBrowser::onClickSearchCore(void* userdata)
+void LLPanelDirBrowser::onClickSearchCore()
 {
-	LLPanelDirBrowser* self = (LLPanelDirBrowser*)userdata;
-	if (!self) return;
-
-	self->resetSearchStart();
-	self->performQuery();
+	resetSearchStart();
+	performQuery();
 
 	LLFloaterDirectory::sOldSearchCount++;
 }
@@ -1270,18 +1256,17 @@ void LLPanelDirBrowser::sendDirFindQuery(
 }
 
 
-void LLPanelDirBrowser::onKeystrokeName(LLLineEditor* line, void* data)
+void LLPanelDirBrowser::onKeystrokeName(LLLineEditor* line)
 {
-	LLPanelDirBrowser *self = (LLPanelDirBrowser*)data;
-	if (line->getLength() >= (S32)self->mMinSearchChars)
+	if (line->getLength() >= (S32)mMinSearchChars)
 	{
-		self->setDefaultBtn( "Search" );
-		self->childEnable("Search");
+		setDefaultBtn( "Search" );
+		childEnable("Search");
 	}
 	else
 	{
-		self->setDefaultBtn();
-		self->childDisable("Search");
+		setDefaultBtn();
+		childDisable("Search");
 	}
 }
 
@@ -1290,7 +1275,7 @@ void LLPanelDirBrowser::handleVisibilityChange(BOOL new_visibility)
 {
 	if (new_visibility)
 	{
-		onCommitList(NULL, this);
+		onCommitList();
 	}
 	LLPanel::handleVisibilityChange(new_visibility);
 }

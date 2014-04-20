@@ -53,8 +53,6 @@
 #include "rlvhandler.h"
 // [/RLVa:KB]
 
-class AIDirPicker;
-
 class LLPrefsIMImpl : public LLPanel
 {
 public:
@@ -115,21 +113,19 @@ BOOL LLPrefsIMImpl::postBuild()
 	childDisable("log_instant_messages");
 	childDisable("log_chat");
 	childDisable("log_show_history");
-	childDisable("log_path_button");
-	childDisable("busy_response");
+	//childDisable("log_path_button");
 	childDisable("log_instant_messages_timestamp");
 	childDisable("log_chat_timestamp");
 	childDisable("log_chat_IM");
 	childDisable("log_date_timestamp");
 	childDisable("logfile_name_datestamp");
 
-	childSetText("busy_response", getString("log_in_to_change"));
-
 	childSetValue("include_im_in_chat_console", gSavedSettings.getBOOL("IMInChatConsole"));
 	childSetValue("show_timestamps_check", gSavedSettings.getBOOL("IMShowTimestamps"));
 	childSetValue("friends_online_notify_checkbox", gSavedSettings.getBOOL("ChatOnlineNotification"));
 
-	childSetText("log_path_string", gSavedPerAccountSettings.getString("InstantMessageLogPath"));
+	const std::string log_path = gSavedPerAccountSettings.getString("InstantMessageLogPath");
+	childSetText("log_path_string", log_path.empty() ? gSavedSettings.getString("InstantMessageLogPathAnyAccount") : log_path);
 	childSetValue("log_instant_messages", gSavedPerAccountSettings.getBOOL("LogInstantMessages")); 
 	childSetValue("log_chat", gSavedPerAccountSettings.getBOOL("LogChat")); 
 	childSetValue("log_show_history", gSavedPerAccountSettings.getBOOL("LogShowHistory"));
@@ -148,7 +144,6 @@ BOOL LLPrefsIMImpl::postBuild()
 
 void LLPrefsIMImpl::enableHistory()
 {
-	
 	if (childGetValue("log_instant_messages").asBoolean() || childGetValue("log_chat").asBoolean())
 	{
 		childEnable("log_show_history");
@@ -163,18 +158,8 @@ void LLPrefsIMImpl::enableHistory()
 
 void LLPrefsIMImpl::apply()
 {
-	LLTextEditor* busy = getChild<LLTextEditor>("busy_response");
-	LLWString busy_response;
-	if (busy) busy_response = busy->getWText(); 
-	LLWStringUtil::replaceTabsWithSpaces(busy_response, 4);
-	LLWStringUtil::replaceChar(busy_response, '\n', '^');
-	LLWStringUtil::replaceChar(busy_response, ' ', '%');
-	
 	if(mGotPersonalInfo)
 	{ 
-
-		gSavedPerAccountSettings.setString("BusyModeResponse", std::string(wstring_to_utf8str(busy_response)));
-
 		gSavedSettings.setBOOL("IMInChatConsole", childGetValue("include_im_in_chat_console").asBoolean());
 		gSavedSettings.setBOOL("IMShowTimestamps", childGetValue("show_timestamps_check").asBoolean());
 		gSavedSettings.setBOOL("ChatOnlineNotification", childGetValue("friends_online_notify_checkbox").asBoolean());
@@ -231,6 +216,15 @@ void LLPrefsIMImpl::apply()
 			gAgent.sendReliableMessage();
 		}
 	}
+	else
+	{
+		const std::string log_path = childGetText("log_path_string");
+		if (!log_path.empty())
+		{
+			gSavedSettings.setString("InstantMessageLogPathAnyAccount", log_path);
+			gDirUtilp->setChatLogsDir(log_path);
+		}
+	}
 }
 
 void LLPrefsIMImpl::setPersonalInfo(const std::string& visibility, bool im_via_email, const std::string& email)
@@ -264,23 +258,11 @@ void LLPrefsIMImpl::setPersonalInfo(const std::string& visibility, bool im_via_e
 	childSetValue("send_im_to_email", im_via_email);
 	childEnable("log_instant_messages");
 	childEnable("log_chat");
-	childEnable("busy_response");
 	childEnable("log_instant_messages_timestamp");
 	childEnable("log_chat_timestamp");
 	childEnable("log_chat_IM");
 	childEnable("log_date_timestamp");
-	
-	//RN: get wide string so replace char can work (requires fixed-width encoding)
-	LLWString busy_response = utf8str_to_wstring( gSavedPerAccountSettings.getString("BusyModeResponse") );
-	LLWStringUtil::replaceChar(busy_response, '^', '\n');
-	LLWStringUtil::replaceChar(busy_response, '%', ' ');
-	childSetText("busy_response", wstring_to_utf8str(busy_response));
-// [RLVa:KB] - Checked: 2009-07-10 (RLVa-1.0.0g)
-	if (gRlvHandler.hasBehaviour(RLV_BHVR_SENDIM))
-	{
-		childDisable("busy_response");
-	}
-// [/RLVa:KB]
+	childEnable("logfile_name_datestamp");
 
 	enableHistory();
 

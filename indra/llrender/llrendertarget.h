@@ -2,31 +2,25 @@
  * @file llrendertarget.h
  * @brief Off screen render target abstraction.  Loose wrapper for GL_EXT_framebuffer_objects.
  *
- * $LicenseInfo:firstyear=2001&license=viewergpl$
- * 
- * Copyright (c) 2001-2009, Linden Research, Inc.
- * 
+ * $LicenseInfo:firstyear=2001&license=viewerlgpl$
  * Second Life Viewer Source Code
- * The source code in this file ("Source Code") is provided by Linden Lab
- * to you under the terms of the GNU General Public License, version 2.0
- * ("GPL"), unless you have obtained a separate licensing agreement
- * ("Other License"), formally executed by you and Linden Lab.  Terms of
- * the GPL can be found in doc/GPL-license.txt in this distribution, or
- * online at http://secondlifegrid.net/programs/open_source/licensing/gplv2
+ * Copyright (C) 2010, Linden Research, Inc.
  * 
- * There are special exceptions to the terms and conditions of the GPL as
- * it is applied to this Source Code. View the full text of the exception
- * in the file doc/FLOSS-exception.txt in this software distribution, or
- * online at
- * http://secondlifegrid.net/programs/open_source/licensing/flossexception
+ * This library is free software; you can redistribute it and/or
+ * modify it under the terms of the GNU Lesser General Public
+ * License as published by the Free Software Foundation;
+ * version 2.1 of the License only.
  * 
- * By copying, modifying or distributing this software, you acknowledge
- * that you have read and understood your obligations described above,
- * and agree to abide by those obligations.
+ * This library is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+ * Lesser General Public License for more details.
  * 
- * ALL LINDEN LAB SOURCE CODE IS PROVIDED "AS IS." LINDEN LAB MAKES NO
- * WARRANTIES, EXPRESS, IMPLIED OR OTHERWISE, REGARDING ITS ACCURACY,
- * COMPLETENESS OR PERFORMANCE.
+ * You should have received a copy of the GNU Lesser General Public
+ * License along with this library; if not, write to the Free Software
+ * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301  USA
+ * 
+ * Linden Research, Inc., 945 Battery Street, San Francisco, CA  94111  USA
  * $/LicenseInfo$
  */
 
@@ -71,6 +65,7 @@ public:
 	//whether or not to use FBO implementation
 	static bool sUseFBO; 
 	static U32 sBytesAllocated;
+	static LLRenderTarget* sCurFBO;
 
 	LLRenderTarget();
 	virtual ~LLRenderTarget();
@@ -79,6 +74,12 @@ public:
 	//must be called before use
 	//multiple calls will release previously allocated resources
 	bool allocate(U32 resx, U32 resy, U32 color_fmt, bool depth, bool stencil, LLTexUnit::eTextureType usage = LLTexUnit::TT_TEXTURE, bool use_fbo = FALSE);
+
+	//resize existing attachments to use new resolution and color format
+	// CAUTION: if the GL runs out of memory attempting to resize, this render target will be undefined
+	// DO NOT use for screen space buffers or for scratch space for an image that might be uploaded
+	// DO use for render targets that resize often and aren't likely to ruin someone's day if they break
+	void resize(U32 resx, U32 resy);
 
 	//provide this render target with a multisample resource.
 	void setSampleBuffer(LLMultisampleBuffer* buffer);
@@ -101,9 +102,6 @@ public:
 	//applies appropriate viewport
 	virtual void bindTarget();
 
-	//unbind target for rendering
-	static void unbindTarget();
-	
 	//clear render targer, clears depth buffer if present,
 	//uses scissor rect if in copy-to-texture mode
 	void clear(U32 mask = 0xFFFFFFFF);
@@ -145,6 +143,8 @@ public:
 	//one renderable attachment (i.e. color buffer, depth buffer).
 	bool isComplete() const;
 
+	U32 getFBO() const {return mFBO;}
+
 	static LLRenderTarget* getCurrentBoundTarget() { return sBoundTarget; }
 
 protected:
@@ -154,6 +154,7 @@ protected:
 	std::vector<U32> mTex;
 	std::vector<U32> mInternalFormat;
 	U32 mFBO;
+	LLRenderTarget* mPreviousFBO;
 	U32 mDepth;
 	bool mStencil;
 	bool mUseDepth;
@@ -168,6 +169,7 @@ protected:
 class LLMultisampleBuffer : public LLRenderTarget
 {
 	U32 mSamples;
+	U32 mColorFormat;
 public:
 	LLMultisampleBuffer();
 	virtual ~LLMultisampleBuffer();
@@ -180,6 +182,7 @@ public:
 	bool allocate(U32 resx, U32 resy, U32 color_fmt, bool depth, bool stencil, LLTexUnit::eTextureType usage, bool use_fbo, U32 samples);
 	virtual bool addColorAttachment(U32 color_fmt);
 	virtual bool allocateDepth();
+	void resize(U32 resx, U32 resy);
 };
 
 #endif //!LL_MESA_HEADLESS

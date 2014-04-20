@@ -75,8 +75,8 @@ LLFloaterPostProcess::LLFloaterPostProcess() : LLFloater(std::string("Post-Proce
 				//Hacky, but for now checkboxes and sliders are assumed to link to shader uniforms.
 				if(dynamic_cast<LLSliderCtrl*>(*child_it) || dynamic_cast<LLCheckBoxCtrl*>(*child_it))
 				{
-					LLUICtrl *ctrl = dynamic_cast<LLUICtrl*>(*child_it);
-					ctrl->setCommitCallback(boost::bind(&LLFloaterPostProcess::onControlChanged, _1, (void*)ctrl->getName().c_str()));
+					LLUICtrl* ctrl = static_cast<LLUICtrl*>(*child_it);
+					ctrl->setCommitCallback(boost::bind(&LLFloaterPostProcess::onControlChanged, _1, _2));
 				}
 			}
 		}
@@ -84,14 +84,13 @@ LLFloaterPostProcess::LLFloaterPostProcess() : LLFloater(std::string("Post-Proce
 
 	// Effect loading and saving.
 	LLComboBox* comboBox = getChild<LLComboBox>("PPEffectsCombo");
-	childSetAction("PPLoadEffect", &LLFloaterPostProcess::onLoadEffect, comboBox);
-	comboBox->setCommitCallback(onChangeEffectName);
+	getChild<LLUICtrl>("PPLoadEffect")->setCommitCallback(boost::bind(&LLFloaterPostProcess::onLoadEffect, this, comboBox));
+	comboBox->setCommitCallback(boost::bind(&LLFloaterPostProcess::onChangeEffectName, this, _1));
 
 	LLLineEditor* editBox = getChild<LLLineEditor>("PPEffectNameEditor");
-	childSetAction("PPSaveEffect", &LLFloaterPostProcess::onSaveEffect, editBox);
+	getChild<LLUICtrl>("PPSaveEffect")->setCommitCallback(boost::bind(&LLFloaterPostProcess::onSaveEffect, this, editBox));
 
 	syncMenu();
-	
 }
 
 LLFloaterPostProcess::~LLFloaterPostProcess()
@@ -113,56 +112,42 @@ LLFloaterPostProcess* LLFloaterPostProcess::instance()
 }
 
 
-void LLFloaterPostProcess::onControlChanged(LLUICtrl* ctrl, void* userData)
+void LLFloaterPostProcess::onControlChanged(LLUICtrl* ctrl, const LLSD& v)
 {
-	char const *VariableName = (char const *)userData;
-	char buf[256];
-	S32 elem=0;
-	if(sscanf(VariableName,"%255[^[][%d]", buf, &elem) == 2)
-	{
-		LLPostProcess::getInstance()->tweaks[(const char*)buf][elem] = ctrl->getValue();
-	}
-	else
-	{
-		LLPostProcess::getInstance()->tweaks[VariableName] = ctrl->getValue();
-	}
+	LLPostProcess::getInstance()->setSelectedEffectValue(ctrl->getName(), v);
 }
 
-void LLFloaterPostProcess::onLoadEffect(void* userData)
+void LLFloaterPostProcess::onLoadEffect(LLComboBox* comboBox)
 {
-	LLComboBox* comboBox = static_cast<LLComboBox*>(userData);
-
 	LLSD::String effectName(comboBox->getSelectedValue().asString());
 
 	LLPostProcess::getInstance()->setSelectedEffect(effectName);
 
-	sPostProcess->syncMenu();
+	syncMenu();
 }
 
-void LLFloaterPostProcess::onSaveEffect(void* userData)
+void LLFloaterPostProcess::onSaveEffect(LLLineEditor* editBox)
 {
-	LLLineEditor* editBox = static_cast<LLLineEditor*>(userData);
-
 	std::string effectName(editBox->getValue().asString());
 
-	if (LLPostProcess::getInstance()->mAllEffects.has(effectName))
+	if (LLPostProcess::getInstance()->getAllEffectInfo().has(effectName))
 	{
 		LLSD payload;
 		payload["effect_name"] = effectName;
-		LLNotificationsUtil::add("PPSaveEffectAlert", LLSD(), payload, &LLFloaterPostProcess::saveAlertCallback);
+		LLNotificationsUtil::add("PPSaveEffectAlert", LLSD(), payload, boost::bind(&LLFloaterPostProcess::saveAlertCallback, this, _1, _2));
 	}
 	else
 	{
-		LLPostProcess::getInstance()->saveEffect(effectName);
-		sPostProcess->syncMenu();
+		LLPostProcess::getInstance()->saveEffectAs(effectName);
+		syncMenu();
 	}
 }
 
-void LLFloaterPostProcess::onChangeEffectName(LLUICtrl* ctrl, void * userData)
+void LLFloaterPostProcess::onChangeEffectName(LLUICtrl* ctrl)
 {
 	// get the combo box and name
 	LLComboBox * comboBox = static_cast<LLComboBox*>(ctrl);
-	LLLineEditor* editBox = sPostProcess->getChild<LLLineEditor>("PPEffectNameEditor");
+	LLLineEditor* editBox = getChild<LLLineEditor>("PPEffectNameEditor");
 
 	// set the parameter's new name
 	editBox->setValue(comboBox->getSelectedValue());
@@ -175,9 +160,9 @@ bool LLFloaterPostProcess::saveAlertCallback(const LLSD& notification, const LLS
 	// if they choose save, do it.  Otherwise, don't do anything
 	if (option == 0)
 	{
-		LLPostProcess::getInstance()->saveEffect(notification["payload"]["effect_name"].asString());
+		LLPostProcess::getInstance()->saveEffectAs(notification["payload"]["effect_name"].asString());
 
-		sPostProcess->syncMenu();
+		syncMenu();
 	}
 	return false;
 }
@@ -209,17 +194,17 @@ void LLFloaterPostProcess::syncMenu()
 	comboBox->removeall();
 
 	LLSD::map_const_iterator currEffect;
-	for(currEffect = LLPostProcess::getInstance()->mAllEffects.beginMap();
-		currEffect != LLPostProcess::getInstance()->mAllEffects.endMap();
+	for(currEffect = LLPostProcess::getInstance()->getAllEffectInfo().beginMap();
+		currEffect != LLPostProcess::getInstance()->getAllEffectInfo().endMap();
 		++currEffect) 
 	{
 		comboBox->add(currEffect->first);
 	}
 
 	// set the current effect as selected.
-	comboBox->selectByValue(LLPostProcess::getInstance()->getSelectedEffect());
+	comboBox->selectByValue(LLPostProcess::getInstance()->getSelectedEffectName());
 
-	LLSD &tweaks = LLPostProcess::getInstance()->tweaks;
+	const LLSD &tweaks = LLPostProcess::getInstance()->getSelectedEffectInfo();
 	//Iterate down all uniforms handled by post-process shaders. Update any linked ui elements.
 	for (LLSD::map_const_iterator it = tweaks.beginMap(); it != tweaks.endMap(); ++it)
 	{

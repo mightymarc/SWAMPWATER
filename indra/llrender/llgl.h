@@ -104,11 +104,7 @@ public:
 	BOOL mHasDrawBuffers;
 	BOOL mHasDepthClamp;
 	BOOL mHasTextureRectangle;
-	BOOL mHasTextureMultisample;
 	BOOL mHasTransformFeedback;
-	S32 mMaxSampleMaskWords;
-	S32 mMaxColorTextureSamples;
-	S32 mMaxDepthTextureSamples;
 	S32 mMaxIntegerSamples;
 
 	// Other extensions.
@@ -127,6 +123,11 @@ public:
 	BOOL mATIOffsetVerticalLines;
 	BOOL mATIOldDriver;
 
+#if LL_DARWIN
+	// Needed to distinguish problem cards on older Macs that break with Materials
+	BOOL mIsMobileGF;
+#endif
+	
 	// Whether this version of GL is good enough for SL to use
 	BOOL mHasRequirements;
 
@@ -155,7 +156,6 @@ public:
 	void printGLInfoString();
 	void getGLInfo(LLSD& info);
 
-	U32 getNumFBOFSAASamples(U32 desired_samples = 32);
 	// In ALL CAPS
 	std::string mGLVendor;
 	std::string mGLVendorShort;
@@ -426,10 +426,13 @@ const U32 FENCE_WAIT_TIME_NANOSECONDS = 1000;  //1 ms
 class LLGLFence
 {
 public:
+	virtual ~LLGLFence()
+	{
+	}
+
 	virtual void placeFence() = 0;
 	virtual bool isCompleted() = 0;
 	virtual void wait() = 0;
-	virtual ~LLGLFence() {}
 };
 
 class LLGLSyncFence : public LLGLFence
@@ -521,4 +524,5 @@ extern BOOL gGLActive;
 #ifndef GL_DEPTH24_STENCIL8
 #define GL_DEPTH24_STENCIL8 GL_DEPTH24_STENCIL8_EXT
 #endif 
+
 #endif // LL_LLGL_H

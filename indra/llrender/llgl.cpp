@@ -44,7 +44,6 @@
 #include "llmath.h"
 #include "m4math.h"
 #include "llstring.h"
-#include "llmemtype.h"
 #include "llstacktrace.h"
 
 #include "llglheaders.h"
@@ -97,9 +96,9 @@ void APIENTRY gl_debug_callback(GLenum source,
 	{
 		llwarns << "----- GL WARNING -------" << llendl;
 	}
-	llwarns << "Type: " << std::hex << type << llendl;
-	llwarns << "ID: " << std::hex << id << llendl;
-	llwarns << "Severity: " << std::hex << severity << llendl;
+	llwarns << "Type: " << std::hex << type << std::dec << llendl;
+	llwarns << "ID: " << std::hex << id << std::dec<< llendl;
+	llwarns << "Severity: " << std::hex << severity << std::dec << llendl;
 	llwarns << "Message: " << message << llendl;
 	llwarns << "-----------------------" << llendl;
 	if (severity == GL_DEBUG_SEVERITY_HIGH_ARB)
@@ -402,7 +401,7 @@ PFNGLACTIVETEXTUREARBPROC glActiveTextureARB = NULL;
 PFNGLCLIENTACTIVETEXTUREARBPROC glClientActiveTextureARB = NULL;
 PFNGLDRAWRANGEELEMENTSPROC glDrawRangeElements = NULL;
 #endif // LL_LINUX_NV_GL_HEADERS
-#endif
+#endif // (LL_WINDOWS || LL_LINUX || LL_SOLARIS)  && !LL_MESA_HEADLESS
 
 LLGLManager gGLManager;
 
@@ -435,11 +434,7 @@ LLGLManager::LLGLManager() :
 	mHasPointParameters(FALSE),
 	mHasDrawBuffers(FALSE),
 	mHasTextureRectangle(FALSE),
-	mHasTextureMultisample(FALSE),
 	mHasTransformFeedback(FALSE),
-	mMaxSampleMaskWords(0),
-	mMaxColorTextureSamples(0),
-	mMaxDepthTextureSamples(0),
 	mMaxIntegerSamples(0),
 
 	mHasAnisotropic(FALSE),
@@ -455,7 +450,9 @@ LLGLManager::LLGLManager() :
 	mIsGFFX(FALSE),
 	mATIOffsetVerticalLines(FALSE),
 	mATIOldDriver(FALSE),
-
+#if LL_DARWIN
+	mIsMobileGF(FALSE),
+#endif
 	mHasRequirements(TRUE),
 
 	mHasSeparateSpecularColor(FALSE),
@@ -607,11 +604,12 @@ bool LLGLManager::initGL()
 	if (mGLVendor.substr(0,4) == "ATI ")
 	{
 		mGLVendorShort = "ATI";
-		BOOL mobile = FALSE;
-		if (mGLRenderer.find("MOBILITY") != std::string::npos)
-		{
-			mobile = TRUE;
-		}
+		// "mobile" appears to be unused, and this code was causing warnings.
+		//BOOL mobile = FALSE;
+		//if (mGLRenderer.find("MOBILITY") != std::string::npos)
+		//{
+		//	mobile = TRUE;
+		//}
 		mIsATI = TRUE;
 
 #if LL_WINDOWS && !LL_MESA_HEADLESS
@@ -652,6 +650,14 @@ bool LLGLManager::initGL()
 		{
 			mIsGF3 = TRUE;
 		}
+#if LL_DARWIN
+		else if ((mGLRenderer.find("9400M") != std::string::npos)
+			  || (mGLRenderer.find("9600M") != std::string::npos)
+			  || (mGLRenderer.find("9800M") != std::string::npos))
+		{
+			mIsMobileGF = TRUE;
+		}
+#endif
 
 	}
 	else if (mGLVendor.find("INTEL") != std::string::npos
@@ -731,13 +737,12 @@ bool LLGLManager::initGL()
 	}
 	
 	stop_glerror();
-
-	if (mHasTextureMultisample)
+	
+	//Singu Note: Multisampled texture stuff in v3 is dead, however we DO use multisampled FBOs.
+	if (mHasFramebufferMultisample)
 	{
-		glGetIntegerv(GL_MAX_COLOR_TEXTURE_SAMPLES, &mMaxColorTextureSamples);
-		glGetIntegerv(GL_MAX_DEPTH_TEXTURE_SAMPLES, &mMaxDepthTextureSamples);
 		glGetIntegerv(GL_MAX_INTEGER_SAMPLES, &mMaxIntegerSamples);
-		glGetIntegerv(GL_MAX_SAMPLE_MASK_WORDS, &mMaxSampleMaskWords);
+		glGetIntegerv(GL_MAX_SAMPLES, &mMaxSamples);
 	}
 
 	stop_glerror();
@@ -749,23 +754,13 @@ bool LLGLManager::initGL()
 	}
 #endif
 	stop_glerror();
-	mHasTextureMultisample = FALSE;
-#if LL_WINDOWS
-	if (mIsATI)
-	{ //using multisample textures on ATI results in black screen for some reason
-		mHasTextureMultisample = FALSE;
-	}
-#endif
 
+#if LL_WINDOWS
 	if (mIsIntel && mGLVersion <= 3.f)
 	{ //never try to use framebuffer objects on older intel drivers (crashy)
 		mHasFramebufferObject = FALSE;
 	}
-
-	if (mHasFramebufferObject)
-	{
-		glGetIntegerv(GL_MAX_SAMPLES, &mMaxSamples);
-	}
+#endif
 
 	stop_glerror();
 	
@@ -827,8 +822,6 @@ std::string LLGLManager::getGLInfoString()
 
 void LLGLManager::printGLInfoString()
 {
-	std::string info_str;
-	
 	LL_INFOS("RenderInit") << "GL_VENDOR:     " << ((const char *)glGetString(GL_VENDOR)) << LL_ENDL;
 	LL_INFOS("RenderInit") << "GL_RENDERER:   " << ((const char *)glGetString(GL_RENDERER)) << LL_ENDL;
 	LL_INFOS("RenderInit") << "GL_VERSION:    " << ((const char *)glGetString(GL_VERSION)) << LL_ENDL;
@@ -845,14 +838,6 @@ std::string LLGLManager::getRawGLString()
 	std::string gl_string;
 	gl_string = ll_safe_string((char*)glGetString(GL_VENDOR)) + " " + ll_safe_string((char*)glGetString(GL_RENDERER));
 	return gl_string;
-}
-
-U32 LLGLManager::getNumFBOFSAASamples(U32 samples)
-{
-	samples = llmin(samples, (U32) mMaxColorTextureSamples);
-	samples = llmin(samples, (U32) mMaxDepthTextureSamples);
-	samples = llmin(samples, (U32) 4);
-	return samples;
 }
 
 void LLGLManager::shutdownGL()
@@ -956,13 +941,12 @@ void LLGLManager::initExtensions()
 	mHasFramebufferMultisample = mHasFramebufferObject && ExtensionExists("GL_EXT_framebuffer_multisample", gGLHExts.mSysExts);
 	
 	mHasMipMapGeneration = mHasFramebufferObject || mGLVersion >= 1.4f;
-		
+
 	mHasDrawBuffers = ExtensionExists("GL_ARB_draw_buffers", gGLHExts.mSysExts);
 	mHasBlendFuncSeparate = ExtensionExists("GL_EXT_blend_func_separate", gGLHExts.mSysExts);
 	mHasTextureRectangle = ExtensionExists("GL_ARB_texture_rectangle", gGLHExts.mSysExts);
-	mHasTextureMultisample = ExtensionExists("GL_ARB_texture_multisample", gGLHExts.mSysExts);
 	mHasDebugOutput = ExtensionExists("GL_ARB_debug_output", gGLHExts.mSysExts);
-	mHasTransformFeedback = mGLVersion >= 4.f ? TRUE : FALSE;
+	mHasTransformFeedback = mGLVersion >= 4.f || ExtensionExists("GL_EXT_transform_feedback", gGLHExts.mSysExts);
 #if !LL_DARWIN
 	mHasPointParameters = !mIsATI && ExtensionExists("GL_ARB_point_parameters", gGLHExts.mSysExts);
 #endif
@@ -1197,13 +1181,6 @@ void LLGLManager::initExtensions()
 	if (mHasBlendFuncSeparate)
 	{
 		glBlendFuncSeparateEXT = (PFNGLBLENDFUNCSEPARATEEXTPROC) GLH_EXT_GET_PROC_ADDRESS("glBlendFuncSeparateEXT");
-	}
-	if (mHasTextureMultisample)
-	{
-		glTexImage2DMultisample = (PFNGLTEXIMAGE2DMULTISAMPLEPROC) GLH_EXT_GET_PROC_ADDRESS("glTexImage2DMultisample");
-		glTexImage3DMultisample = (PFNGLTEXIMAGE3DMULTISAMPLEPROC) GLH_EXT_GET_PROC_ADDRESS("glTexImage3DMultisample");
-		glGetMultisamplefv = (PFNGLGETMULTISAMPLEFVPROC) GLH_EXT_GET_PROC_ADDRESS("glGetMultisamplefv");
-		glSampleMaski = (PFNGLSAMPLEMASKIPROC) GLH_EXT_GET_PROC_ADDRESS("glSampleMaski");
 	}
 	if (mHasTransformFeedback)
 	{
@@ -1480,8 +1457,7 @@ void assert_glerror()
 void clear_glerror()
 {
 	//  Create or update texture to be used with this data 
-	GLenum error;
-	error = glGetError();
+	glGetError();
 }
 
 ///////////////////////////////////////////////////////////////
@@ -2302,7 +2278,6 @@ void LLGLNamePool::release(GLuint name)
 //static
 void LLGLNamePool::upkeepPools()
 {
-	LLMemType mt(LLMemType::MTYPE_UPKEEP_POOLS);
 	for (tracker_t::instance_iter iter = beginInstances(); iter != endInstances(); ++iter)
 	{
 		LLGLNamePool & pool = *iter;

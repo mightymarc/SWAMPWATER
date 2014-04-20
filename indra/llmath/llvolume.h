@@ -2,31 +2,25 @@
  * @file llvolume.h
  * @brief LLVolume base class.
  *
- * $LicenseInfo:firstyear=2002&license=viewergpl$
- * 
- * Copyright (c) 2002-2009, Linden Research, Inc.
- * 
+ * $LicenseInfo:firstyear=2002&license=viewerlgpl$
  * Second Life Viewer Source Code
- * The source code in this file ("Source Code") is provided by Linden Lab
- * to you under the terms of the GNU General Public License, version 2.0
- * ("GPL"), unless you have obtained a separate licensing agreement
- * ("Other License"), formally executed by you and Linden Lab.  Terms of
- * the GPL can be found in doc/GPL-license.txt in this distribution, or
- * online at http://secondlifegrid.net/programs/open_source/licensing/gplv2
+ * Copyright (C) 2010, Linden Research, Inc.
  * 
- * There are special exceptions to the terms and conditions of the GPL as
- * it is applied to this Source Code. View the full text of the exception
- * in the file doc/FLOSS-exception.txt in this software distribution, or
- * online at
- * http://secondlifegrid.net/programs/open_source/licensing/flossexception
+ * This library is free software; you can redistribute it and/or
+ * modify it under the terms of the GNU Lesser General Public
+ * License as published by the Free Software Foundation;
+ * version 2.1 of the License only.
  * 
- * By copying, modifying or distributing this software, you acknowledge
- * that you have read and understood your obligations described above,
- * and agree to abide by those obligations.
+ * This library is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+ * Lesser General Public License for more details.
  * 
- * ALL LINDEN LAB SOURCE CODE IS PROVIDED "AS IS." LINDEN LAB MAKES NO
- * WARRANTIES, EXPRESS, IMPLIED OR OTHERWISE, REGARDING ITS ACCURACY,
- * COMPLETENESS OR PERFORMANCE.
+ * You should have received a copy of the GNU Lesser General Public
+ * License along with this library; if not, write to the Free Software
+ * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301  USA
+ * 
+ * Linden Research, Inc., 945 Battery Street, San Francisco, CA  94111  USA
  * $/LicenseInfo$
  */
 
@@ -43,7 +37,6 @@ class LLPath;
 
 template <class T> class LLOctreeNode;
 
-class LLVector4a;
 class LLVolumeFace;
 class LLVolume;
 class LLVolumeTriangle;
@@ -56,12 +49,15 @@ class LLVolumeTriangle;
 #include "v3math.h"
 #include "v3dmath.h"
 #include "v4math.h"
+#include "llvector4a.h"
+#include "llmatrix4a.h"
 #include "llquaternion.h"
 #include "llstrider.h"
 #include "v4coloru.h"
 #include "llrefcount.h"
 #include "llpointer.h"
 #include "llfile.h"
+#include "llalignedarray.h"
 
 //============================================================================
 
@@ -715,16 +711,16 @@ public:
 		LLFaceID  mFaceID;
 	};
 	
-	std::vector<LLVector3> mProfile;	
-	std::vector<LLVector2> mNormals;
+	LLAlignedArray<LLVector4a, 64> mProfile;	
+	//LLAlignedArray<LLVector4a, 64> mNormals;
 	std::vector<Face>      mFaces;
-	std::vector<LLVector3> mEdgeNormals;
-	std::vector<LLVector3> mEdgeCenters;
+
+	//LLAlignedArray<LLVector4a, 64> mEdgeNormals;
+	//LLAlignedArray<LLVector4a, 64> mEdgeCenters;
 
 	friend std::ostream& operator<<(std::ostream &s, const LLProfile &profile);
 
 protected:
-	void genNormals(const LLProfileParams& params);
 	static S32 getNumNGonPoints(const LLProfileParams& params, S32 sides, F32 offset=0.0f, F32 bevel = 0.0f, F32 ang_scale = 1.f, S32 split = 0);
 	void genNGon(const LLProfileParams& params, S32 sides, F32 offset=0.0f, F32 bevel = 0.0f, F32 ang_scale = 1.f, S32 split = 0);
 
@@ -748,13 +744,29 @@ protected:
 class LLPath
 {
 public:
-	struct PathPt
+	class PathPt
 	{
-		LLVector3	 mPos;
-		LLVector2    mScale;
-		LLQuaternion mRot;
+	public:
+		LLMatrix4a   mRot;
+		LLVector4a	 mPos;
+		
+		LLVector4a   mScale;
 		F32			 mTexT;
-		PathPt() { mPos.setVec(0,0,0); mTexT = 0; mScale.setVec(0,0); mRot.loadIdentity(); }
+		F32 pad[3]; //for alignment
+		PathPt() 
+		{ 
+			mPos.clear(); 
+			mTexT = 0; 
+			mScale.clear(); 
+			mRot.setRows(LLVector4a(1,0,0,0),
+						LLVector4a(0,1,0,0),
+						LLVector4a(0,0,1,0));
+
+			//distinguished data in the pad for debugging
+			pad[0] = 3.14159f;
+			pad[1] = -3.14159f;
+			pad[2] = 0.585f;
+		}
 	};
 
 public:
@@ -786,7 +798,7 @@ public:
 	friend std::ostream& operator<<(std::ostream &s, const LLPath &path);
 
 public:
-	std::vector<PathPt> mPath;
+	LLAlignedArray<PathPt, 64> mPath;
 
 protected:
 	BOOL		  mOpen;
@@ -851,12 +863,12 @@ private:
 public:
 
 	BOOL create(LLVolume* volume, BOOL partial_build = FALSE);
-	void createBinormals();
+	void createTangents();
 	
 	void appendFace(const LLVolumeFace& face, LLMatrix4& transform, LLMatrix4& normal_tranform);
 
 	void resizeVertices(S32 num_verts);
-	void allocateBinormals(S32 num_verts);
+	void allocateTangents(S32 num_verts);
 	void allocateWeights(S32 num_verts);
 	void resizeIndices(S32 num_indices);
 	void fillFromLegacyData(std::vector<LLVolumeFace::VertexData>& v, std::vector<U16>& idx);
@@ -919,11 +931,12 @@ public:
 	LLVector2   mTexCoordExtents[2]; //minimum and maximum of texture coordinates of the face.
 
 	S32 mNumVertices;
+	S32 mNumAllocatedVertices;
 	S32 mNumIndices;
 
 	LLVector4a* mPositions;
 	LLVector4a* mNormals;
-	LLVector4a* mBinormals;
+	LLVector4a* mTangents;
 	LLVector2*  mTexCoords;
 	U16* mIndices;
 
@@ -937,8 +950,11 @@ public:
 	// format is mWeights[vertex_index].mV[influence] = <joint_index>.<weight>
 	// mWeights.size() should be empty or match mVertices.size()  
 	LLVector4a* mWeights;
- 
+
 	LLOctreeNode<LLVolumeTriangle>* mOctree;
+
+	//whether or not face has been cache optimized
+	BOOL mOptimized;
 
 private:
 	BOOL createUnCutCubeCap(LLVolume* volume, BOOL partial_build = FALSE);
@@ -951,15 +967,10 @@ class LLVolume : public LLRefCount
 	friend class LLVolumeLODGroup;
 
 protected:
-	LLVolume(const LLVolume&);  // Don't implement
 	~LLVolume(); // use unref
 
 public:
-	struct Point
-	{
-		LLVector3 mPos;
-	};
-
+		
 	struct FaceParams
 	{
 		LLFaceID mFaceID;
@@ -982,13 +993,13 @@ public:
 	const LLProfile& getProfile() const						{ return *mProfilep; }
 	LLPath& getPath() const									{ return *mPathp; }
 	void resizePath(S32 length);
-	const std::vector<Point>& getMesh() const				{ return mMesh; }
-	const LLVector3& getMeshPt(const U32 i) const			{ return mMesh[i].mPos; }
+	const LLAlignedArray<LLVector4a,64>&	getMesh() const				{ return mMesh; }
+	const LLVector4a& getMeshPt(const U32 i) const			{ return mMesh[i]; }
 
 	void setDirty() { mPathp->setDirty(); mProfilep->setDirty(); }
 
 	void regen();
-	void genBinormals(S32 face);
+	void genTangents(S32 face);
 
 	BOOL isConvex() const;
 	BOOL isCap(S32 face);
@@ -998,10 +1009,7 @@ public:
 	S32 getSculptLevel() const                              { return mSculptLevel; }
 	void setSculptLevel(S32 level)							{ mSculptLevel = level; }
 
-	S32 *getTriangleIndices(U32 &num_indices) const;
-
-	// returns number of triangle indeces required for path/profile mesh
-	S32 getNumTriangleIndices() const;
+	
 	static void getLoDTriangleCounts(const LLVolumeParams& params, S32* counts);
 
 	S32 getNumTriangles(S32* vcount = NULL) const;
@@ -1016,32 +1024,14 @@ public:
 	//get the face index of the face that intersects with the given line segment at the point 
 	//closest to start.  Moves end to the point of intersection.  Returns -1 if no intersection.
 	//Line segment must be in volume space.
-	S32 lineSegmentIntersect(const LLVector3& start, const LLVector3& end,
+	S32 lineSegmentIntersect(const LLVector4a& start, const LLVector4a& end,
 							 S32 face = -1,                          // which face to check, -1 = ALL_SIDES
-							 LLVector3* intersection = NULL,         // return the intersection point
+							 LLVector4a* intersection = NULL,         // return the intersection point
 							 LLVector2* tex_coord = NULL,            // return the texture coordinates of the intersection point
-							 LLVector3* normal = NULL,               // return the surface normal at the intersection point
-							 LLVector3* bi_normal = NULL             // return the surface bi-normal at the intersection point
+							 LLVector4a* normal = NULL,               // return the surface normal at the intersection point
+							 LLVector4a* tangent = NULL             // return the surface tangent at the intersection point
 		);
 
-	S32 lineSegmentIntersect(const LLVector4a& start, const LLVector4a& end, 
-								   S32 face = 1,
-								   LLVector3* intersection = NULL,
-								   LLVector2* tex_coord = NULL,
-								   LLVector3* normal = NULL,
-								   LLVector3* bi_normal = NULL);
-	
-	// The following cleans up vertices and triangles,
-	// getting rid of degenerate triangles and duplicate vertices,
-	// and allocates new arrays with the clean data.
-	static BOOL cleanupTriangleData( const S32 num_input_vertices,
-								const std::vector<Point> &input_vertices,
-								const S32 num_input_triangles,
-								S32 *input_triangles,
-								S32 &num_output_vertices,
-								LLVector3 **output_vertices,
-								S32 &num_output_triangles,
-								S32 **output_triangles);
 	LLFaceID generateFaceMask();
 
 	BOOL isFaceMaskValid(LLFaceID face_mask);
@@ -1051,7 +1041,7 @@ public:
 	friend std::ostream& operator<<(std::ostream &s, const LLVolume *volumep);		// HACK to bypass Windoze confusion over 
 																				// conversion if *(LLVolume*) to LLVolume&
 	const LLVolumeFace &getVolumeFace(const S32 f) const {return mVolumeFaces[f];} // DO NOT DELETE VOLUME WHILE USING THIS REFERENCE, OR HOLD A POINTER TO THIS VOLUMEFACE
-
+	
 	U32					mFaceMask;			// bit array of which faces exist in this volume
 	LLVector3			mLODScaleBias;		// vector for biasing LOD based on scale
 	
@@ -1085,7 +1075,8 @@ public:
 	LLVolumeParams mParams;
 	LLPath *mPathp;
 	LLProfile *mProfilep;
-	std::vector<Point> mMesh;
+	LLAlignedArray<LLVector4a,64> mMesh;
+	
 	
 	BOOL mGenerateSingleFace;
 	typedef std::vector<LLVolumeFace> face_list_t;
@@ -1100,21 +1091,12 @@ public:
 
 std::ostream& operator<<(std::ostream &s, const LLVolumeParams &volume_params);
 
-void calc_binormal_from_triangle(
-		LLVector4a& binormal,
-		const LLVector4a& pos0,
-		const LLVector2& tex0,
-		const LLVector4a& pos1,
-		const LLVector2& tex1,
-		const LLVector4a& pos2,
-		const LLVector2& tex2);
-
 BOOL LLLineSegmentBoxIntersect(const F32* start, const F32* end, const F32* center, const F32* size);
 BOOL LLLineSegmentBoxIntersect(const LLVector3& start, const LLVector3& end, const LLVector3& center, const LLVector3& size);
 BOOL LLLineSegmentBoxIntersect(const LLVector4a& start, const LLVector4a& end, const LLVector4a& center, const LLVector4a& size);
 
-BOOL LLTriangleRayIntersect(const LLVector3& vert0, const LLVector3& vert1, const LLVector3& vert2, const LLVector3& orig, const LLVector3& dir,
-							F32& intersection_a, F32& intersection_b, F32& intersection_t, BOOL two_sided);
+//BOOL LLTriangleRayIntersect(const LLVector3& vert0, const LLVector3& vert1, const LLVector3& vert2, const LLVector3& orig, const LLVector3& dir,
+//							F32& intersection_a, F32& intersection_b, F32& intersection_t, BOOL two_sided);
 
 BOOL LLTriangleRayIntersect(const LLVector4a& vert0, const LLVector4a& vert1, const LLVector4a& vert2, const LLVector4a& orig, const LLVector4a& dir,
 							F32& intersection_a, F32& intersection_b, F32& intersection_t);

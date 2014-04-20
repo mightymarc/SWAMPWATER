@@ -96,17 +96,22 @@ BOOL LLFloaterJoystick::postBuild()
 	if (child)
 	{
 		LLRect r = child->getRect();
-		LLRect f = getRect();
 		rect = LLRect(350, r.mTop, r.mRight + 200, 0);
 	}
 
-	mAxisStatsView = new LLStatView("axis values", joystick, "", rect);
-	mAxisStatsView->setDisplayChildren(TRUE);
+
+	LLStatView::Params params;
+	params.name("axis values");
+	params.rect(rect);
+	params.show_label(true);
+	params.label(joystick);
+	mAxisStatsView = LLUICtrlFactory::create<LLStatView>(params);
 
 	for (U32 i = 0; i < 6; i++)
 	{
 		axis.setArg("[NUM]", llformat("%d", i));
-		mAxisStats[i] = new LLStat(4);
+		std::string stat_name(llformat("Joystick axis %d", i));
+		mAxisStats[i] = new LLStat(stat_name,4);
 		mAxisStatsBar[i] = mAxisStatsView->addStat(axis, mAxisStats[i]);
 		mAxisStatsBar[i]->mMinBar = -range;
 		mAxisStatsBar[i]->mMaxBar = range;

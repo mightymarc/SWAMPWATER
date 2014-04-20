@@ -36,7 +36,6 @@
 
 // linden library includes
 #include "indra_constants.h"
-#include "llalertdialog.h"
 #include "llapr.h"
 #include "llcallbacklist.h"
 #include "lldir.h"
@@ -56,7 +55,7 @@
 #include "llappviewer.h" 
 #include "llassetuploadresponders.h"
 #include "statemachine/aifilepicker.h"
-#include "llfloateranimpreview.h"
+#include "llfloaterbvhpreview.h"
 #include "llfloaterbuycurrency.h"
 #include "llfloaterimagepreview.h"
 #include "llfloaternamedesc.h"
@@ -80,6 +79,7 @@
 #include "llviewerwindow.h"
 
 #include "hippogridmanager.h"
+#include "lfsimfeaturehandler.h"
 
 #include "llviewerobjectbackup.h" 
 
@@ -111,7 +111,7 @@ void setDefaultTextures()
 	}
 }
 
-class importResponder: public LLNewAgentInventoryResponder
+class importResponder : public LLNewAgentInventoryResponder
 {
 public:
 
@@ -191,6 +191,8 @@ public:
 		LLObjectBackup::getInstance()->updateMap(content["new_asset"].asUUID());
 		LLObjectBackup::getInstance()->uploadNextAsset();
 	}
+
+	/*virtual*/ char const* getName(void) const { return "importResponder"; }
 };
 
 class CacheReadResponder : public LLTextureCache::ReadResponder
@@ -397,18 +399,7 @@ void LLObjectBackup::exportObject_continued(AIFilePicker* filepicker)
 
 bool LLObjectBackup::validatePerms(const LLPermissions *item_permissions)
 {
-	if (gHippoGridManager->getConnectedGrid()->isSecondLife())
-	{
-		// In Second Life, you must be the creator to be permitted to export the asset.
-		return (gAgent.getID() == item_permissions->getOwner() &&
-				gAgent.getID() == item_permissions->getCreator());
-	}
-	else
-	{
-		// Out of Second Life, simply check that the asset is full perms.
-		return (gAgent.getID() == item_permissions->getOwner() &&
-				(item_permissions->getMaskOwner() & PERM_ITEM_UNRESTRICTED) == PERM_ITEM_UNRESTRICTED);
-	}
+	return item_permissions->allowExportBy(gAgent.getID(), LFSimFeatureHandler::instance().exportPolicy());
 }
 
 // So far, only Second Life forces TPVs to verify the creator for textures...
@@ -650,9 +641,9 @@ LLSD LLObjectBackup::primsToLLSD(LLViewerObject::child_list_t child_list, bool i
 		prim_llsd["scale"] = object->getScale().getValue();
 
 		// Flags
-		prim_llsd["shadows"] = object->flagCastShadows();
+		prim_llsd["shadows"] = FALSE;
 		prim_llsd["phantom"] = object->flagPhantom();
-		prim_llsd["physical"] = (BOOL)(object->mFlags & FLAGS_USE_PHYSICS);
+		prim_llsd["physical"] = object->flagUsePhysics();
 
 		// Volume params
 		LLVolumeParams params = object->getVolume()->getParams();
@@ -775,10 +766,10 @@ void LLObjectBackup::exportNextTexture()
 			S32 cur_discard = imagep->getDiscardLevel();
 			if (cur_discard > 0)
 			{
-				if (imagep->getBoostLevel() != LLViewerTexture::BOOST_PREVIEW)
+				if (imagep->getBoostLevel() != LLGLTexture::BOOST_PREVIEW)
 				{
 					// we want to force discard 0: this one does this.
-					imagep->setBoostLevel(LLViewerTexture::BOOST_PREVIEW);
+					imagep->setBoostLevel(LLGLTexture::BOOST_PREVIEW);
 				}
 			}
 			else
@@ -815,7 +806,7 @@ void LLObjectBackup::importObject(bool upload)
 	mRetexture = upload;
 	
 	// Open the file open dialog
-	AIFilePicker* filepicker = new AIFilePicker;
+	AIFilePicker* filepicker = AIFilePicker::create();
 	filepicker->open(FFLOAD_XML, "", "import");
 	filepicker->run(boost::bind(&LLObjectBackup::importObject_continued, this, filepicker));
 	
@@ -994,9 +985,9 @@ void LLObjectBackup::xmlToPrim(LLSD prim_llsd, LLViewerObject* object)
 
 	object->setScale(prim_llsd["scale"]);
 
-	if (prim_llsd.has("shadows"))
+	/*if (prim_llsd.has("shadows"))
 		if (prim_llsd["shadows"].asInteger() == 1)
-			object->setFlags(FLAGS_CAST_SHADOWS, true);
+			object->setFlags(FLAGS_CAST_SHADOWS, true);*/
 
 	if (prim_llsd.has("phantom"))
 		if (prim_llsd["phantom"].asInteger() == 1)

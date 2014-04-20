@@ -18,7 +18,11 @@ else (STANDALONE)
     use_prebuilt_binary(SDL)
     set (SDL_FOUND TRUE)
     set (SDL_INCLUDE_DIR ${LIBS_PREBUILT_DIR}/${LL_ARCH_DIR})
-    set (SDL_LIBRARY SDL directfb fusion direct)
+    if(WORD_SIZE EQUAL 64)
+      set (SDL_LIBRARY SDL)
+    else(WORD_SIZE EQUAL 64)
+      set (SDL_LIBRARY SDL directfb fusion direct)
+    endif(WORD_SIZE EQUAL 64)
   endif (LINUX)
 endif (STANDALONE)
 
@@ -32,17 +36,12 @@ set(LLWINDOW_INCLUDE_DIRS
     ${LIBS_OPEN_DIR}/llwindow
     )
 
-if (SERVER AND LINUX)
-  set(LLWINDOW_LIBRARIES
-      llwindowheadless
-      )
-else (SERVER AND LINUX)
-  set(LLWINDOW_LIBRARIES
-      llwindow
-      )
-  if (WINDOWS)
-      list(APPEND LLWINDOW_LIBRARIES
-          comdlg32
-          )
-  endif (WINDOWS)
-endif (SERVER AND LINUX)
+set(LLWINDOW_LIBRARIES
+    llwindow
+    )
+
+if (WINDOWS)
+    list(APPEND LLWINDOW_LIBRARIES
+        comdlg32
+        )
+endif (WINDOWS)

@@ -3,31 +3,25 @@
  * @date   December 2006
  * @brief error message system
  *
- * $LicenseInfo:firstyear=2006&license=viewergpl$
- * 
- * Copyright (c) 2006-2009, Linden Research, Inc.
- * 
+ * $LicenseInfo:firstyear=2006&license=viewerlgpl$
  * Second Life Viewer Source Code
- * The source code in this file ("Source Code") is provided by Linden Lab
- * to you under the terms of the GNU General Public License, version 2.0
- * ("GPL"), unless you have obtained a separate licensing agreement
- * ("Other License"), formally executed by you and Linden Lab.  Terms of
- * the GPL can be found in doc/GPL-license.txt in this distribution, or
- * online at http://secondlifegrid.net/programs/open_source/licensing/gplv2
+ * Copyright (C) 2010, Linden Research, Inc.
  * 
- * There are special exceptions to the terms and conditions of the GPL as
- * it is applied to this Source Code. View the full text of the exception
- * in the file doc/FLOSS-exception.txt in this software distribution, or
- * online at
- * http://secondlifegrid.net/programs/open_source/licensing/flossexception
+ * This library is free software; you can redistribute it and/or
+ * modify it under the terms of the GNU Lesser General Public
+ * License as published by the Free Software Foundation;
+ * version 2.1 of the License only.
  * 
- * By copying, modifying or distributing this software, you acknowledge
- * that you have read and understood your obligations described above,
- * and agree to abide by those obligations.
+ * This library is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+ * Lesser General Public License for more details.
  * 
- * ALL LINDEN LAB SOURCE CODE IS PROVIDED "AS IS." LINDEN LAB MAKES NO
- * WARRANTIES, EXPRESS, IMPLIED OR OTHERWISE, REGARDING ITS ACCURACY,
- * COMPLETENESS OR PERFORMANCE.
+ * You should have received a copy of the GNU Lesser General Public
+ * License along with this library; if not, write to the Free Software
+ * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301  USA
+ * 
+ * Linden Research, Inc., 945 Battery Street, San Francisco, CA  94111  USA
  * $/LicenseInfo$
  */
 
@@ -41,7 +35,7 @@
 #include "stdtypes.h"
 
 
-/* Error Logging Facility
+/** Error Logging Facility
 
 	Information for most users:
 	
@@ -54,7 +48,7 @@
 	using one of four "streams":
 
 		LL_DEBUGS("StringTag")	- debug messages that are normally suppressed
-		LL_INFOS("StringTag")	- informational messages that are normally shown
+		LL_INFOS("StringTag")	- informational messages that are normal shown
 		LL_WARNS("StringTag")	- warning messages that signal a problem
 		LL_ERRS("StringTag")	- error messages that are major, unrecoverable failures
 		
@@ -106,7 +100,6 @@
 	even release.  Which means you can use them to help debug even when deployed
 	to a real grid.
 */
-
 namespace LLError
 {
 	enum ELevel
@@ -238,10 +231,10 @@ typedef LLError::NoClassInfo _LL_CLASS_TO_LOG;
 	See top of file for common usage.	
 */
 
-#define lllog(level, broadTag, narrowTag, once) \
+#define lllog(level, broadTag, narrowTag, once, nofunction) \
 	do { \
 		static LLError::CallSite _site( \
-			level, __FILE__, __LINE__, typeid(_LL_CLASS_TO_LOG), __FUNCTION__, broadTag, narrowTag, once);\
+			level, __FILE__, __LINE__, typeid(_LL_CLASS_TO_LOG), nofunction ? NULL : __FUNCTION__, broadTag, narrowTag, once);\
 		if (LL_UNLIKELY(_site.shouldLog()))			\
 		{ \
 			std::ostringstream* _out = LLError::Log::out(); \
@@ -255,33 +248,39 @@ typedef LLError::NoClassInfo _LL_CLASS_TO_LOG;
 	} while(0)
 
 // DEPRECATED: Use the new macros that allow tags and *look* like macros.
-#define lldebugs	lllog(LLError::LEVEL_DEBUG, NULL, NULL, false)
-#define llinfos		lllog(LLError::LEVEL_INFO, NULL, NULL, false)
-#define llwarns		lllog(LLError::LEVEL_WARN, NULL, NULL, false)
-#define llerrs		lllog(LLError::LEVEL_ERROR, NULL, NULL, false)
+#define lldebugs	lllog(LLError::LEVEL_DEBUG, NULL, NULL, false, false)
+#define llinfos		lllog(LLError::LEVEL_INFO, NULL, NULL, false, false)
+#define llwarns		lllog(LLError::LEVEL_WARN, NULL, NULL, false, false)
+#define llerrs		lllog(LLError::LEVEL_ERROR, NULL, NULL, false, false)
 #define llcont		(*_out)
+
+// No function name
+#define lldebugs_nf	lllog(LLError::LEVEL_DEBUG, NULL, NULL, false, true)
+#define llinfos_nf	lllog(LLError::LEVEL_INFO, NULL, NULL, false, true)
+#define llwarns_nf	lllog(LLError::LEVEL_WARN, NULL, NULL, false, true)
+#define llerrs_nf	lllog(LLError::LEVEL_ERROR, NULL, NULL, false, true)
 
 // NEW Macros for debugging, allow the passing of a string tag
 
 // One Tag
-#define LL_DEBUGS(broadTag)	lllog(LLError::LEVEL_DEBUG, broadTag, NULL, false)
-#define LL_INFOS(broadTag)	lllog(LLError::LEVEL_INFO, broadTag, NULL, false)
-#define LL_WARNS(broadTag)	lllog(LLError::LEVEL_WARN, broadTag, NULL, false)
-#define LL_ERRS(broadTag)	lllog(LLError::LEVEL_ERROR, broadTag, NULL, false)
+#define LL_DEBUGS(broadTag)	lllog(LLError::LEVEL_DEBUG, broadTag, NULL, false, false)
+#define LL_INFOS(broadTag)	lllog(LLError::LEVEL_INFO, broadTag, NULL, false, false)
+#define LL_WARNS(broadTag)	lllog(LLError::LEVEL_WARN, broadTag, NULL, false, false)
+#define LL_ERRS(broadTag)	lllog(LLError::LEVEL_ERROR, broadTag, NULL, false, false)
 // Two Tags
-#define LL_DEBUGS2(broadTag, narrowTag)	lllog(LLError::LEVEL_DEBUG, broadTag, narrowTag, false)
-#define LL_INFOS2(broadTag, narrowTag)	lllog(LLError::LEVEL_INFO, broadTag, narrowTag, false)
-#define LL_WARNS2(broadTag, narrowTag)	lllog(LLError::LEVEL_WARN, broadTag, narrowTag, false)
-#define LL_ERRS2(broadTag, narrowTag)	lllog(LLError::LEVEL_ERROR, broadTag, narrowTag, false)
+#define LL_DEBUGS2(broadTag, narrowTag)	lllog(LLError::LEVEL_DEBUG, broadTag, narrowTag, false, false)
+#define LL_INFOS2(broadTag, narrowTag)	lllog(LLError::LEVEL_INFO, broadTag, narrowTag, false, false)
+#define LL_WARNS2(broadTag, narrowTag)	lllog(LLError::LEVEL_WARN, broadTag, narrowTag, false, false)
+#define LL_ERRS2(broadTag, narrowTag)	lllog(LLError::LEVEL_ERROR, broadTag, narrowTag, false, false)
 
 // Only print the log message once (good for warnings or infos that would otherwise
 // spam the log file over and over, such as tighter loops).
-#define LL_DEBUGS_ONCE(broadTag)	lllog(LLError::LEVEL_DEBUG, broadTag, NULL, true)
-#define LL_INFOS_ONCE(broadTag)	lllog(LLError::LEVEL_INFO, broadTag, NULL, true)
-#define LL_WARNS_ONCE(broadTag)	lllog(LLError::LEVEL_WARN, broadTag, NULL, true)
-#define LL_DEBUGS2_ONCE(broadTag, narrowTag)	lllog(LLError::LEVEL_DEBUG, broadTag, narrowTag, true)
-#define LL_INFOS2_ONCE(broadTag, narrowTag)	lllog(LLError::LEVEL_INFO, broadTag, narrowTag, true)
-#define LL_WARNS2_ONCE(broadTag, narrowTag)	lllog(LLError::LEVEL_WARN, broadTag, narrowTag, true)
+#define LL_DEBUGS_ONCE(broadTag)	lllog(LLError::LEVEL_DEBUG, broadTag, NULL, true, false)
+#define LL_INFOS_ONCE(broadTag)	lllog(LLError::LEVEL_INFO, broadTag, NULL, true, false)
+#define LL_WARNS_ONCE(broadTag)	lllog(LLError::LEVEL_WARN, broadTag, NULL, true, false)
+#define LL_DEBUGS2_ONCE(broadTag, narrowTag)	lllog(LLError::LEVEL_DEBUG, broadTag, narrowTag, true, false)
+#define LL_INFOS2_ONCE(broadTag, narrowTag)	lllog(LLError::LEVEL_INFO, broadTag, narrowTag, true, false)
+#define LL_WARNS2_ONCE(broadTag, narrowTag)	lllog(LLError::LEVEL_WARN, broadTag, narrowTag, true, false)
 
 #define LL_ENDL llendl
 #define LL_CONT	(*_out)
@@ -301,9 +300,5 @@ typedef LLError::NoClassInfo _LL_CLASS_TO_LOG;
 		
 		Such computation is done iff the message will be logged.
 	*/
-
-#ifdef SHOW_ASSERT
-extern LL_COMMON_API bool is_main_thread();
-#endif
 
 #endif // LL_LLERROR_H

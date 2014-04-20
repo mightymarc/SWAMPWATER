@@ -33,23 +33,24 @@
 #ifndef LL_LLTEXTUREFETCH_H
 #define LL_LLTEXTUREFETCH_H
 
+#include <vector>
+#include <map>
+
 #include "lldir.h"
 #include "llimage.h"
 #include "lluuid.h"
 #include "llworkerthread.h"
-#include "llcurl.h"
 #include "lltextureinfo.h"
 #include "llapr.h"
+#include "llstat.h"
 
 class LLViewerTexture;
 class LLTextureFetchWorker;
 class HTTPGetResponder;
-class LLTextureCache;
 class LLImageDecodeThread;
 class LLHost;
-#if HTTP_METRICS
 class LLViewerAssetStats;
-#endif
+class LLTextureCache;
 
 // Interface class
 class LLTextureFetch : public LLWorkerThread
@@ -70,6 +71,7 @@ public:
 	bool createRequest(const std::string& url, const LLUUID& id, const LLHost& host, F32 priority,
 					   S32 w, S32 h, S32 c, S32 discard, bool needs_aux, bool can_use_http);
 	void deleteRequest(const LLUUID& id, bool cancel);
+	void deleteAllRequests();
 	bool getRequestFinished(const LLUUID& id, S32& discard_level,
 							LLPointer<LLImageRaw>& raw, LLPointer<LLImageRaw>& aux);
 	bool updateRequestPriority(const LLUUID& id, F32 priority);
@@ -77,17 +79,19 @@ public:
 	bool receiveImageHeader(const LLHost& host, const LLUUID& id, U8 codec, U16 packets, U32 totalbytes, U16 data_size, U8* data);
 	bool receiveImagePacket(const LLHost& host, const LLUUID& id, U16 packet_num, U16 data_size, U8* data);
 
-	void setTextureBandwidth(F32 bandwidth) { mTextureBandwidth = bandwidth; }
-	F32 getTextureBandwidth() { return mTextureBandwidth; }
-	
 	// Debug
 	BOOL isFromLocalCache(const LLUUID& id);
 	S32 getFetchState(const LLUUID& id, F32& decode_progress_p, F32& requested_priority_p,
 					  U32& fetch_priority_p, F32& fetch_dtime_p, F32& request_dtime_p, bool& can_use_http);
 	void dump();
-	S32 getNumRequests() ;
-	S32 getNumHTTPRequests() ;
-	U32 getTotalNumHTTPRequests() ;
+	// Threads:  T*
+	S32 getNumRequests();
+
+	// Threads:  T*
+	S32 getNumHTTPRequests();
+
+	// Threads:  T*
+	U32 getTotalNumHTTPRequests();
 	
 	// Public for access by callbacks
     S32 getPending();
@@ -96,32 +100,29 @@ public:
 	LLTextureFetchWorker* getWorker(const LLUUID& id);
 	LLTextureFetchWorker* getWorkerAfterLock(const LLUUID& id);
 
-	LLTextureInfo* getTextureInfo() { return &mTextureInfo; }
-
-#if HTTP_METRICS
 	// Commands available to other threads to control metrics gathering operations.
+
+	// Threads:  T*
 	void commandSetRegion(U64 region_handle);
+
+	// Threads:  T*
 	void commandSendMetrics(const std::string & caps_url,
 							const LLUUID & session_id,
 							const LLUUID & agent_id,
 							LLViewerAssetStats * main_stats);
+
+	// Threads:  T*
 	void commandDataBreak();
 
-	LLCurlRequest & getCurlRequest()	{ return *mCurlGetRequest; }
-
 	bool isQAMode() const				{ return mQAMode; }
-
-	// Curl POST counter maintenance
-	inline void incrCurlPOSTCount()		{ mCurlPOSTRequestCount++; }
-	inline void decrCurlPOSTCount()		{ mCurlPOSTRequestCount--; }
-#endif
-
+	void updateStateStats(U32 cache_read, U32 cache_write);
+	void getStateStats(U32 * cache_read, U32 * cache_write);
 protected:
 	void addToNetworkQueue(LLTextureFetchWorker* worker);
 	void removeFromNetworkQueue(LLTextureFetchWorker* worker, bool cancel);
 	void addToHTTPQueue(const LLUUID& id);
 	void removeFromHTTPQueue(const LLUUID& id, S32 received_size = 0);
-	void removeRequest(LLTextureFetchWorker* worker, bool cancel);
+	void removeRequest(LLTextureFetchWorker* worker, bool cancel, bool bNeedsLock = true);
 
 	// Overrides from the LLThread tree
 	bool runCondition();
@@ -133,37 +134,9 @@ private:
 	/*virtual*/ void threadedUpdate(void);
 	void commonUpdate();
 
-#if HTTP_METRICS
-	// Metrics command helpers
-	/**
-	 * Enqueues a command request at the end of the command queue
-	 * and wakes up the thread as needed.
-	 *
-	 * Takes ownership of the TFRequest object.
-	 *
-	 * Method locks the command queue.
-	 */
 	void cmdEnqueue(TFRequest *);
-
-	/**
-	 * Returns the first TFRequest object in the command queue or
-	 * NULL if none is present.
-	 *
-	 * Caller acquires ownership of the object and must dispose of it.
-	 *
-	 * Method locks the command queue.
-	 */
 	TFRequest * cmdDequeue();
-
-	/**
-	 * Processes the first command in the queue disposing of the
-	 * request on completion.  Successive calls are needed to perform
-	 * additional commands.
-	 *
-	 * Method locks the command queue.
-	 */
 	void cmdDoWork();
-#endif
 	
 public:
 	LLUUID mDebugID;
@@ -176,9 +149,13 @@ private:
 	LLMutex mQueueMutex;        //to protect mRequestMap only
 	LLMutex mNetworkQueueMutex; //to protect mNetworkQueue, mHTTPTextureQueue and mCancelQueue.
 
+public:
+	static LLStat sCacheHitRate;
+	static LLStat sCacheReadLatency;
+private:
+
 	LLTextureCache* mTextureCache;
 	LLImageDecodeThread* mImageDecodeThread;
-	LLCurlRequest* mCurlGetRequest;
 	
 	// Map of all requests by UUID
 	typedef std::map<LLUUID,LLTextureFetchWorker*> map_t;
@@ -190,16 +167,11 @@ private:
 	queue_t mHTTPTextureQueue;
 	typedef std::map<LLHost,std::set<LLUUID> > cancel_queue_t;
 	cancel_queue_t mCancelQueue;
-	F32 mTextureBandwidth;
-	F32 mMaxBandwidth;
 	LLTextureInfo mTextureInfo;
-
-	U32 mHTTPTextureBits;
 
 	//debug use
 	U32 mTotalHTTPRequests ;
 
-#if HTTP_METRICS
 	// Out-of-band cross-thread command queue.  This command queue
 	// is logically tied to LLQueuedThread's list of
 	// QueuedRequest instances and so must be covered by the
@@ -209,20 +181,16 @@ private:
 
 	// If true, modifies some behaviors that help with QA tasks.
 	const bool mQAMode;
-
-	// Count of POST requests outstanding.  We maintain the count
-	// indirectly in the CURL request responder's ctor and dtor and
-	// use it when determining whether or not to sleep the thread.  Can't
-	// use the LLCurl module's request counter as it isn't thread compatible.
-	// *NOTE:  Don't mix Atomic and static, apr_initialize must be called first.
-	LLAtomic32<S32> mCurlPOSTRequestCount;
+	// Cumulative stats on the states/requests issued by
+	// textures running through here.
+	U32 mTotalCacheReadCount;
+	U32 mTotalCacheWriteCount;
 
 public:
 	// A probabilistically-correct indicator that the current
 	// attempt to log metrics follows a break in the metrics stream
 	// reporting due to either startup or a problem POSTing data.
 	static volatile bool svMetricsDataBreak;
-#endif
 };
 
 #endif // LL_LLTEXTUREFETCH_H

@@ -2,7 +2,7 @@
 
 include(Prebuilt)
 
-set(JSONCPP_FIND_QUIETLY ON)
+set(JSONCPP_FIND_QUIETLY OFF)
 set(JSONCPP_FIND_REQUIRED ON)
 
 if (STANDALONE)
@@ -14,9 +14,9 @@ else (STANDALONE)
       debug json_vc${MSVC_SUFFIX}d
       optimized json_vc${MSVC_SUFFIX})
   elseif (DARWIN)
-    set(JSONCPP_LIBRARIES json_mac-universal-gcc_libmt)
+    set(JSONCPP_LIBRARIES json_linux-gcc-4.0.1_libmt)
   elseif (LINUX)
     set(JSONCPP_LIBRARIES jsoncpp)
   endif (WINDOWS)
-  set(JSONCPP_INCLUDE_DIRS ${LIBS_PREBUILT_DIR}/${LL_ARCH_DIR}/include/jsoncpp)
+  set(JSONCPP_INCLUDE_DIR ${LIBS_PREBUILT_DIR}/${LL_ARCH_DIR}/include/jsoncpp)
 endif (STANDALONE)

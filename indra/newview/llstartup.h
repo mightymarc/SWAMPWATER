@@ -33,7 +33,13 @@
 #ifndef LL_LLSTARTUP_H
 #define LL_LLSTARTUP_H
 
-class LLViewerTexture;
+#include <boost/scoped_ptr.hpp>
+
+class LLViewerTexture ;
+class LLEventPump;
+class LLSLURL;
+
+#include "llviewerstats.h"
 
 // functions
 bool idle_startup();
@@ -53,8 +59,6 @@ typedef enum {
 	STATE_LOGIN_VOICE_LICENSE,		// Show license agreement for using voice
 	STATE_UPDATE_CHECK,				// Wait for user at a dialog box (updates, term-of-service, etc)
 	STATE_LOGIN_AUTH_INIT,			// Start login to SL servers
-	STATE_LOGIN_AUTHENTICATE,		// Do authentication voodoo
-	STATE_WAIT_LEGACY_LOGIN,        // Waiting for legacy login 
 	STATE_XMLRPC_LEGACY_LOGIN,      // XMLRPC for legacy login, OGPX maintain legacy XMLRPC
 	STATE_LOGIN_NO_DATA_YET,		// Waiting for authentication replies to start
 	STATE_LOGIN_DOWNLOADING,		// Waiting for authentication replies to download
@@ -101,7 +105,6 @@ public:
 
 	static void initNameCache();
 	
-
 	static void cleanupNameCache();
 
 	// outfit_folder_name can be a folder anywhere in your inventory, 
@@ -128,15 +131,20 @@ public:
 		// if we have a SLURL or sim string ("Ahern/123/45") that started
 		// the viewer, dispatch it
 
-	static std::string sSLURLCommand;
-		// *HACK: On startup, if we were passed a secondlife://app/do/foo
-		// command URL, store it for later processing.
+	static void postStartupState();
+	static void setStartSLURL(const LLSLURL& slurl); 
+	static LLSLURL& getStartSLURL();
 
 	static bool startLLProxy(); // Initialize the SOCKS 5 proxy	
 
+	static LLViewerStats::PhaseMap& getPhases() { return *sPhases; }
 private:
+	static LLSLURL sStartSLURL;
+
 	static std::string startupStateToString(EStartupState state);
 	static EStartupState gStartupState; // Do not set directly, use LLStartup::setStartupState
+	static boost::scoped_ptr<LLEventPump> sStateWatcher;
+	static boost::scoped_ptr<LLViewerStats::PhaseMap> sPhases;
 };
 
 

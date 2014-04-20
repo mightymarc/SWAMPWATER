@@ -88,7 +88,7 @@ LLObjectSelectionHandle LLToolSelect::handleObjectSelection(const LLPickInfo& pi
 	}
 
 // [RLVa:KB] - Checked: 2010-11-29 (RLVa-1.3.0c) | Modified: RLVa-1.3.0c
-	if (rlv_handler_t::isEnabled())
+	if ( (object) && (rlv_handler_t::isEnabled()) )
 	{
 		if (!gRlvHandler.canEdit(object))
 		{
@@ -108,8 +108,8 @@ LLObjectSelectionHandle LLToolSelect::handleObjectSelection(const LLPickInfo& pi
 				}
 			}
 		}
-		
-		if ( (gRlvHandler.hasBehaviour(RLV_BHVR_FARTOUCH)) && (object) && ((!object->isAttachment()) || (!object->permYouOwner())) &&
+
+		if ( (gRlvHandler.hasBehaviour(RLV_BHVR_FARTOUCH)) && ((!object->isAttachment()) || (!object->permYouOwner())) &&
 			 (dist_vec_squared(gAgent.getPositionAgent(), object->getPositionRegion()) > 1.5f * 1.5f) )
 		{
 			// NOTE-RLVa: see behaviour notes for a rather lengthy explanation of why we're doing things this way
@@ -265,7 +265,7 @@ LLObjectSelectionHandle LLToolSelect::handleObjectSelection(const LLPickInfo& pi
 	} //if(!object)
 
 	// Cleanup temp select settings above.
-	if (temp_select || LLSelectMgr::getInstance()->mAllowSelectAvatar)
+	if (temp_select ||LLSelectMgr::getInstance()->mAllowSelectAvatar)
 	{
 		gSavedSettings.setBOOL("SelectOwnedOnly", select_owned);
 		gSavedSettings.setBOOL("SelectMovableOnly", select_movable);

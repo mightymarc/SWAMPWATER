@@ -5,26 +5,22 @@ project(llui)
 include(00-Common)
 include(LLCommon)
 include(LLImage)
-include(LLInventory)
 include(LLMath)
 include(LLMessage)
 include(LLRender)
 include(LLWindow)
 include(LLVFS)
 include(LLXML)
-include(LLXUIXML)
 
 include_directories(
     ${LLCOMMON_INCLUDE_DIRS}
     ${LLIMAGE_INCLUDE_DIRS}
-    ${LLINVENTORY_INCLUDE_DIRS}
     ${LLMATH_INCLUDE_DIRS}
     ${LLMESSAGE_INCLUDE_DIRS}
     ${LLRENDER_INCLUDE_DIRS}
     ${LLWINDOW_INCLUDE_DIRS}
     ${LLVFS_INCLUDE_DIRS}
     ${LLXML_INCLUDE_DIRS}
-    ${LLXUIXML_INCLUDE_DIRS}
     )
 
 set(llui_SOURCE_FILES
@@ -33,15 +29,18 @@ set(llui_SOURCE_FILES
     llcheckboxctrl.cpp
     llclipboard.cpp
     llcombobox.cpp
+    llcontainerview.cpp
     llctrlselectioninterface.cpp
-    lldelayeduidelete.cpp
     lldraghandle.cpp
     lleditmenuhandler.cpp
+    llfiltereditor.cpp
     llfloater.cpp
+    llflyoutbutton.cpp
     llfocusmgr.cpp
     llfunctorregistry.cpp
     lliconctrl.cpp
     llkeywords.cpp
+    lllayoutstack.cpp
     lllineeditor.cpp
     lllocalcliprect.cpp
     llmenugl.cpp
@@ -61,57 +60,70 @@ set(llui_SOURCE_FILES
     llscrollbar.cpp
     llscrollcontainer.cpp
     llscrollingpanellist.cpp
+    llscrolllistcell.cpp
+    llscrolllistcolumn.cpp
     llscrolllistctrl.cpp
+    llscrolllistitem.cpp
+    llsearcheditor.cpp
     llslider.cpp
     llsliderctrl.cpp
     llspinctrl.cpp
+    llstatbar.cpp
+    llstatgraph.cpp
+    llstatview.cpp
     llstyle.cpp
     lltabcontainer.cpp
-    lltabcontainervertical.cpp
     lltextbox.cpp
     lltexteditor.cpp
     lltextparser.cpp
     lltrans.cpp
     llui.cpp
+    lluicolor.cpp
     lluictrl.cpp
     lluictrlfactory.cpp
-    lluiimage.cpp
     lluistring.cpp
     llundo.cpp
+    llurlaction.cpp
+    llurlentry.cpp
+    llurlmatch.cpp
+    llurlregistry.cpp
+    llview.cpp
     llviewborder.cpp
     llviewmodel.cpp
-    llview.cpp
     llviewquery.cpp
     )
     
 set(llui_HEADER_FILES
     CMakeLists.txt
 
+    ailist.h
     llalertdialog.h
     llbutton.h
     llcallbackmap.h
     llcheckboxctrl.h
     llclipboard.h
     llcombobox.h
+    llcontainerview.h
     llctrlselectioninterface.h
-    lldelayeduidelete.h
     lldraghandle.h
     lleditmenuhandler.h
+    llfiltereditor.h 
     llfloater.h
+    llflyoutbutton.h
     llfocusmgr.h
     llfunctorregistry.h
-    llhandle.h
     llhtmlhelp.h
     lliconctrl.h
     llkeywords.h
+    lllayoutstack.h
     lllineeditor.h
     lllocalcliprect.h
     llmemberlistener.h
     llmenugl.h
     llmodaldialog.h
     llmultifloater.h 
-    llmultisliderctrl.h
     llmultislider.h
+    llmultisliderctrl.h
     llnotificationptr.h
     llnotifications.h
     llnotificationsutil.h
@@ -123,32 +135,42 @@ set(llui_HEADER_FILES
     llresizehandle.h
     llresmgr.h
     llrootview.h
+    llsearcheditor.h 
     llscrollbar.h
     llscrollcontainer.h
     llscrollingpanellist.h
+    llscrolllistcell.h
+    llscrolllistcolumn.h
     llscrolllistctrl.h
-    llsliderctrl.h
+    llscrolllistitem.h
     llslider.h
+    llsliderctrl.h
     llspinctrl.h
+    llstatbar.h
+    llstatgraph.h
+    llstatview.h
     llstyle.h
     lltabcontainer.h
-    lltabcontainervertical.h
     lltextbox.h
     lltexteditor.h
     lltextparser.h
     lltrans.h
-    lluiconstants.h
-    lluictrlfactory.h
-    lluictrl.h
-    lluifwd.h
     llui.h
-    lluiimage.h
+    lluicolor.h
+    lluiconstants.h
+    lluictrl.h
+    lluictrlfactory.h
+    lluifwd.h
     lluistring.h
     lluixmltags.h
     llundo.h
+    llurlaction.h
+    llurlentry.h
+    llurlmatch.h
+    llurlregistry.h
+    llview.h
     llviewborder.h
     llviewmodel.h
-    llview.h
     llviewquery.h
     )
 
@@ -165,7 +187,6 @@ target_link_libraries(llui
     llwindow
     llimage
     llvfs       # ugh, just for LLDir
-    llxuixml
     llxml
     llcommon    # must be after llimage, llwindow, llrender
     llmath

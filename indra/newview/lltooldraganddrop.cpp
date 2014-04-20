@@ -31,26 +31,19 @@
  */
 
 #include "llviewerprecompiledheaders.h"
-
-#include "message.h"
 #include "lltooldraganddrop.h"
 
+// library headers
 #include "llnotificationsutil.h"
-
-#include "llinstantmessage.h"
-#include "lldir.h"
-
+// project headers
 #include "llagent.h"
 #include "llagentcamera.h"
 #include "llagentwearables.h"
 #include "llappearancemgr.h"
 #include "lldictionary.h"
-#include "llviewercontrol.h"
 #include "llfirstuse.h"
-#include "llfloater.h"
 #include "llfloaterinventory.h"
 #include "llfloatertools.h"
-#include "llfocusmgr.h"
 #include "llgesturemgr.h"
 #include "llgiveinventory.h"
 #include "llhudmanager.h"
@@ -66,7 +59,6 @@
 #include "llselectmgr.h"
 #include "lltoolmgr.h"
 #include "lltrans.h"
-#include "llui.h"
 #include "llviewertexturelist.h"
 #include "llviewerinventory.h"
 #include "llviewerobject.h"
@@ -77,14 +69,14 @@
 #include "llvoavatarself.h"
 #include "llvolume.h"
 #include "llworld.h"
-#include "object_flags.h"
+#include "llpanelface.h"
 // <edit>
 #include "llappviewer.h" // System Folders
 #include "llparcel.h" // always rez
 #include "llviewerparcelmgr.h" // always rez
 // </edit>
 
-// [RLVa:KB] - Checked: 2010-03-04 (RLVa-1.2.0a)
+// [RLVa:KB] - Checked: 2011-05-22 (RLVa-1.3.1)
 #include "rlvhandler.h"
 #include "rlvlocks.h"
 // [/RLVa:KB]
@@ -358,7 +350,7 @@ LLToolDragAndDrop::LLDragAndDropDictionary::LLDragAndDropDictionary()
 	addEntry(DAD_NOTECARD, 		new DragAndDropEntry(&LLToolDragAndDrop::dad3dNULL, &LLToolDragAndDrop::dad3dNULL, 					&LLToolDragAndDrop::dad3dGiveInventory, 		&LLToolDragAndDrop::dad3dUpdateInventory, 			&LLToolDragAndDrop::dad3dNULL));
 	addEntry(DAD_CATEGORY, 		new DragAndDropEntry(&LLToolDragAndDrop::dad3dNULL, &LLToolDragAndDrop::dad3dWearCategory,			&LLToolDragAndDrop::dad3dGiveInventoryCategory,	&LLToolDragAndDrop::dad3dUpdateInventoryCategory,	&LLToolDragAndDrop::dad3dNULL));
 	addEntry(DAD_ROOT_CATEGORY, new DragAndDropEntry(&LLToolDragAndDrop::dad3dNULL,	&LLToolDragAndDrop::dad3dNULL,					&LLToolDragAndDrop::dad3dNULL,					&LLToolDragAndDrop::dad3dNULL,						&LLToolDragAndDrop::dad3dNULL));
-	addEntry(DAD_BODYPART, 		new DragAndDropEntry(&LLToolDragAndDrop::dad3dNULL,	&LLToolDragAndDrop::dad3dWearItem,				&LLToolDragAndDrop::dad3dGiveInventory,			&LLToolDragAndDrop::dad3dUpdateInventory,			&LLToolDragAndDrop::dad3dNULL));	
+	addEntry(DAD_BODYPART, 		new DragAndDropEntry(&LLToolDragAndDrop::dad3dNULL,	&LLToolDragAndDrop::dad3dWearItem,				&LLToolDragAndDrop::dad3dGiveInventory,			&LLToolDragAndDrop::dad3dUpdateInventory,			&LLToolDragAndDrop::dad3dNULL));
 	addEntry(DAD_ANIMATION, 	new DragAndDropEntry(&LLToolDragAndDrop::dad3dNULL,	&LLToolDragAndDrop::dad3dNULL,					&LLToolDragAndDrop::dad3dGiveInventory,			&LLToolDragAndDrop::dad3dUpdateInventory,			&LLToolDragAndDrop::dad3dNULL));
 	addEntry(DAD_GESTURE, 		new DragAndDropEntry(&LLToolDragAndDrop::dad3dNULL,	&LLToolDragAndDrop::dad3dActivateGesture,		&LLToolDragAndDrop::dad3dGiveInventory,			&LLToolDragAndDrop::dad3dUpdateInventory,			&LLToolDragAndDrop::dad3dNULL));
 	addEntry(DAD_LINK, 			new DragAndDropEntry(&LLToolDragAndDrop::dad3dNULL,	&LLToolDragAndDrop::dad3dNULL,					&LLToolDragAndDrop::dad3dNULL,					&LLToolDragAndDrop::dad3dNULL,						&LLToolDragAndDrop::dad3dNULL));
@@ -388,9 +380,12 @@ void LLToolDragAndDrop::setDragStart(S32 x, S32 y)
 
 BOOL LLToolDragAndDrop::isOverThreshold(S32 x,S32 y)
 {
-	const S32 MIN_MANHATTAN_DIST = 3;
-	S32 manhattan_dist = llabs( x - mDragStartX ) + llabs( y - mDragStartY );
-	return manhattan_dist >= MIN_MANHATTAN_DIST;
+	static LLCachedControl<S32> drag_and_drop_threshold(gSavedSettings,"DragAndDropDistanceThreshold");
+
+	S32 mouse_delta_x = x - mDragStartX;
+	S32 mouse_delta_y = y - mDragStartY;
+
+	return (mouse_delta_x * mouse_delta_x) + (mouse_delta_y * mouse_delta_y) > drag_and_drop_threshold * drag_and_drop_threshold;
 }
 
 void LLToolDragAndDrop::beginDrag(EDragAndDropType type,
@@ -1035,7 +1030,14 @@ BOOL LLToolDragAndDrop::handleDropTextureProtections(LLViewerObject* hit_obj,
 			}
 		}
 		// Add the texture item to the target object's inventory.
-		hit_obj->updateInventory(new_item, TASK_INVENTORY_ITEM_KEY, true);
+		if (LLAssetType::AT_TEXTURE == new_item->getType())
+		{
+			hit_obj->updateTextureInventory(new_item, TASK_INVENTORY_ITEM_KEY, true);
+		}
+		else
+		{
+			hit_obj->updateInventory(new_item, TASK_INVENTORY_ITEM_KEY, true);
+		}
  		// TODO: Check to see if adding the item was successful; if not, then
 		// we should return false here.
 	}
@@ -1050,7 +1052,14 @@ BOOL LLToolDragAndDrop::handleDropTextureProtections(LLViewerObject* hit_obj,
 		// *FIX: may want to make sure agent can paint hit_obj.
 
 		// Add the texture item to the target object's inventory.
-		hit_obj->updateInventory(new_item, TASK_INVENTORY_ITEM_KEY, true);
+		if (LLAssetType::AT_TEXTURE == new_item->getType())
+		{
+			hit_obj->updateTextureInventory(new_item, TASK_INVENTORY_ITEM_KEY, true);
+		}
+		else
+		{
+			hit_obj->updateInventory(new_item, TASK_INVENTORY_ITEM_KEY, true);
+		}
 		// Force the object to update its refetch its inventory so it has this texture.
 		hit_obj->fetchInventoryFromServer();
  		// TODO: Check to see if adding the item was successful; if not, then
@@ -1075,14 +1084,17 @@ void LLToolDragAndDrop::dropTextureAllFaces(LLViewerObject* hit_obj,
 	{
 		return;
 	}
-	LLViewerTexture* image = LLViewerTextureManager::getFetchedTexture(asset_id);
+	//LLViewerTexture* image = LLViewerTextureManager::getFetchedTexture(asset_id);
 	LLViewerStats::getInstance()->incStat(LLViewerStats::ST_EDIT_TEXTURE_COUNT );
 	S32 num_faces = hit_obj->getNumTEs();
 	for( S32 face = 0; face < num_faces; face++ )
 	{
 
 		// update viewer side image in anticipation of update from simulator
-		hit_obj->setTEImage(face, image);
+		//hit_obj->setTEImage(face, image);
+		hit_obj->setTETexture(face, asset_id);	//Singu note: setTETexture will allow the real id to be passed to LLPrimitive::setTETexture,
+												// even if it's null. setTEImage would actually pass down IMG_DEFAULT under such a case,
+												// which we don't want.
 		dialog_refresh_all();
 	}
 	// send the update to the simulator
@@ -1143,9 +1155,58 @@ void LLToolDragAndDrop::dropTextureOneFace(LLViewerObject* hit_obj,
 		return;
 	}
 	// update viewer side image in anticipation of update from simulator
-	LLViewerTexture* image = LLViewerTextureManager::getFetchedTexture(asset_id);
+	//LLViewerTexture* image = LLViewerTextureManager::getFetchedTexture(asset_id);
 	LLViewerStats::getInstance()->incStat(LLViewerStats::ST_EDIT_TEXTURE_COUNT );
-	hit_obj->setTEImage(hit_face, image);
+
+	LLTextureEntry* tep = hit_obj ? (hit_obj->getTE(hit_face)) : NULL;
+
+	LLPanelFace* panel_face = gFloaterTools->getPanelFace();
+
+	if (gFloaterTools->getVisible() && panel_face)
+	{
+		switch (LLSelectMgr::getInstance()->getTextureChannel())
+		{
+		case 0:
+		default:
+			{
+				//hit_obj->setTEImage(hit_face, image);
+				hit_obj->setTETexture(hit_face, asset_id);	//Singu note: setTETexture will allow the real id to be passed to LLPrimitive::setTETexture,
+															// even if it's null. setTEImage would actually pass down IMG_DEFAULT under such a case,
+															// which we don't want.
+			}
+		break;
+
+		case 1:
+			{
+				LLMaterialPtr old_mat = tep->getMaterialParams();
+				LLMaterialPtr new_mat = panel_face->createDefaultMaterial(old_mat);
+				new_mat->setNormalID(asset_id);
+				tep->setMaterialParams(new_mat);
+				hit_obj->setTENormalMap(hit_face, asset_id);
+				LLMaterialMgr::getInstance()->put(hit_obj->getID(), hit_face, *new_mat);
+			}
+			break;
+
+		case 2:
+			{
+				LLMaterialPtr old_mat = tep->getMaterialParams();
+				LLMaterialPtr new_mat = panel_face->createDefaultMaterial(old_mat);
+				new_mat->setSpecularID(asset_id);
+				tep->setMaterialParams(new_mat);
+				hit_obj->setTESpecularMap(hit_face, asset_id);
+				LLMaterialMgr::getInstance()->put(hit_obj->getID(), hit_face, *new_mat);
+			}
+			break;
+		}
+	}
+	else
+	{
+		//hit_obj->setTEImage(hit_face, image);
+		hit_obj->setTETexture(hit_face, asset_id);	//Singu note: setTETexture will allow the real id to be passed to LLPrimitive::setTETexture,
+													// even if it's null. setTEImage would actually pass down IMG_DEFAULT under such a case,
+													// which we don't want.
+	}
+
 	dialog_refresh_all();
 
 	// send the update to the simulator
@@ -1244,7 +1305,7 @@ void LLToolDragAndDrop::dropObject(LLViewerObject* raycast_target,
 	if (!item || !item->isFinished()) return;
 	
 	if (regionp
-		&& (regionp->getRegionFlags() & REGION_FLAGS_SANDBOX))
+		&& regionp->getRegionFlag(REGION_FLAGS_SANDBOX))
 	{
 		LLFirstUse::useSandbox();
 	}
@@ -1492,10 +1553,9 @@ EAcceptance LLToolDragAndDrop::willObjectAcceptInventory(LLViewerObject* obj, LL
 	if(!item || !obj) return ACCEPT_NO;
 	// HACK: downcast
 	LLViewerInventoryItem* vitem = (LLViewerInventoryItem*)item;
-	// <edit>
-	//if(!vitem->isFinished()) return ACCEPT_NO;
-	if(!vitem->isFinished() && !(gInventory.isObjectDescendentOf(vitem->getUUID(), gSystemFolderRoot))) return ACCEPT_NO;
-	// </edit>
+
+	if(!vitem->isFinished()) return ACCEPT_NO;
+
 	if (vitem->getIsLinkType()) return ACCEPT_NO; // No giving away links
 
 	// deny attempts to drop from an object onto itself. This is to
@@ -1599,6 +1659,8 @@ bool LLToolDragAndDrop::handleGiveDragAndDrop(LLUUID dest_agent, LLUUID session_
 	case DAD_BODYPART:
 	case DAD_ANIMATION:
 	case DAD_GESTURE:
+	case DAD_CALLINGCARD:
+	case DAD_MESH:
 	{
 		LLViewerInventoryItem* inv_item = (LLViewerInventoryItem*)cargo_data;
 		if(gInventory.getItem(inv_item->getUUID())
@@ -1643,7 +1705,6 @@ bool LLToolDragAndDrop::handleGiveDragAndDrop(LLUUID dest_agent, LLUUID session_
 		}
 		break;
 	}
-	case DAD_CALLINGCARD:
 	default:
 		*accept = ACCEPT_NO;
 		break;
@@ -1696,12 +1757,17 @@ EAcceptance LLToolDragAndDrop::dad3dRezAttachmentFromInv(
 	//}
 	// </edit>
 
-// [RLVa:KB] - Checked: 2010-09-28 (RLVa-1.2.1f) | Modified: RLVa-1.2.1f
-	if ( (rlv_handler_t::isEnabled()) && (gRlvAttachmentLocks.hasLockedAttachmentPoint(RLV_LOCK_ANY)) )
+	const LLUUID &outbox_id = gInventory.findCategoryUUIDForType(LLFolderType::FT_OUTBOX, false);
+	if(gInventory.isObjectDescendentOf(item->getUUID(), outbox_id))
 	{
-		ERlvWearMask eWearMask = gRlvAttachmentLocks.canAttach(item); bool fReplace = !(mask & MASK_CONTROL);
-		if ( ((!fReplace) && ((RLV_WEAR_ADD & eWearMask) == 0)) || ((fReplace) && ((RLV_WEAR_REPLACE & eWearMask) == 0)) )
-			return ACCEPT_NO_LOCKED;
+		return ACCEPT_NO;
+	}
+
+// [RLVa:KB] - Checked: 2013-02-13 (RLVa-1.4.8)
+	bool fReplace = !(mask & MASK_CONTROL);
+	if ( (rlv_handler_t::isEnabled()) && (!rlvPredCanWearItem(item, (fReplace) ? RLV_WEAR_REPLACE : RLV_WEAR_ADD)) )
+	{
+		return ACCEPT_NO_LOCKED;
 	}
 // [/RLVa:KB]
 
@@ -1712,7 +1778,7 @@ EAcceptance LLToolDragAndDrop::dad3dRezAttachmentFromInv(
 //			LLPointer<LLInventoryCallback> cb = new RezAttachmentCallback(0);
 // [SL:KB] - Patch: Appearance-DnDWear | Checked: 2010-09-28 (Catznip-3.0.0a) | Added: Catznip-2.2.0a
 			// Make this behave consistent with dad3dWearItem
-			LLPointer<LLInventoryCallback> cb = new RezAttachmentCallback(0, !(mask & MASK_CONTROL));
+			LLPointer<LLInventoryCallback> cb = new LLBoostFuncInventoryCallback(boost::bind(&rez_attachment_cb, _1, (LLViewerJointAttachment*)0, !(mask & MASK_CONTROL)));
 // [/SL:KB]
 			copy_inventory_item(
 				gAgent.getID(),
@@ -1725,7 +1791,7 @@ EAcceptance LLToolDragAndDrop::dad3dRezAttachmentFromInv(
 		else
 		{
 //			rez_attachment(item, 0);
-// [SL:KB] - Patch: Appearance-Misc | Checked: 2010-09-08 (Catznip-2.2.0a) | Added: Catznip-2.2.0a
+// [SL:KB] - Patch: Appearance-DnDWear | Checked: 2010-09-28 (Catznip-3.0.0a) | Added: Catznip-2.2.0a
 			// Make this behave consistent with dad3dWearItem
 			rez_attachment(item, 0, !(mask & MASK_CONTROL));
 // [/SL:KB]
@@ -1955,10 +2021,9 @@ EAcceptance LLToolDragAndDrop::dad3dApplyToObject(
 	LLViewerInventoryItem* item;
 	LLViewerInventoryCategory* cat;
 	locateInventory(item, cat);
-	// <edit>
-	//if(!item || !item->isFinished()) return ACCEPT_NO;
-	if( !item || (!item->isFinished() && !(gInventory.isObjectDescendentOf(item->getUUID(), gSystemFolderRoot))) ) return ACCEPT_NO;
-	// </edit>
+
+	if(!item || !item->isFinished()) return ACCEPT_NO;
+
 	EAcceptance rv = willObjectAcceptInventory(obj, item);
 	if((mask & MASK_CONTROL))
 	{
@@ -2054,18 +2119,17 @@ EAcceptance LLToolDragAndDrop::dad3dWearItem(
 	if(mSource == SOURCE_AGENT || mSource == SOURCE_LIBRARY)
 	{
 		// it's in the agent inventory
-		LLUUID trash_id = gInventory.findCategoryUUIDForType(LLFolderType::FT_TRASH);
+		const LLUUID trash_id = gInventory.findCategoryUUIDForType(LLFolderType::FT_TRASH);
 		if( gInventory.isObjectDescendentOf( item->getUUID(), trash_id ) )
 		{
 			return ACCEPT_NO;
 		}
 
-// [RLVa:KB] - Checked: 2010-09-28 (RLVa-1.2.1f) | Modified: RLVa-1.2.1f
-		if ( (rlv_handler_t::isEnabled()) && (gRlvWearableLocks.hasLockedWearableType(RLV_LOCK_ANY)) )
+// [RLVa:KB] - Checked: 2013-02-13 (RLVa-1.4.8)
+		bool fReplace = (!(mask & MASK_CONTROL)) || (LLAssetType::AT_BODYPART == item->getType());	// Body parts should always replace
+		if ( (rlv_handler_t::isEnabled()) && (!rlvPredCanWearItem(item, (fReplace) ? RLV_WEAR_REPLACE : RLV_WEAR_ADD)) )
 		{
-			ERlvWearMask eWearMask = gRlvWearableLocks.canWear(item); bool fReplace = !(mask & MASK_CONTROL);
-			if ( ((!fReplace) && ((RLV_WEAR_ADD & eWearMask) == 0)) || ((fReplace) && ((RLV_WEAR_REPLACE & eWearMask) == 0)) )
-				return ACCEPT_NO_LOCKED;
+			return ACCEPT_NO_LOCKED;
 		}
 // [/RLVa:KB]
 
@@ -2081,7 +2145,10 @@ EAcceptance LLToolDragAndDrop::dad3dWearItem(
 
 			// TODO: investigate wearables may not be loaded at this point EXT-8231
 
-			LLAppearanceMgr::instance().wearItemOnAvatar(item->getUUID(),true, !(mask & MASK_CONTROL));
+// [RLVa:KB] - Checked: 2013-02-13 (RLVa-1.4.8)
+			LLAppearanceMgr::instance().wearItemOnAvatar(item->getUUID(), true, fReplace);
+// [/RLVa:KB]
+//			LLAppearanceMgr::instance().wearItemOnAvatar(item->getUUID(),true, !(mask & MASK_CONTROL));
 		}
 		return ACCEPT_YES_MULTI;
 	}
@@ -2104,7 +2171,7 @@ EAcceptance LLToolDragAndDrop::dad3dActivateGesture(
 	if(mSource == SOURCE_AGENT || mSource == SOURCE_LIBRARY)
 	{
 		// it's in the agent inventory
-		LLUUID trash_id = gInventory.findCategoryUUIDForType(LLFolderType::FT_TRASH);
+		const LLUUID trash_id = gInventory.findCategoryUUIDForType(LLFolderType::FT_TRASH);
 		if( gInventory.isObjectDescendentOf( item->getUUID(), trash_id ) )
 		{
 			return ACCEPT_NO;
@@ -2117,7 +2184,7 @@ EAcceptance LLToolDragAndDrop::dad3dActivateGesture(
 			{
 				// create item based on that one, and put it on if that
 				// was a success.
-				LLPointer<LLInventoryCallback> cb = new ActivateGestureCallback();
+				LLPointer<LLInventoryCallback> cb = new LLBoostFuncInventoryCallback(activate_gesture_cb);
 				copy_inventory_item(
 					gAgent.getID(),
 					item->getPermissions().getOwner(),
@@ -2177,7 +2244,7 @@ EAcceptance LLToolDragAndDrop::dad3dWearCategory(
 
 		if(drop)
 		{
-		    BOOL append = ( (mask & MASK_SHIFT) ? TRUE : FALSE );
+			BOOL append = ( (mask & MASK_SHIFT) ? TRUE : FALSE );
 			LLAppearanceMgr::instance().wearInventoryCategory(category, false, append);
 		}
 		return ACCEPT_YES_MULTI;
@@ -2328,7 +2395,7 @@ EAcceptance LLToolDragAndDrop::dad3dUpdateInventoryCategory(
 		}
 	}
 
-	// if every item is accepted, go ahead and send it on.
+	// If every item is accepted, send it on
 	if(drop && (ACCEPT_YES_COPY_SINGLE <= rv))
 	{
 		uuid_vec_t ids;
@@ -2570,7 +2637,12 @@ LLInventoryObject* LLToolDragAndDrop::locateInventory(
 {
 	item = NULL;
 	cat = NULL;
-	if(mCargoIDs.empty()) return NULL;
+
+	if (mCargoIDs.empty())
+	{
+		return NULL;
+	}
+
 	if((mSource == SOURCE_AGENT) || (mSource == SOURCE_LIBRARY))
 	{
 		// The object should be in user inventory.

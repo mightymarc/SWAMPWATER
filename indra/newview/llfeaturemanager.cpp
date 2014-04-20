@@ -556,6 +556,7 @@ void LLFeatureManager::setGraphicsLevel(S32 level, bool skipFeatures)
 
 	LLViewerShaderMgr::sSkipReload = false;
 	LLViewerShaderMgr::instance()->setShaders();
+	gPipeline.refreshCachedSettings();
 }
 
 void LLFeatureManager::applyBaseMasks()
@@ -624,6 +625,10 @@ void LLFeatureManager::applyBaseMasks()
 	if (gGLManager.mIsGFFX)
 	{
 		maskFeatures("GeForceFX");
+	}
+	if (gGLManager.mIsIntel && gGLManager.mGLVersion<3.0f)
+	{
+		maskFeatures("IntelPre30");
 	}
 	if (gGLManager.mIsIntel)
 	{

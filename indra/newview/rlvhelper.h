@@ -26,6 +26,8 @@
 #include "rlvdefines.h"
 #include "rlvcommon.h"
 
+class LLViewerWearable;
+
 // ============================================================================
 // RlvCommand
 //
@@ -137,8 +139,10 @@ protected:
 
 struct RlvCommandOptionGetPath : public RlvCommandOption
 {
-	RlvCommandOptionGetPath(const RlvCommand& rlvCmd);
+	typedef boost::function<void(const uuid_vec_t&)> getpath_callback_t;
+	RlvCommandOptionGetPath(const RlvCommand& rlvCmd, getpath_callback_t cb = NULL);
 
+	bool              isCallback() const { return m_fCallback; }
 	/*virtual*/ bool  isEmpty() const	 { return m_idItems.empty(); }
 	const uuid_vec_t& getItemIDs() const { return m_idItems; }
 
@@ -146,6 +150,7 @@ struct RlvCommandOptionGetPath : public RlvCommandOption
 	static bool getItemIDs(LLWearableType::EType wtType, uuid_vec_t& idItems, bool fClear = true);
 
 protected:
+	bool       m_fCallback; // TRUE if a callback is schedueled
 	uuid_vec_t m_idItems;
 };
 
@@ -237,9 +242,9 @@ public:
 	void forceDetach(const LLViewerJointAttachment* ptAttachPt);
 
 	// Wearables
-	static bool isForceRemovable(const LLWearable* pWearable, bool fCheckComposite = true, const LLUUID& idExcept = LLUUID::null);
+	static bool isForceRemovable(const LLViewerWearable* pWearable, bool fCheckComposite = true, const LLUUID& idExcept = LLUUID::null);
 	static bool isForceRemovable(LLWearableType::EType wtType, bool fCheckComposite = true, const LLUUID& idExcept = LLUUID::null);
-	void forceRemove(const LLWearable* pWearable);
+	void forceRemove(const LLViewerWearable* pWearable);
 	void forceRemove(LLWearableType::EType wtType);
 
 public:
@@ -248,7 +253,7 @@ protected:
 	void addAttachment(const LLViewerInventoryItem* pItem, EWearAction eAction);
 	void remAttachment(const LLViewerObject* pAttachObj);
 	void addWearable(const LLViewerInventoryItem* pItem, EWearAction eAction);
-	void remWearable(const LLWearable* pWearable);
+	void remWearable(const LLViewerWearable* pWearable);
 
 	// Convenience (prevents long lines that run off the screen elsewhere)
 	bool isAddAttachment(const LLViewerInventoryItem* pItem) const
@@ -277,7 +282,7 @@ protected:
 		}
 		return fFound;
 	}
-	bool isRemWearable(const LLWearable* pWearable) const
+	bool isRemWearable(const LLViewerWearable* pWearable) const
 	{
 		return std::find(m_remWearables.begin(), m_remWearables.end(), pWearable) != m_remWearables.end();
 	}
@@ -290,8 +295,8 @@ protected:
 	typedef std::map<S32, LLInventoryModel::item_array_t> addattachments_map_t;
 	addattachments_map_t             m_addAttachments;
 	LLInventoryModel::item_array_t   m_addGestures;
-	std::list<const LLViewerObject*> m_remAttachments;
-	std::list<const LLWearable*>     m_remWearables;
+	std::vector<LLViewerObject*>     m_remAttachments;	// This should match the definition of LLAgentWearables::llvo_vec_t
+	std::list<const LLViewerWearable*> m_remWearables;
 	LLInventoryModel::item_array_t   m_remGestures;
 
 private:

@@ -36,6 +36,10 @@
 #include "llviewerprecompiledheaders.h"
 #include "llhttpclient.h"
 
+class AIHTTPTimeoutPolicy;
+extern AIHTTPTimeoutPolicy environmentRequestResponder_timeout;
+extern AIHTTPTimeoutPolicy environmentApplyResponder_timeout;
+
 class LLEnvironmentRequest
 {
 	LOG_CLASS(LLEnvironmentRequest);
@@ -48,12 +52,14 @@ private:
 	static bool doRequest();
 };
 
-class LLEnvironmentRequestResponder: public LLHTTPClient::Responder
+class LLEnvironmentRequestResponder: public LLHTTPClient::ResponderWithResult
 {
 	LOG_CLASS(LLEnvironmentRequestResponder);
 public:
-	virtual void result(const LLSD& content);
-	virtual void error(U32 status, const std::string& reason);
+	/*virtual*/ void result(const LLSD& content);
+	/*virtual*/ void error(U32 status, const std::string& reason);
+	/*virtual*/ AIHTTPTimeoutPolicy const& getHTTPTimeoutPolicy(void) const { return environmentRequestResponder_timeout; }
+	/*virtual*/ char const* getName(void) const { return "LLEnvironmentRequestResponder"; }
 
 private:
 	friend class LLEnvironmentRequest;
@@ -75,7 +81,7 @@ private:
 	static clock_t UPDATE_WAIT_SECONDS;
 };
 
-class LLEnvironmentApplyResponder: public LLHTTPClient::Responder
+class LLEnvironmentApplyResponder : public LLHTTPClient::ResponderWithResult
 {
 	LOG_CLASS(LLEnvironmentApplyResponder);
 public:
@@ -93,9 +99,12 @@ public:
 	 *   fail_reason : string
 	 * }
 	 */
-	virtual void result(const LLSD& content);
+	/*virtual*/ void result(const LLSD& content);
 
-	virtual void error(U32 status, const std::string& reason); // non-200 errors only
+	/*virtual*/ void error(U32 status, const std::string& reason); // non-200 errors only
+
+	/*virtual*/ AIHTTPTimeoutPolicy const& getHTTPTimeoutPolicy(void) const { return environmentApplyResponder_timeout; }
+	/*virtual*/ char const* getName(void) const { return "LLEnvironmentApplyResponder"; }
 
 private:
 	friend class LLEnvironmentApply;

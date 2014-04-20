@@ -3,7 +3,7 @@
      can_resize="true" height="563" left="882" min_height="150" min_width="240"
      mouse_opaque="true" name="Inventory" rect_control="FloaterInventoryRect"
      title="Inventory" width="467">
-	<search_editor bottom="-50" follows="left|top|right" height="16" label="Type here to search"
+	<filter_editor bottom="-50" follows="left|top|right" height="16" label="Type here to search"
 	    left="6" mouse_opaque="true" name="inventory search editor" width="455" />
   <button left="6" bottom_delta="-26" height="22" width="22" follows="left|top" halign="center"
     label="" image_overlay="inv_collapse_all.tga" name="collapse_btn" mouse_opaque="true" font="SansSerif"
@@ -11,8 +11,10 @@
    <button left="28" bottom_delta="0" height="22" width="22" follows="left|top" halign="center"
     label="" image_overlay="inv_expand_all.tga" name="Inventory.ExpandAll" mouse_opaque="true" font="SansSerif"
     tool_tip="Expand All"/>
+   <button left="50" bottom_delta="0" height="22" width="22" follows="left|top" label="" scale_image="true"
+    image_overlay="inv_reset.tga" name="Inventory.ResetAll" tool_tip="Reset inventory: clear filters and collapse all folders."/>
  <text name="group_titles_textbox" halign="right" font="SansSerifSmall" follows="left|top"
-		height="16" left="43" bottom_delta="2" right="108">Quick Filter:</text>
+    height="16" left="43" bottom_delta="2" right="108">Type:</text>
 	<!-- Inventory Type Filter Labels -->
 	<string name="filter_type_all">All Types</string>
 	<string name="filter_type_animation">Animations</string>
@@ -27,7 +29,7 @@
 	<string name="filter_type_texture">Textures</string>
 	<string name="filter_type_snapshot">Snapshots</string>
 	<string name="filter_type_custom">Custom...</string>
-	<combo_box name="Quick Filter" label="Quick Filter" follows="left|top|right" height="20" left="110" right="-6" bottom_delta="0">
+	<combo_box name="Quick Filter" tool_tip="Filter by type" follows="left|top|right" height="20" left="110" right="-6" bottom_delta="0">
 		<combo_item name="filter_type_all">All Types</combo_item>
 		<separator />
 		<combo_item name="filter_type_animation">Animations</combo_item>
@@ -69,6 +71,9 @@
 			<menu_item_call bottom_delta="-18" height="18" label="Open" left="0" mouse_opaque="true"
 			     name="Open" width="128">
 				<on_click filter="" function="Inventory.DoToSelected" userdata="open" />
+			</menu_item_call>
+			<menu_item_call label="Update Outfit" mouse_opaque="true" name="Update Outfit">
+				<on_click filter="" function="Inventory.DoCreate" userdata="update outfit"/>
 			</menu_item_call>
 			<menu_item_separator bottom_delta="-8" height="8" left="0" mouse_opaque="true" name="separator"
 			     width="128" />
@@ -120,7 +125,7 @@
 			     name="New Gesture" width="121">
 				<on_click filter="" function="Inventory.DoCreate" userdata="gesture" />
 			</menu_item_call>
-			<menu bottom_delta="-689" drop_shadow="true" height="175" left="0"
+			<menu bottom_delta="-689" drop_shadow="true" height="175" left="0" label="New Clothes"
 			     mouse_opaque="false" name="New Clothes" opaque="true" width="125">
 				<menu_item_call bottom_delta="-18" height="18" label="New Shirt" left="0" mouse_opaque="true"
 				     name="New Shirt" width="125">
@@ -171,7 +176,7 @@
           <on_click filter="" function="Inventory.DoCreate" userdata="physics" />
         </menu_item_call>
 			</menu>
-			<menu bottom_delta="-599" drop_shadow="true" height="85" left="0"
+			<menu bottom_delta="-599" drop_shadow="true" height="85" left="0" label="New Body Parts" 
 			     mouse_opaque="false" name="New Body Parts" opaque="true" width="118">
 				<menu_item_call bottom_delta="-18" height="18" label="New Shape" left="0" mouse_opaque="true"
 				     name="New Shape" width="118">
@@ -190,6 +195,10 @@
 					<on_click filter="" function="Inventory.DoCreate" userdata="eyes" />
 				</menu_item_call>
 			</menu>
+			<menu_item_call bottom_delta="-18" height="18" label="New Outfit" left="0"
+			     mouse_opaque="true" name="New Outfit" width="125">
+				<on_click filter="" function="Inventory.DoCreate" userdata="outfit" />
+			</menu_item_call>
 		</menu>
 		<menu bottom_delta="64" drop_shadow="true" height="49"
 		     label="Sort" left="0" mouse_opaque="false" name="Sort" opaque="true"

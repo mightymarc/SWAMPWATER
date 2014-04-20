@@ -7,16 +7,23 @@ include(LLCommon)
 include(LLMath)
 include(LLMessage)
 include(LLXML)
+include(LLPhysicsExtensions)
+include(Colladadom)
 
 include_directories(
     ${LLCOMMON_INCLUDE_DIRS}
     ${LLMATH_INCLUDE_DIRS}
     ${LLMESSAGE_INCLUDE_DIRS}
     ${LLXML_INCLUDE_DIRS}
+    ${LLPHYSICSEXTENSIONS_INCLUDE_DIRS}
+    ${COLLADADOM_INCLUDE_DIRS}
     )
 
 set(llprimitive_SOURCE_FILES
+    llmaterialid.cpp
+    llmaterial.cpp
     llmaterialtable.cpp
+    llmediaentry.cpp
     llmodel.cpp
     llprimitive.cpp
     llprimtexturelist.cpp
@@ -32,6 +39,8 @@ set(llprimitive_HEADER_FILES
     CMakeLists.txt
 
     legacy_object_types.h
+    llmaterial.h
+    llmaterialid.h
     llmaterialtable.h
     llmediaentry.h
     llmodel.h
@@ -39,8 +48,8 @@ set(llprimitive_HEADER_FILES
     llprimtexturelist.h
     lltextureanim.h
     lltextureentry.h
-    lltreeparams.h
     lltree_common.h
+    lltreeparams.h
     llvolumemessage.h
     llvolumexml.h
     material_codes.h

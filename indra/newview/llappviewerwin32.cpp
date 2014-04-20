@@ -40,9 +40,8 @@
 
 #include "llappviewerwin32.h"
 
-#include "llmemtype.h"
-
-#include "llwindowwin32.cpp" // *FIX: for setting gIconResource.
+#include "llwindowwin32.h" // *FIX: for setting gIconResource.
+#include "llgl.h"
 #include "res/resource.h" // *FIX: for setting gIconResource.
 
 #include <fcntl.h>		//_O_APPEND
@@ -53,6 +52,11 @@
 
 #include "llviewercontrol.h"
 #include "lldxhardware.h"
+
+#include "nvapi/nvapi.h"
+#include "nvapi/NvApiDriverSettings.h"
+
+#include <stdlib.h>
 
 #include "llweb.h"
 #include "llsecondlifeurls.h"
@@ -81,49 +85,18 @@ extern "C" {
 
 const std::string LLAppViewerWin32::sWindowClass = "Second Life";
 
-LONG WINAPI viewer_windows_exception_handler(struct _EXCEPTION_POINTERS *exception_infop)
+/*
+    This function is used to print to the command line a text message 
+    describing the nvapi error and quits
+*/
+void nvapi_error(NvAPI_Status status)
 {
-    // *NOTE:Mani - this code is stolen from LLApp, where its never actually used.
-	//OSMessageBox("Attach Debugger Now", "Error", OSMB_OK);
-    // Translate the signals/exceptions into cross-platform stuff
-	// Windows implementation
-    _tprintf( _T("Entering Windows Exception Handler...\n") );
-	llinfos << "Entering Windows Exception Handler..." << llendl;
+    NvAPI_ShortString szDesc = {0};
+	NvAPI_GetErrorMessage(status, szDesc);
+	llwarns << szDesc << llendl;
 
-	// Make sure the user sees something to indicate that the app crashed.
-	LONG retval;
-
-	if (LLApp::isError())
-	{
-	    _tprintf( _T("Got another fatal signal while in the error handler, die now!\n") );
-		llwarns << "Got another fatal signal while in the error handler, die now!" << llendl;
-
-		retval = EXCEPTION_EXECUTE_HANDLER;
-		return retval;
-	}
-
-	// Generate a minidump if we can.
-	// Before we wake the error thread...
-	// Which will start the crash reporting.
-	LLWinDebug::generateCrashStacks(exception_infop);
-	
-	// Flag status to error, so thread_error starts its work
-	LLApp::setError();
-
-	// Block in the exception handler until the app has stopped
-	// This is pretty sketchy, but appears to work just fine
-	while (!LLApp::isStopped())
-	{
-		ms_sleep(10);
-	}
-
-	//
-	// At this point, we always want to exit the app.  There's no graceful
-	// recovery for an unhandled exception.
-	// 
-	// Just kill the process.
-	retval = EXCEPTION_EXECUTE_HANDLER;	
-	return retval;
+	//should always trigger when asserts are enabled
+	//llassert(status == NVAPI_OK);
 }
 
 // Create app mutex creates a unique global windows object. 
@@ -147,6 +120,79 @@ bool create_app_mutex()
 	return result;
 }
 
+void ll_nvapi_init(NvDRSSessionHandle hSession)
+{
+	// (2) load all the system settings into the session
+	NvAPI_Status status = NvAPI_DRS_LoadSettings(hSession);
+	if (status != NVAPI_OK) 
+	{
+		nvapi_error(status);
+		return;
+	}
+
+	NvAPI_UnicodeString profile_name;
+	//std::string app_name = LLTrans::getString("APP_NAME");
+	std::string app_name("Second Life"); // <alchemy/>
+	llutf16string w_app_name = utf8str_to_utf16str(app_name);
+	wsprintf(profile_name, L"%s", w_app_name.c_str());
+	status = NvAPI_DRS_SetCurrentGlobalProfile(hSession, profile_name);
+	if (status != NVAPI_OK)
+	{
+		nvapi_error(status);
+		return;
+	}
+
+	// (3) Obtain the current profile. 
+	NvDRSProfileHandle hProfile = 0;
+	status = NvAPI_DRS_GetCurrentGlobalProfile(hSession, &hProfile);
+	if (status != NVAPI_OK) 
+	{
+		nvapi_error(status);
+		return;
+	}
+
+	// load settings for querying 
+	status = NvAPI_DRS_LoadSettings(hSession);
+	if (status != NVAPI_OK)
+	{
+		nvapi_error(status);
+		return;
+	}
+
+	//get the preferred power management mode for Second Life
+	NVDRS_SETTING drsSetting = {0};
+	drsSetting.version = NVDRS_SETTING_VER;
+	status = NvAPI_DRS_GetSetting(hSession, hProfile, PREFERRED_PSTATE_ID, &drsSetting);
+	if (status == NVAPI_SETTING_NOT_FOUND)
+	{ //only override if the user hasn't specifically set this setting
+		// (4) Specify that we want the VSYNC disabled setting
+		// first we fill the NVDRS_SETTING struct, then we call the function
+		drsSetting.version = NVDRS_SETTING_VER;
+		drsSetting.settingId = PREFERRED_PSTATE_ID;
+		drsSetting.settingType = NVDRS_DWORD_TYPE;
+		drsSetting.u32CurrentValue = PREFERRED_PSTATE_PREFER_MAX;
+		status = NvAPI_DRS_SetSetting(hSession, hProfile, &drsSetting);
+		if (status != NVAPI_OK) 
+		{
+			nvapi_error(status);
+			return;
+		}
+
+        // (5) Now we apply (or save) our changes to the system
+        status = NvAPI_DRS_SaveSettings(hSession);
+        if (status != NVAPI_OK) 
+        {
+            nvapi_error(status);
+            return;
+        }
+	}
+	else if (status != NVAPI_OK)
+	{
+		nvapi_error(status);
+		return;
+	}
+}
+
 //#define DEBUGGING_SEH_FILTER 1
 #if DEBUGGING_SEH_FILTER
 #	define WINMAIN DebuggingWinMain
@@ -159,8 +205,6 @@ int APIENTRY WINMAIN(HINSTANCE hInstance,
                      LPSTR     lpCmdLine,
                      int       nCmdShow)
 {
-	LLMemType mt1(LLMemType::MTYPE_STARTUP);
-
 	const S32 MAX_HEAPS = 255;
 	DWORD heap_enable_lfh_error[MAX_HEAPS];
 	S32 num_heaps = 0;
@@ -191,8 +235,6 @@ int APIENTRY WINMAIN(HINSTANCE hInstance,
 	gIconResource = MAKEINTRESOURCE(IDI_LL_ICON);
 
 	LLAppViewerWin32* viewer_app_ptr = new LLAppViewerWin32(lpCmdLine);
-
-	LLWinDebug::initExceptionHandler(viewer_windows_exception_handler); 
 	
 	viewer_app_ptr->setErrorHandler(LLAppViewer::handleViewerCrash);
 
@@ -207,6 +249,27 @@ int APIENTRY WINMAIN(HINSTANCE hInstance,
 		return -1;
 	}
 	
+	NvAPI_Status status;
+    
+	// Initialize NVAPI
+	status = NvAPI_Initialize();
+	NvDRSSessionHandle hSession = 0;
+
+    if (status == NVAPI_OK) 
+	{
+		// Create the session handle to access driver settings
+		status = NvAPI_DRS_CreateSession(&hSession);
+		if (status != NVAPI_OK) 
+		{
+			nvapi_error(status);
+		}
+		else
+		{
+			//override driver setting as needed
+			ll_nvapi_init(hSession);
+		}
+	}
+
 	// Have to wait until after logging is initialized to display LFH info
 	if (num_heaps > 0)
 	{
@@ -274,6 +337,15 @@ int APIENTRY WINMAIN(HINSTANCE hInstance,
 		LLAppViewer::sUpdaterInfo = NULL ;
 	}
 
+
+
+	// (NVAPI) (6) We clean up. This is analogous to doing a free()
+	if (hSession)
+	{
+		NvAPI_DRS_DestroySession(hSession);
+		hSession = 0;
+	}
+	
 	return 0;
 }
 
@@ -411,10 +483,25 @@ bool LLAppViewerWin32::init()
 	// (Don't send our data to Microsoft--at least until we are Logo approved and have a way
 	// of getting the data back from them.)
 	//
-	llinfos << "Turning off Windows error reporting." << llendl;
+	// llinfos << "Turning off Windows error reporting." << llendl;
 	disableWinErrorReporting();
 
-	return LLAppViewer::init();
+#ifndef LL_RELEASE_FOR_DOWNLOAD
+	LLWinDebug::instance().init();
+#endif
+
+#if LL_WINDOWS
+#if LL_SEND_CRASH_REPORTS
+
+	LLAppViewer* pApp = LLAppViewer::instance();
+	pApp->initCrashReporting();
+
+#endif
+#endif
+
+	bool success = LLAppViewer::init();
+
+    return success;
 }
 
 bool LLAppViewerWin32::cleanup()
@@ -428,12 +515,6 @@ bool LLAppViewerWin32::cleanup()
 
 bool LLAppViewerWin32::initLogging()
 {
-	// Remove the crash stack log from previous executions.
-	// Since we've started logging a new instance of the app, we can assume 
-	// *NOTE: This should happen before the we send a 'previous instance froze'
-	// crash report, but it must happen after we initialize the DirUtil.
-	LLWinDebug::clearCrashStacks();
-
 	return LLAppViewer::initLogging();
 }
 
@@ -492,7 +573,7 @@ bool LLAppViewerWin32::initHardwareTest()
 			if (OSBTN_NO== button)
 			{
 				LL_INFOS("AppInit") << "User quitting after failed DirectX 9 detection" << LL_ENDL;
-				LLWeb::loadURLExternal(DIRECTX_9_URL);
+				LLWeb::loadURLExternal(DIRECTX_9_URL, false);
 				return false;
 			}
 			gSavedSettings.setWarning("AboutDirectX9", FALSE);
@@ -556,39 +637,14 @@ bool LLAppViewerWin32::initParseCommandLine(LLCommandLineParser& clp)
 }
 
 bool LLAppViewerWin32::restoreErrorTrap()
-{
-	return LLWinDebug::checkExceptionHandler();
+{	
+	return true;
+	//return LLWinDebug::checkExceptionHandler();
 }
 
-void LLAppViewerWin32::handleSyncCrashTrace()
+void LLAppViewerWin32::initCrashReporting(bool reportFreeze)
 {
-	// do nothing
-}
-
-void LLAppViewerWin32::handleCrashReporting(bool reportFreeze)
-{
-	const char* logger_name = "win_crash_logger.exe";
-	std::string exe_path = gDirUtilp->getExecutableDir();
-	exe_path += gDirUtilp->getDirDelimiter();
-	exe_path += logger_name;
-
-	const char* arg_str = logger_name;
-
-	// *NOTE:Mani - win_crash_logger.exe no longer parses command line options.
-	if(reportFreeze)
-	{
-		// Spawn crash logger.
-		// NEEDS to wait until completion, otherwise log files will get smashed.
-		_spawnl(_P_WAIT, exe_path.c_str(), arg_str, NULL);
-	}
-	else
-	{
-		S32 cb = gCrashSettings.getS32(CRASH_BEHAVIOR_SETTING);
-		if(cb != CRASH_BEHAVIOR_NEVER_SEND)
-		{
-			_spawnl(_P_NOWAIT, exe_path.c_str(), arg_str, NULL);
-		}
-	}
+	// Singu Note: we don't fork the crash logger on start
 }
 
 //virtual

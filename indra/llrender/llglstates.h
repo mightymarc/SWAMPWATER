@@ -59,7 +59,6 @@ protected:
 	LLGLEnable mColorMaterial;
 	LLGLDisable mAlphaTest, mBlend, mCullFace, mDither, mFog, 
 		mLineSmooth, mLineStipple, mNormalize, mPolygonSmooth,
-		mTextureGenQ, mTextureGenR, mTextureGenS, mTextureGenT,
 		mGLMultisample;
 public:
 	LLGLSDefault()
@@ -76,10 +75,6 @@ public:
 		mLineStipple(GL_LINE_STIPPLE),
 		mNormalize(GL_NORMALIZE),
 		mPolygonSmooth(GL_POLYGON_SMOOTH),
-		mTextureGenQ(GL_TEXTURE_GEN_Q), 
-		mTextureGenR(GL_TEXTURE_GEN_R),
-		mTextureGenS(GL_TEXTURE_GEN_S), 
-		mTextureGenT(GL_TEXTURE_GEN_T),
 		mGLMultisample(GL_MULTISAMPLE_ARB)
 	{ }
 };
@@ -115,11 +110,13 @@ protected:
 	LLGLEnable mBlend, mAlphaTest;
 	LLGLDisable mCullFace;
 	LLGLDepthTest mDepthTest;
+	LLGLDisable mMSAA;
 public:
 	LLGLSUIDefault() 
 		: mBlend(GL_BLEND), mAlphaTest(GL_ALPHA_TEST),
 		  mCullFace(GL_CULL_FACE),
-		  mDepthTest(GL_FALSE, GL_TRUE, GL_LEQUAL)
+		  mDepthTest(GL_FALSE, GL_TRUE, GL_LEQUAL),
+		  mMSAA(GL_MULTISAMPLE_ARB)
 	{}
 };
 

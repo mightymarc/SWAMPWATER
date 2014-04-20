@@ -13,6 +13,7 @@ public:
 	float getMinHoleSize()    const { return mMinHoleSize;    }
 	float getMaxHollow()      const { return mMaxHollow;      }
 	float getMaxPrimScale()   const { return mMaxPrimScale;   }
+	float getMinPrimScale()   const { return mMinPrimScale;   }
 
 	void setLimits();
 
@@ -22,8 +23,10 @@ private:
 	float mMinHoleSize;
 	float mMaxHollow;
 	float mMaxPrimScale;
+	float mMinPrimScale;
 
 	void setOpenSimLimits();
+	void setAuroraLimits();
 	void setSecondLifeLimits();
 };
 

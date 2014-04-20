@@ -57,18 +57,19 @@ class LLInventoryFVBridgeBuilder;
 class LLMenuBarGL;
 class LLCheckBoxCtrl;
 class LLSpinCtrl;
-class LLScrollableContainerView;
+class LLScrollContainer;
 class LLTextBox;
 class LLIconCtrl;
 class LLSaveFolderState;
-class LLSearchEditor;
 class LLInvPanelComplObserver;
 
 class LLInventoryPanel : public LLPanel
 {
 protected:
+	friend class LFFloaterInvPanel;
 	LLInventoryPanel(const std::string& name,
 			const std::string& sort_order_setting,
+			const std::string& start_folder,
 			const LLRect& rect,
 			LLInventoryModel* inventory,
 			BOOL allow_multi_select,
@@ -126,9 +127,11 @@ public:
 	// This method is called when something has changed about the inventory.
 	void modelChanged(U32 mask);
 	LLFolderView* getRootFolder();
-	LLScrollableContainerView* getScrollableContainer() { return mScroller; }
+	LLScrollContainer* getScrollableContainer() { return mScroller; }
 	
 	void onSelectionChange(const std::deque<LLFolderViewItem*> &items, BOOL user_action);
+	
+	LLHandle<LLInventoryPanel> getInventoryPanelHandle() const { return getDerivedHandle<LLInventoryPanel>(); }
 	// DEBUG ONLY:
 	static void dumpSelectionInformation(void* user_data);
 
@@ -162,7 +165,7 @@ protected:
 	
 	BOOL 						mAllowMultiSelect;
 	LLFolderView*				mFolderRoot;
-	LLScrollableContainerView*	mScroller;
+	LLScrollContainer*	mScroller;
 
 	/**
 	 * Pointer to LLInventoryFVBridgeBuilder.
@@ -188,6 +191,7 @@ public:
 	void requestSort();
 
 private:
+	const std::string			mStartFolder;
 	const std::string			mSortOrderSetting;
 
 	//--------------------------------------------------------------------

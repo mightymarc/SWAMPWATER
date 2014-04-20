@@ -52,10 +52,11 @@
 #include "llvfile.h"
 #include "message.h"
 
+class AIHTTPTimeoutPolicy;
+extern AIHTTPTimeoutPolicy iamHereVoice_timeout;
 
 FloaterVoiceLicense::FloaterVoiceLicense(const LLSD& key)
 :	LLModalDialog( std::string(" "), 100, 100 ),
-	mWebBrowserWindowId( 0 ),
 	mLoadCompleteCount( 0 )
 {
 	LLUICtrlFactory::getInstance()->buildFloater(this, "floater_voice_license.xml");
@@ -63,7 +64,7 @@ FloaterVoiceLicense::FloaterVoiceLicense(const LLSD& key)
 
 // helper class that trys to download a URL from a web site and calls a method 
 // on parent class indicating if the web server is working or not
-class LLIamHereVoice : public LLHTTPClient::Responder
+class LLIamHereVoice : public LLHTTPClient::ResponderWithResult
 {
 	private:
 		LLIamHereVoice( FloaterVoiceLicense* parent ) :
@@ -73,7 +74,6 @@ class LLIamHereVoice : public LLHTTPClient::Responder
 		FloaterVoiceLicense* mParent;
 
 	public:
-
 		static boost::intrusive_ptr< LLIamHereVoice > build( FloaterVoiceLicense* parent )
 		{
 			return boost::intrusive_ptr< LLIamHereVoice >( new LLIamHereVoice( parent ) );
@@ -84,13 +84,13 @@ class LLIamHereVoice : public LLHTTPClient::Responder
 			mParent = parentIn;
 		};
 		
-		virtual void result( const LLSD& content )
+		/*virtual*/ void result( const LLSD& content )
 		{
 			if ( mParent )
 				mParent->setSiteIsAlive( true );
 		};
 
-		virtual void error( U32 status, const std::string& reason )
+		/*virtual*/ void error( U32 status, const std::string& reason )
 		{
 			if ( mParent )
 			{
@@ -101,6 +101,10 @@ class LLIamHereVoice : public LLHTTPClient::Responder
 				mParent->setSiteIsAlive( alive );
 			}
 		};
+
+		/*virtual*/ AIHTTPTimeoutPolicy const& getHTTPTimeoutPolicy(void) const { return iamHereVoice_timeout; }
+		/*virtual*/ bool pass_redirect_status(void) const { return true; }
+		/*virtual*/ char const* getName(void) const { return "LLIamHereVoice"; }
 };
 
 // this is global and not a class member to keep crud out of the header file

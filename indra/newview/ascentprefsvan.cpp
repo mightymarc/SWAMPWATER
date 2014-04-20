@@ -36,7 +36,10 @@
 #include "ascentprefsvan.h"
 
 //project includes
+#include "llaudioengine.h" //For gAudiop
+#include "llstreamingaudio.h" //For LLStreamingAudioInterface
 #include "llcolorswatch.h"
+#include "llvoavatar.h"
 #include "llvoavatarself.h"
 #include "llagent.h"
 #include "llfloaterchat.h"
@@ -54,22 +57,20 @@ LLPrefsAscentVan::LLPrefsAscentVan()
 {
     LLUICtrlFactory::getInstance()->buildPanel(this, "panel_preferences_ascent_vanity.xml");
 
-    childSetCommitCallback("tag_spoofing_combobox", onCommitClientTag, this);
+	childSetVisible("announce_stream_metadata", gAudiop && gAudiop->getStreamingAudioImpl() && gAudiop->getStreamingAudioImpl()->supportsMetaData());
 
-    childSetCommitCallback("show_my_tag_check", onCommitCheckBox, this);
-    childSetCommitCallback("show_self_tag_check", onCommitCheckBox, this);
-    childSetCommitCallback("show_self_tag_color_check", onCommitCheckBox, this);
-    childSetCommitCallback("customize_own_tag_check", onCommitCheckBox, this);
-    childSetCommitCallback("show_friend_tag_check", onCommitCheckBox, this);
-    childSetCommitCallback("use_status_check", onCommitCheckBox, this);
+	getChild<LLUICtrl>("tag_spoofing_combobox")->setCommitCallback(boost::bind(&LLPrefsAscentVan::onCommitClientTag, this, _1));
 
-    childSetCommitCallback("custom_tag_label_box", onCommitTextModified, this);
+	getChild<LLUICtrl>("show_my_tag_check")->setCommitCallback(boost::bind(&LLPrefsAscentVan::onCommitCheckBox, this, _1, _2));
+	getChild<LLUICtrl>("show_self_tag_check")->setCommitCallback(boost::bind(&LLPrefsAscentVan::onCommitCheckBox, this, _1, _2));
+	getChild<LLUICtrl>("show_self_tag_color_check")->setCommitCallback(boost::bind(&LLPrefsAscentVan::onCommitCheckBox, this, _1, _2));
+	getChild<LLUICtrl>("customize_own_tag_check")->setCommitCallback(boost::bind(&LLPrefsAscentVan::onCommitCheckBox, this, _1, _2));
+	getChild<LLUICtrl>("show_friend_tag_check")->setCommitCallback(boost::bind(&LLPrefsAscentVan::onCommitCheckBox, this, _1, _2));
+	getChild<LLUICtrl>("use_status_check")->setCommitCallback(boost::bind(&LLPrefsAscentVan::onCommitCheckBox, this, _1, _2));
 
-    childSetCommitCallback("X Modifier", onCommitUpdateAvatarOffsets);
-    childSetCommitCallback("Y Modifier", onCommitUpdateAvatarOffsets);
-    childSetCommitCallback("Z Modifier", onCommitUpdateAvatarOffsets);
+	getChild<LLUICtrl>("custom_tag_label_box")->setCommitCallback(boost::bind(&LLPrefsAscentVan::onCommitTextModified, this, _1, _2));
 
-    childSetAction("update_clientdefs", onManualClientUpdate, this);
+	getChild<LLUICtrl>("update_clientdefs")->setCommitCallback(boost::bind(LLPrefsAscentVan::onManualClientUpdate));
 
     refreshValues();
     refresh();
@@ -79,57 +80,40 @@ LLPrefsAscentVan::~LLPrefsAscentVan()
 {
 }
 
-//static
-void LLPrefsAscentVan::onCommitClientTag(LLUICtrl* ctrl, void* userdata)
+void LLPrefsAscentVan::onCommitClientTag(LLUICtrl* ctrl)
 {
     std::string client_uuid;
     U32 client_index;
 
-    LLPrefsAscentVan* self = (LLPrefsAscentVan*)userdata;
-    LLComboBox* combo = (LLComboBox*)ctrl;
+	LLComboBox* combo = static_cast<LLComboBox*>(ctrl);
 
-    if (combo)
-    {
-        client_index = combo->getCurrentIndex();
-        //Don't rebake if it's not neccesary.
-        if (client_index != self->mSelectedClient)
-        {
-            client_uuid = combo->getSelectedValue().asString();
-            gSavedSettings.setString("AscentReportClientUUID",  client_uuid);
-            gSavedSettings.setU32("AscentReportClientIndex",  client_index);
+	client_index = combo->getCurrentIndex();
+	//Don't rebake if it's not neccesary.
+	if (client_index != mSelectedClient)
+	{
+		client_uuid = combo->getSelectedValue().asString();
+		gSavedSettings.setString("AscentReportClientUUID",  client_uuid);
+		gSavedSettings.setU32("AscentReportClientIndex",  client_index);
 
-            if (gAgentAvatarp)
-            {
-                // Slam pending upload count to "unstick" things
-                bool slam_for_debug = true;
-                gAgentAvatarp->forceBakeAllTextures(slam_for_debug);
-            }
-        }
-    }
+		if (gAgentAvatarp)
+		{
+			// Slam pending upload count to "unstick" things
+			bool slam_for_debug = true;
+			gAgentAvatarp->forceBakeAllTextures(slam_for_debug);
+		}
+	}
 }
 
-//static
-void LLPrefsAscentVan::onCommitUpdateAvatarOffsets(LLUICtrl* ctrl, void* userdata)
+void LLPrefsAscentVan::onCommitTextModified(LLUICtrl* ctrl, const LLSD& value)
 {
-    if (!gAgent.getID().isNull())
-    {
-        gAgent.sendAgentSetAppearance();
-    }
-}
-
-//static
-void LLPrefsAscentVan::onCommitTextModified(LLUICtrl* ctrl, void* userdata)
-{
-    LLPrefsAscentVan* self = (LLPrefsAscentVan*)userdata;
-
     if (ctrl->getName() == "custom_tag_label_box")
     {
-        gSavedSettings.setString("AscentCustomTagLabel", self->childGetValue("custom_tag_label_box"));
+		gSavedSettings.setString("AscentCustomTagLabel", value);
     }
 }
 
 //static
-void LLPrefsAscentVan::onManualClientUpdate(void* data)
+void LLPrefsAscentVan::onManualClientUpdate()
 {
 	LLChat chat("Definitions already up-to-date.");
 	chat.mSourceType = CHAT_SOURCE_SYSTEM;
@@ -143,49 +127,54 @@ void LLPrefsAscentVan::onManualClientUpdate(void* data)
 	LLFloaterChat::addChat(chat);
 }
 
-//static
-void LLPrefsAscentVan::onCommitCheckBox(LLUICtrl* ctrl, void* user_data)
+void LLPrefsAscentVan::onCommitCheckBox(LLUICtrl* ctrl, const LLSD& value)
 {
-    LLPrefsAscentVan* self = (LLPrefsAscentVan*)user_data;
-
 //	llinfos << "Control named " << ctrl->getControlName() << llendl;
 
     if (ctrl->getName() == "use_status_check")
     {
-        BOOL showCustomColors = gSavedSettings.getBOOL("AscentUseStatusColors");
-        self->childSetEnabled("friends_color_textbox", showCustomColors);
-        self->childSetEnabled("friend_color_swatch", showCustomColors);
-        self->childSetEnabled("estate_owner_color_swatch", showCustomColors);
-        self->childSetEnabled("linden_color_swatch", showCustomColors);
-        self->childSetEnabled("muted_color_swatch", showCustomColors);
+		bool showCustomColors = value.asBoolean();
+		childSetEnabled("friends_color_textbox", showCustomColors);
+		childSetEnabled("friend_color_swatch", showCustomColors || gSavedSettings.getBOOL("ColorFriendChat"));
+		childSetEnabled("estate_owner_color_swatch", showCustomColors || gSavedSettings.getBOOL("ColorEstateOwnerChat"));
+		childSetEnabled("linden_color_swatch", showCustomColors || gSavedSettings.getBOOL("ColorLindenChat"));
+		childSetEnabled("muted_color_swatch", showCustomColors || gSavedSettings.getBOOL("ColorMutedChat"));
     }
     else if (ctrl->getName() == "customize_own_tag_check")
     {
-        BOOL showCustomOptions = gSavedSettings.getBOOL("AscentUseCustomTag");
-        self->childSetEnabled("custom_tag_label_text", showCustomOptions);
-        self->childSetEnabled("custom_tag_label_box", showCustomOptions);
-        self->childSetEnabled("custom_tag_color_text", showCustomOptions);
-        self->childSetEnabled("custom_tag_color_swatch", showCustomOptions);
+		bool showCustomOptions = value.asBoolean();
+		childSetEnabled("custom_tag_label_text", showCustomOptions);
+		childSetEnabled("custom_tag_label_box", showCustomOptions);
+		childSetEnabled("custom_tag_color_text", showCustomOptions);
+		childSetEnabled("custom_tag_color_swatch", showCustomOptions);
     }
 }
 
 // Store current settings for cancel
 void LLPrefsAscentVan::refreshValues()
 {
-    //General --------------------------------------------------------------------------------
+    //Main -----------------------------------------------------------------------------------
     mUseAccountSettings		= gSavedSettings.getBOOL("AscentStoreSettingsPerAccount");
     mShowTPScreen			= !gSavedSettings.getBOOL("AscentDisableTeleportScreens");
     mPlayTPSound			= gSavedSettings.getBOOL("OptionPlayTpSound");
     mShowLogScreens			= !gSavedSettings.getBOOL("AscentDisableLogoutScreens");
 	mDisableChatAnimation   = gSavedSettings.getBOOL("SGDisableChatAnimation");
+	mAddNotReplace = gSavedSettings.getBOOL("LiruAddNotReplace");
+	mTurnAround = gSavedSettings.getBOOL("TurnAroundWhenWalkingBackwards");
+	mAnnounceSnapshots = gSavedSettings.getBOOL("AnnounceSnapshots");
+	mAnnounceStreamMetadata = gSavedSettings.getBOOL("AnnounceStreamMetadata");
+	mUnfocusedFloatersOpaque = gSavedSettings.getBOOL("FloaterUnfocusedBackgroundOpaque");
+	mCompleteNameProfiles   = gSavedSettings.getBOOL("SinguCompleteNameProfiles");
+	mScriptErrorsStealFocus = gSavedSettings.getBOOL("LiruScriptErrorsStealFocus");
 
     //Tags\Colors ----------------------------------------------------------------------------
-    mAscentUseTag           = gSavedSettings.getBOOL("AscentUseTag");
+    mAscentBroadcastTag     = gSavedSettings.getBOOL("AscentBroadcastTag");
     mReportClientUUID       = gSavedSettings.getString("AscentReportClientUUID");
     mSelectedClient			= gSavedSettings.getU32("AscentReportClientIndex");
     mShowSelfClientTag		= gSavedSettings.getBOOL("AscentShowSelfTag");
     mShowSelfClientTagColor = gSavedSettings.getBOOL("AscentShowSelfTagColor");
     mShowFriendsTag         = gSavedSettings.getBOOL("AscentShowFriendsTag");
+    mDisplayClientTagOnNewLine		= gSavedSettings.getBOOL("SLBDisplayClientTagOnNewLine");
     mCustomTagOn			= gSavedSettings.getBOOL("AscentUseCustomTag");
     mCustomTagLabel			= gSavedSettings.getString("AscentCustomTagLabel");
     mCustomTagColor			= gSavedSettings.getColor4("AscentCustomTagColor");
@@ -199,15 +188,13 @@ void LLPrefsAscentVan::refreshValues()
     mEstateOwnerColor		= gSavedSettings.getColor4("AscentEstateOwnerColor");
     mLindenColor			= gSavedSettings.getColor4("AscentLindenColor");
     mMutedColor				= gSavedSettings.getColor4("AscentMutedColor");
-    //mCustomColor			= gSavedSettings.getColor4("MoyMiniMapCustomColor");
-
-    //Body Dynamics --------------------------------------------------------------------------
-    mBreastPhysicsToggle    = gSavedSettings.getBOOL("EmeraldBreastPhysicsToggle");
-    mBoobMass               = gSavedSettings.getF32("EmeraldBoobMass");
-    mBoobHardness           = gSavedSettings.getF32("EmeraldBoobHardness");
-    mBoobVelMax             = gSavedSettings.getF32("EmeraldBoobVelMax");
-    mBoobFriction           = gSavedSettings.getF32("EmeraldBoobFriction");
-    mBoobVelMin             = gSavedSettings.getF32("EmeraldBoobVelMin");
+	mMapAvatarColor			= gSavedSettings.getColor4("MapAvatar");
+    mCustomColor			= gSavedSettings.getColor4("MoyMiniMapCustomColor");
+	mColorFriendChat        = gSavedSettings.getBOOL("ColorFriendChat");
+	mColorEOChat            = gSavedSettings.getBOOL("ColorEstateOwnerChat");
+	mColorLindenChat        = gSavedSettings.getBOOL("ColorLindenChat");
+	mColorMutedChat         = gSavedSettings.getBOOL("ColorMutedChat");
+//	mColorCustomChat        = gSavedSettings.getBOOL("ColorCustomChat");
 
     mAvatarXModifier        = gSavedSettings.getF32("AscentAvatarXModifier");
     mAvatarYModifier        = gSavedSettings.getF32("AscentAvatarYModifier");
@@ -217,49 +204,50 @@ void LLPrefsAscentVan::refreshValues()
 // Update controls based on current settings
 void LLPrefsAscentVan::refresh()
 {
-    //General --------------------------------------------------------------------------------
+    //Main -----------------------------------------------------------------------------------
 
     //Tags\Colors ----------------------------------------------------------------------------
     LLComboBox* combo = getChild<LLComboBox>("tag_spoofing_combobox");
     combo->setCurrentByIndex(mSelectedClient);
 
     childSetEnabled("friends_color_textbox",     mUseStatusColors);
-    childSetEnabled("friend_color_swatch",       mUseStatusColors);
-    childSetEnabled("estate_owner_color_swatch", mUseStatusColors);
-    childSetEnabled("linden_color_swatch",       mUseStatusColors);
-    childSetEnabled("muted_color_swatch",        mUseStatusColors);
+    childSetEnabled("friend_color_swatch",       mUseStatusColors || mColorFriendChat);
+    childSetEnabled("estate_owner_color_swatch", mUseStatusColors || mColorEOChat);
+    childSetEnabled("linden_color_swatch",       mUseStatusColors || mColorLindenChat);
+    childSetEnabled("muted_color_swatch",        mUseStatusColors || mColorMutedChat);
 
     childSetEnabled("custom_tag_label_text",   mCustomTagOn);
     childSetEnabled("custom_tag_label_box",    mCustomTagOn);
     childSetValue("custom_tag_label_box", gSavedSettings.getString("AscentCustomTagLabel"));
     childSetEnabled("custom_tag_color_text",   mCustomTagOn);
     childSetEnabled("custom_tag_color_swatch", mCustomTagOn);
-
-    //Body Dynamics --------------------------------------------------------------------------
-    childSetEnabled("EmeraldBoobMass",     mBreastPhysicsToggle);
-    childSetEnabled("EmeraldBoobHardness", mBreastPhysicsToggle);
-    childSetEnabled("EmeraldBoobVelMax",   mBreastPhysicsToggle);
-    childSetEnabled("EmeraldBoobFriction", mBreastPhysicsToggle);
-    childSetEnabled("EmeraldBoobVelMin",   mBreastPhysicsToggle);
 }
 
 // Reset settings to local copy
 void LLPrefsAscentVan::cancel()
 {
-    //General --------------------------------------------------------------------------------
+    //Main -----------------------------------------------------------------------------------
     gSavedSettings.setBOOL("AscentStoreSettingsPerAccount", mUseAccountSettings);
     gSavedSettings.setBOOL("AscentDisableTeleportScreens", !mShowTPScreen);
     gSavedSettings.setBOOL("OptionPlayTpSound",             mPlayTPSound);
     gSavedSettings.setBOOL("AscentDisableLogoutScreens",   !mShowLogScreens);
 	gSavedSettings.setBOOL("SGDisableChatAnimation",		mDisableChatAnimation);
+	gSavedSettings.setBOOL("LiruAddNotReplace", mAddNotReplace);
+	gSavedSettings.setBOOL("TurnAroundWhenWalkingBackwards", mTurnAround);
+	gSavedSettings.setBOOL("AnnounceSnapshots", mAnnounceSnapshots);
+	gSavedSettings.setBOOL("AnnounceStreamMetadata", mAnnounceStreamMetadata);
+	gSavedSettings.setBOOL("FloaterUnfocusedBackgroundOpaque", mUnfocusedFloatersOpaque);
+	gSavedSettings.setBOOL("SinguCompleteNameProfiles",     mCompleteNameProfiles);
+	gSavedSettings.setBOOL("LiruScriptErrorsStealFocus",    mScriptErrorsStealFocus);
 
     //Tags\Colors ----------------------------------------------------------------------------
-    gSavedSettings.setBOOL("AscentUseTag",               mAscentUseTag);
+    gSavedSettings.setBOOL("AscentBroadcastTag",         mAscentBroadcastTag);
     gSavedSettings.setString("AscentReportClientUUID",   mReportClientUUID);
     gSavedSettings.setU32("AscentReportClientIndex",     mSelectedClient);
     gSavedSettings.setBOOL("AscentShowSelfTag",          mShowSelfClientTag);
     gSavedSettings.setBOOL("AscentShowSelfTagColor",     mShowSelfClientTagColor);
     gSavedSettings.setBOOL("AscentShowFriendsTag",       mShowFriendsTag);
+    gSavedSettings.setBOOL("SLBDisplayClientTagOnNewLine",       mDisplayClientTagOnNewLine);
     gSavedSettings.setBOOL("AscentUseCustomTag",         mCustomTagOn);
     gSavedSettings.setString("AscentCustomTagLabel",     mCustomTagLabel);
     gSavedSettings.setColor4("AscentCustomTagColor",     mCustomTagColor);
@@ -273,15 +261,13 @@ void LLPrefsAscentVan::cancel()
     gSavedSettings.setColor4("AscentEstateOwnerColor",   mEstateOwnerColor);
     gSavedSettings.setColor4("AscentLindenColor",        mLindenColor);
     gSavedSettings.setColor4("AscentMutedColor",         mMutedColor);
-//    gSavedSettings.setColor4("MoyMiniMapCustomColor",    mCustomColor);
-
-    //Body Dynamics --------------------------------------------------------------------------
-    gSavedSettings.setBOOL("EmeraldBreastPhysicsToggle", mBreastPhysicsToggle);
-    gSavedSettings.setF32("EmeraldBoobMass",             mBoobMass);
-    gSavedSettings.setF32("EmeraldBoobHardness",         mBoobHardness);
-    gSavedSettings.setF32("EmeraldBoobVelMax",           mBoobVelMax);
-    gSavedSettings.setF32("EmeraldBoobFriction",         mBoobFriction);
-    gSavedSettings.setF32("EmeraldBoobVelMin",           mBoobVelMin);
+	gSavedSettings.setColor4("MapAvatar",                mMapAvatarColor);
+    gSavedSettings.setColor4("MoyMiniMapCustomColor",    mCustomColor);
+    gSavedSettings.setBOOL("ColorFriendChat",            mColorFriendChat);
+    gSavedSettings.setBOOL("ColorEstateOwnerChat",       mColorEOChat);
+    gSavedSettings.setBOOL("ColorLindenChat",            mColorLindenChat);
+    gSavedSettings.setBOOL("ColorMutedChat",             mColorMutedChat);
+//	gSavedSettings.setBOOL("ColorCustomChat",            mColorCustomChat);
 
     gSavedSettings.setF32("AscentAvatarXModifier",       mAvatarXModifier);
     gSavedSettings.setF32("AscentAvatarYModifier",       mAvatarYModifier);

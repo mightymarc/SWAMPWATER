@@ -3,10 +3,9 @@
  * @brief LLFloaterWorldMap class definition
  *
  * $LicenseInfo:firstyear=2003&license=viewergpl$
- * 
+ * Second Life Viewer Source Code
  * Copyright (c) 2003-2009, Linden Research, Inc.
  * 
- * Second Life Viewer Source Code
  * The source code in this file ("Source Code") is provided by Linden Lab
  * to you under the terms of the GNU General Public License, version 2.0
  * ("GPL"), unless you have obtained a separate licensing agreement
@@ -43,14 +42,13 @@
 #include "llhudtext.h"
 #include "llmapimagetype.h"
 #include "lltracker.h"
+#include "llslurl.h"
 
-class LLEventInfo;
 class LLFriendObserver;
 class LLInventoryModel;
 class LLInventoryObserver;
 class LLItemInfo;
 class LLTabContainer;
-class LLWorldMapView;
 
 class LLFloaterWorldMap : public LLFloater
 {
@@ -63,10 +61,10 @@ public:
 
 	/*virtual*/ void onClose(bool app_quitting);
 
-	static void show(void*, BOOL center_on_target );
+	static void show(bool center_on_target);
 	static void reloadIcons(void*);
-	static void toggle(void*);
-	static void hide(void*); 
+	static void toggle();
+	static void hide();
 
 	/*virtual*/ void reshape( S32 width, S32 height, BOOL called_from_parent = TRUE );
 	/*virtual*/ BOOL handleHover(S32 x, S32 y, MASK mask);
@@ -111,29 +109,29 @@ public:
 
 	// teleport to the tracked item, if there is one
 	void			teleport();
+	void			onChangeMaturity();
 
-protected:
-	static void		onPanBtn( void* userdata );
 
-	static void		onGoHome(void* data);
+	//Slapp instigated avatar tracking
+	void			avatarTrackFromSlapp( const LLUUID& id );
 
-	static void		onLandmarkComboPrearrange( LLUICtrl* ctrl, void* data );
-	static void		onLandmarkComboCommit( LLUICtrl* ctrl, void* data );
+protected:	
+	void			onGoHome();
 
-	static void		onAvatarComboPrearrange( LLUICtrl* ctrl, void* data );
-	static void		onAvatarComboCommit( LLUICtrl* ctrl, void* data );
+	void			onLandmarkComboPrearrange();
+	void			onLandmarkComboCommit();
 
-	static void		onComboTextEntry( LLLineEditor* ctrl, void* data );
-	static void		onSearchTextEntry( LLLineEditor* ctrl, void* data );
+	void			onAvatarComboPrearrange();
+	void		    onAvatarComboCommit();
 
-	static void		onClearBtn(void*);
-	static void		onFlyBtn(void*);
-	static void		onClickTeleportBtn(void*);
-	static void		onShowTargetBtn(void*);
-	static void		onShowAgentBtn(void*);
-	static void		onCopySLURL(void*);
+	void			onComboTextEntry( );
+	void			onSearchTextEntry( );
 
-	static void		onCheckEvents(LLUICtrl* ctrl, void*);
+	void			onClearBtn();
+	void			onClickTeleportBtn();
+	void			onShowTargetBtn();
+	void			onShowAgentBtn();
+	void			onCopySLURL();
 
 	void			centerOnTarget(BOOL animate);
 	void			updateLocation();
@@ -142,7 +140,6 @@ protected:
 	void			fly();
 
 	void			buildLandmarkIDLists();
-	static void		onGoToLandmarkDialog(S32 option,void* userdata);
 	void			flyToLandmark();
 	void			teleportToLandmark();
 	void			setLandmarkVisited();
@@ -152,24 +149,28 @@ protected:
 	void			teleportToAvatar();
 
 	void			updateSearchEnabled();
-	void			onLocationFocusChanged( LLFocusableElement* focus );
-	static void		onLocationCommit( void* userdata );
-	static void		onCommitLocation( LLUICtrl* ctrl, void* userdata );
-	static void		onCommitSearchResult( LLUICtrl* ctrl, void* userdata );
+	void			onLocationFocusChanged( LLFocusableElement* ctrl );
+	void		    onLocationCommit();
+	void			onCoordinatesCommit();
+	void		    onCommitSearchResult();
 
 	void			cacheLandmarkPosition();
 
-protected:
-	LLPanel*			mPanel;		// Panel displaying the map	
+private:
+	LLPanel*			mPanel;		// Panel displaying the map
 	
 	// Sets sMapScale, in pixels per region
 	F32						mCurZoomVal;
-	F32						mCurZoomValInterpolationStart;	// Used during mZoomTimer interpolation.
 	LLFrameTimer			mZoomTimer;
+
+	// update display of teleport destination coordinates - pos is in global coordinates
+	void updateTeleportCoordsDisplay( const LLVector3d& pos );
+
+	// enable/disable teleport destination coordinates 
+	void enableTeleportCoordsDisplay( bool enabled );
 
 	LLDynamicArray<LLUUID>	mLandmarkAssetIDList;
 	LLDynamicArray<LLUUID>	mLandmarkItemIDList;
-	BOOL					mHasLandmarkPosition;
 
 	static const LLUUID	sHomeID;
 
@@ -178,9 +179,12 @@ protected:
 	LLFriendObserver* mFriendObserver;
 
 	std::string				mCompletingRegionName;
+	// Local position from trackURL() request, used to select final
+	// position once region lookup complete.
+	LLVector3				mCompletingRegionPos;
+
 	std::string				mLastRegionName;
 	BOOL					mWaitingForTracker;
-	BOOL					mExactMatch;
 
 	BOOL					mIsClosing;
 	BOOL					mSetToUserPosition;
@@ -189,7 +193,11 @@ protected:
 	LLTracker::ETrackingStatus mTrackedStatus;
 	std::string				mTrackedSimName;
 	std::string				mTrackedAvatarName;
-	std::string				mSLURL;
+	LLSLURL				mSLURL;
+
+	LLCtrlListInterface *	mListFriendCombo;
+	LLCtrlListInterface *	mListLandmarkCombo;
+	LLCtrlListInterface *	mListSearchResults;
 };
 
 extern LLFloaterWorldMap* gFloaterWorldMap;

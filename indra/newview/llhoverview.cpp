@@ -70,6 +70,9 @@
 #include "llviewertexturelist.h"
 //#include "lltoolobjpicker.h"
 #include "llhudmanager.h"	// HACK for creating flex obj's
+#include "llviewermenu.h"
+#include "llviewermedia.h"
+#include "llmediaentry.h"
 
 #include "llhudmanager.h" // For testing effects
 #include "llhudeffect.h"
@@ -85,6 +88,7 @@
 //
 const char* DEFAULT_DESC = "(No Description)";
 const F32 DELAY_BEFORE_SHOW_TIP = 0.35f;
+const F32 DELAY_BEFORE_REFRESH_TIP = 0.50f;
 
 //
 // Local globals
@@ -110,6 +114,9 @@ LLHoverView::LLHoverView(const std::string& name, const LLRect& rect)
 	mUseHover = TRUE;
 	mTyping = FALSE;
 	mHoverOffset.clearVec();
+	//<singu>
+	mLastTextHoverObject = NULL;
+	//</singu>
 }
 
 LLHoverView::~LLHoverView()
@@ -136,6 +143,9 @@ void LLHoverView::updateHover(LLTool* current_tool)
 				mStartHoverPickTimer = TRUE;
 				//  Clear the existing text so that we do not briefly show the wrong data.
 				mText.clear();
+				//<singu>
+				mLastTextHoverObject = NULL;
+				//</singu>
 			}
 
 			if (mDoneHoverPick)
@@ -219,6 +229,18 @@ void LLHoverView::updateText()
 	LLViewerObject* hit_object = getLastHoverObject();
 	std::string line;
 
+	//<singu>
+	if (hit_object == mLastTextHoverObject &&
+		!(mLastTextHoverObjectTimer.getStarted() && mLastTextHoverObjectTimer.hasExpired()))
+	{
+		// mText is already up to date.
+		return;
+	}
+	mLastTextHoverObject = hit_object;
+	mLastTextHoverObjectTimer.stop();
+	bool retrieving_data = false;
+	//</singu>
+
 	mText.clear();
 	if ( hit_object )
 	{
@@ -262,39 +284,16 @@ void LLHoverView::updateText()
 				else
 				{
 // [/RLVa:KB]
-
-                    // [Ansariel: Display name support]
-    				std::string complete_name = firstname->getString();
-    				complete_name += " ";
-    				complete_name += lastname->getString();
-
-    				if (LLAvatarNameCache::useDisplayNames())
-    				{
-    					LLAvatarName avatar_name;
-    					if (LLAvatarNameCache::get(hit_object->getID(), &avatar_name))
-    					{
-							static const LLCachedControl<S32> phoenix_name_system("PhoenixNameSystem", 0);
-    						if (phoenix_name_system == 2 || (phoenix_name_system == 1 && avatar_name.mIsDisplayNameDefault))
-    						{
-    							complete_name = avatar_name.mDisplayName;
-    						}
-    						else
-    						{
-    							complete_name = avatar_name.getCompleteName();
-    						}
-    					}
-    				}
-					// [/Ansariel: Display name support]
+					std::string complete_name;
+					if (!LLAvatarNameCache::getPNSName(hit_object->getID(), complete_name))
+						complete_name = firstname->getString() + std::string(" ") + lastname->getString();
 
 					if (title)
 					{
 						line.append(title->getString());
 						line.append(1, ' ');
 					}
-					
-					// [Ansariel: Display name support]
 					line += complete_name;
-					// [/Ansariel: Display name support]
 					
 // [RLVa:KB] - Checked: 2009-07-08 (RLVa-1.0.0e)
 				}
@@ -317,215 +316,261 @@ void LLHoverView::updateText()
 			//
 			BOOL suppressObjectHoverDisplay = !gSavedSettings.getBOOL("ShowAllObjectHoverTip");			
 			
-			LLSelectNode *nodep = LLSelectMgr::getInstance()->getHoverNode();;
+			LLSelectNode *nodep = LLSelectMgr::getInstance()->getHoverNode();
 			if (nodep)
 			{
 				line.clear();
-				if (nodep->mName.empty())
-				{
-					line.append(LLTrans::getString("TooltipNoName"));
-				}
-				else
-				{
-					line.append( nodep->mName );
-				}
-				mText.push_back(line);
 
-				if (!nodep->mDescription.empty()
-					&& nodep->mDescription != DEFAULT_DESC)
+				bool for_copy = nodep->mValid && nodep->mPermissions->getMaskEveryone() & PERM_COPY && hit_object && hit_object->permCopy();
+				bool for_sale = nodep->mValid && for_sale_selection(nodep);
+				
+				bool has_media = false;
+				bool is_time_based_media = false;
+				bool is_web_based_media = false;
+				bool is_media_playing = false;
+				bool is_media_displaying = false;
+			
+				// Does this face have media?
+				const LLTextureEntry* tep = hit_object ? hit_object->getTE(mLastPickInfo.mObjectFace) : NULL;
+			
+				if(tep)
 				{
-					mText.push_back( nodep->mDescription );
-				}
-
-				// Line: "Owner: James Linden"
-				line.clear();
-				line.append(LLTrans::getString("TooltipOwner") + " ");
-
-				if (nodep->mValid)
-				{
-					LLUUID owner;
-					std::string name;
-					if (!nodep->mPermissions->isGroupOwned())
+					has_media = tep->hasMedia();
+					const LLMediaEntry* mep = has_media ? tep->getMediaData() : NULL;
+					if (mep)
 					{
-						// [Ansariel: Display name support]
-						LLAvatarName avatar_name;
-						// [/Ansariel: Display name support]
-						owner = nodep->mPermissions->getOwner();
-						if (LLUUID::null == owner)
+						viewer_media_t media_impl = LLViewerMedia::getMediaImplFromTextureID(mep->getMediaID());
+						LLPluginClassMedia* media_plugin = NULL;
+					
+						if (media_impl.notNull() && (media_impl->hasMedia()))
 						{
-							line.append(LLTrans::getString("TooltipPublic"));
+							is_media_displaying = true;
+							//LLStringUtil::format_map_t args;
+						
+							media_plugin = media_impl->getMediaPlugin();
+							if(media_plugin)
+							{	
+								if(media_plugin->pluginSupportsMediaTime())
+								{
+									is_time_based_media = true;
+									is_web_based_media = false;
+									//args["[CurrentURL]"] =  media_impl->getMediaURL();
+									is_media_playing = media_impl->isMediaPlaying();
+								}
+								else
+								{
+									is_time_based_media = false;
+									is_web_based_media = true;
+									//args["[CurrentURL]"] =  media_plugin->getLocation();
+								}
+								//tooltip_msg.append(LLTrans::getString("CurrentURL", args));
+							}
 						}
-						// [Ansariel: Display name support]
-						//else if(gCacheName->getFullName(owner, name))
-						else if (LLAvatarNameCache::get(owner, &avatar_name))
-						{
-							static const LLCachedControl<S32> phoenix_name_system("PhoenixNameSystem", 0);
-							switch (phoenix_name_system)
-							{
-								case 0 : name = avatar_name.getCompleteName(); break;
-								case 1 : name = (avatar_name.mIsDisplayNameDefault ? avatar_name.mDisplayName : avatar_name.getCompleteName()); break;
-								case 2 : name = avatar_name.mDisplayName; break;
-								default : name = avatar_name.getCompleteName(); break;
-							}
-						// [/Ansariel: Display name support]
-// [RLVa:KB] - Checked: 2009-07-08 (RLVa-1.0.0e)
-							if (gRlvHandler.hasBehaviour(RLV_BHVR_SHOWNAMES))
-							{
-								name = RlvStrings::getAnonym(name);
-							}
-// [/RLVa:KB]
+					}
+				}
 
-							line.append(name);
+				
+				// Avoid showing tip over media that's displaying unless it's for sale
+				// also check the primary node since sometimes it can have an action even though
+				// the root node doesn't
+
+				if(!suppressObjectHoverDisplay || !is_media_displaying || for_sale)
+				{
+					if (nodep->mName.empty())
+					{
+						line.append(LLTrans::getString("TooltipNoName"));
+					}
+					else
+					{
+						line.append( nodep->mName );
+					}
+
+					mText.push_back(line);
+
+					if (!nodep->mDescription.empty()
+						&& nodep->mDescription != DEFAULT_DESC)
+					{
+						mText.push_back( nodep->mDescription );
+					}
+
+					// Line: "Owner: James Linden"
+					line.clear();
+					line.append(LLTrans::getString("TooltipOwner") + " ");
+
+					if (nodep->mValid)
+					{
+						LLUUID owner;
+						std::string name;
+						if (!nodep->mPermissions->isGroupOwned())
+						{
+							owner = nodep->mPermissions->getOwner();
+							if (LLUUID::null == owner)
+							{
+								line.append(LLTrans::getString("TooltipPublic"));
+							}
+							else if(LLAvatarNameCache::getPNSName(owner, name))
+							{
+	// [RLVa:KB] - Checked: 2009-07-08 (RLVa-1.0.0e)
+								if (gRlvHandler.hasBehaviour(RLV_BHVR_SHOWNAMES))
+								{
+									name = RlvStrings::getAnonym(name);
+								}
+	// [/RLVa:KB]
+
+								line.append(name);
+							}
+							else
+							{
+								line.append(LLTrans::getString("RetrievingData"));
+								retrieving_data = true;
+							}
 						}
 						else
 						{
-							line.append(LLTrans::getString("RetrievingData"));
+							std::string name;
+							owner = nodep->mPermissions->getGroup();
+							if (gCacheName->getGroupName(owner, name))
+							{
+								line.append(name);
+								line.append(LLTrans::getString("TooltipIsGroup"));
+							}
+							else
+							{
+								line.append(LLTrans::getString("RetrievingData"));
+								retrieving_data = true;
+							}
 						}
 					}
 					else
 					{
-						std::string name;
-						owner = nodep->mPermissions->getGroup();
-						if (gCacheName->getGroupName(owner, name))
-						{
-							line.append(name);
-							line.append(LLTrans::getString("TooltipIsGroup"));
-						}
-						else
-						{
-							line.append(LLTrans::getString("RetrievingData"));
-						}
-					}
-				}
-				else
-				{
-					line.append(LLTrans::getString("RetrievingData"));
-				}
-				mText.push_back(line);
-
-				// Build a line describing any special properties of this object.
-				LLViewerObject *object = hit_object;
-				LLViewerObject *parent = (LLViewerObject *)object->getParent();
-
-				if (object &&
-					(object->usePhysics() ||
-					 object->flagScripted() || 
-					 object->flagHandleTouch() || (parent && parent->flagHandleTouch()) ||
-					 object->flagTakesMoney() || (parent && parent->flagTakesMoney()) ||
-					 object->flagAllowInventoryAdd() ||
-					 object->flagTemporary() ||
-					 object->flagPhantom()) )
-				{
-					line.clear();
-					if (object->flagScripted())
-					{
-						
-						line.append(LLTrans::getString("TooltipFlagScript") + " ");
-					}
-
-					if (object->usePhysics())
-					{
-						line.append(LLTrans::getString("TooltipFlagPhysics") + " ");
-					}
-
-					if (object->flagHandleTouch() || (parent && parent->flagHandleTouch()) )
-					{
-						line.append(LLTrans::getString("TooltipFlagTouch") + " ");
-						suppressObjectHoverDisplay = FALSE;		//  Show tip
-					}
-
-					if (object->flagTakesMoney() || (parent && parent->flagTakesMoney()) )
-					{
-						line.append(gHippoGridManager->getConnectedGrid()->getCurrencySymbol() + " ");
-						suppressObjectHoverDisplay = FALSE;		//  Show tip
-					}
-
-					if (object->flagAllowInventoryAdd())
-					{
-						line.append(LLTrans::getString("TooltipFlagDropInventory") + " ");
-						suppressObjectHoverDisplay = FALSE;		//  Show tip
-					}
-
-					if (object->flagPhantom())
-					{
-						line.append(LLTrans::getString("TooltipFlagPhantom") + " ");
-					}
-
-					if (object->flagTemporary())
-					{
-						line.append(LLTrans::getString("TooltipFlagTemporary") + " ");
-					}
-
-					if (object->usePhysics() || 
-						object->flagHandleTouch() ||
-						(parent && parent->flagHandleTouch()) )
-					{
-						line.append(LLTrans::getString("TooltipFlagRightClickMenu") + " ");
+						line.append(LLTrans::getString("RetrievingData"));
+						retrieving_data = true;
 					}
 					mText.push_back(line);
-				}
 
-				// Free to copy / For Sale: L$
-				line.clear();
-				if (nodep->mValid)
-				{
-					BOOL for_copy = nodep->mPermissions->getMaskEveryone() & PERM_COPY && object->permCopy();
-					BOOL for_sale = nodep->mSaleInfo.isForSale() &&
-									nodep->mPermissions->getMaskOwner() & PERM_TRANSFER &&
-									(nodep->mPermissions->getMaskOwner() & PERM_COPY ||
-									 nodep->mSaleInfo.getSaleType() != LLSaleInfo::FS_COPY);
-					if (for_copy)
+					// Build a line describing any special properties of this object.
+					LLViewerObject *object = hit_object;
+					LLViewerObject *parent = (LLViewerObject *)object->getParent();
+
+					if (object &&
+						(object->flagUsePhysics() ||
+						 object->flagScripted() || 
+						 object->flagHandleTouch() || (parent && parent->flagHandleTouch()) ||
+						 object->flagTakesMoney() || (parent && parent->flagTakesMoney()) ||
+						 object->flagAllowInventoryAdd() ||
+						 object->flagTemporary() ||
+						 object->flagPhantom()) )
 					{
-						line.append(LLTrans::getString("TooltipFreeToCopy"));
-						suppressObjectHoverDisplay = FALSE;		//  Show tip
+						line.clear();
+						if (object->flagScripted())
+						{
+						
+							line.append(LLTrans::getString("TooltipFlagScript") + " ");
+						}
+
+						if (object->flagUsePhysics())
+						{
+							line.append(LLTrans::getString("TooltipFlagPhysics") + " ");
+						}
+
+						if (object->flagHandleTouch() || (parent && parent->flagHandleTouch()) )
+						{
+							line.append(LLTrans::getString("TooltipFlagTouch") + " ");
+							suppressObjectHoverDisplay = FALSE;		//  Show tip
+						}
+
+						if (object->flagTakesMoney() || (parent && parent->flagTakesMoney()) )
+						{
+							line.append(gHippoGridManager->getConnectedGrid()->getCurrencySymbol() + " ");
+							suppressObjectHoverDisplay = FALSE;		//  Show tip
+						}
+
+						if (object->flagAllowInventoryAdd())
+						{
+							line.append(LLTrans::getString("TooltipFlagDropInventory") + " ");
+							suppressObjectHoverDisplay = FALSE;		//  Show tip
+						}
+
+						if (object->flagPhantom())
+						{
+							line.append(LLTrans::getString("TooltipFlagPhantom") + " ");
+						}
+
+						if (object->flagTemporary())
+						{
+							line.append(LLTrans::getString("TooltipFlagTemporary") + " ");
+						}
+
+						if (object->flagUsePhysics() || 
+							object->flagHandleTouch() ||
+							(parent && parent->flagHandleTouch()) )
+						{
+							line.append(LLTrans::getString("TooltipFlagRightClickMenu") + " ");
+						}
+						mText.push_back(line);
 					}
-					else if (for_sale)
+
+					// Free to copy / For Sale: L$
+					line.clear();
+					if (nodep->mValid)
 					{
-						LLStringUtil::format_map_t args;
-						args["[AMOUNT]"] = llformat("%d", nodep->mSaleInfo.getSalePrice());
-						line.append(LLTrans::getString("TooltipForSaleL$", args));
-						suppressObjectHoverDisplay = FALSE;		//  Show tip
+						if (for_copy)
+						{
+							line.append(LLTrans::getString("TooltipFreeToCopy"));
+							suppressObjectHoverDisplay = FALSE;		//  Show tip
+						}
+						else if (for_sale)
+						{
+							LLStringUtil::format_map_t args;
+							args["[AMOUNT]"] = llformat("%d", nodep->mSaleInfo.getSalePrice());
+							line.append(LLTrans::getString("TooltipForSaleL$", args));
+							suppressObjectHoverDisplay = FALSE;		//  Show tip
+						}
+						else
+						{
+							// Nothing if not for sale
+							// line.append("Not for sale");
+						}
 					}
 					else
 					{
-						// Nothing if not for sale
-						// line.append("Not for sale");
+						LLStringUtil::format_map_t args;
+						args["[MESSAGE]"] = LLTrans::getString("RetrievingData");
+						retrieving_data = true;
+						line.append(LLTrans::getString("TooltipForSaleMsg", args));
 					}
+					mText.push_back(line);
+					line.clear();
+					S32 prim_count = LLSelectMgr::getInstance()->getHoverObjects()->getObjectCount();
+					line.append(llformat("Prims: %d", prim_count));
+					mText.push_back(line);
+
+					line.clear();
+					line.append("Position: ");
+
+					LLViewerRegion *region = gAgent.getRegion();
+					LLVector3 position = region->getPosRegionFromGlobal(hit_object->getPositionGlobal());//regionp->getOriginAgent();
+					LLVector3 mypos = region->getPosRegionFromGlobal(gAgent.getPositionGlobal());
+			
+
+					LLVector3 delta = position - mypos;
+					F32 distance = (F32)delta.magVec();
+
+					line.append(llformat("<%.02f,%.02f,%.02f>",position.mV[0],position.mV[1],position.mV[2]));
+					mText.push_back(line);
+					line.clear();
+					line.append(llformat("Distance: %.02fm",distance));
+					mText.push_back(line);
 				}
 				else
 				{
-					LLStringUtil::format_map_t args;
-					args["[MESSAGE]"] = LLTrans::getString("RetrievingData");
-					line.append(LLTrans::getString("TooltipForSaleMsg", args));
+					suppressObjectHoverDisplay = TRUE;
 				}
-				mText.push_back(line);
-			}
-			line.clear();
-			S32 prim_count = LLSelectMgr::getInstance()->getHoverObjects()->getObjectCount();
-			line.append(llformat("Prims: %d", prim_count));
-			mText.push_back(line);
-
-			line.clear();
-			line.append("Position: ");
-
-			LLViewerRegion *region = gAgent.getRegion();
-			LLVector3 position = region->getPosRegionFromGlobal(hit_object->getPositionGlobal());//regionp->getOriginAgent();
-			LLVector3 mypos = region->getPosRegionFromGlobal(gAgent.getPositionGlobal());
-			
-
-			LLVector3 delta = position - mypos;
-			F32 distance = (F32)delta.magVec();
-
-			line.append(llformat("<%.02f,%.02f,%.02f>",position.mV[0],position.mV[1],position.mV[2]));
-			mText.push_back(line);
-			line.clear();
-			line.append(llformat("Distance: %.02fm",distance));
-			mText.push_back(line);
-			
-			//  If the hover tip shouldn't be shown, delete all the object text
-			if (suppressObjectHoverDisplay)
-			{
-				mText.clear();
+				//  If the hover tip shouldn't be shown, delete all the object text
+				if (suppressObjectHoverDisplay)
+				{
+					mText.clear();
+				}
 			}
 		}
 	}
@@ -542,14 +587,10 @@ void LLHoverView::updateText()
 
 		LLParcel* hover_parcel = LLViewerParcelMgr::getInstance()->getHoverParcel();
 		LLUUID owner;
-		S32 width = 0;
-		S32 height = 0;
 
 		if ( hover_parcel )
 		{
 			owner = hover_parcel->getOwnerID();
-			width = S32(LLViewerParcelMgr::getInstance()->getHoverParcelWidth());
-			height = S32(LLViewerParcelMgr::getInstance()->getHoverParcelHeight());
 		}
 
 		// Line: "Land"
@@ -586,6 +627,7 @@ void LLHoverView::updateText()
 				else
 				{
 					line.append(LLTrans::getString("RetrievingData"));
+					retrieving_data = true;
 				}
 			}
 			else if(gCacheName->getFullName(owner, name))
@@ -598,11 +640,13 @@ void LLHoverView::updateText()
 			else
 			{
 				line.append(LLTrans::getString("RetrievingData"));
+				retrieving_data = true;
 			}
 		}
 		else
 		{
 			line.append(LLTrans::getString("RetrievingData"));
+			retrieving_data = true;
 		}
 		mText.push_back(line);
 
@@ -673,15 +717,6 @@ void LLHoverView::updateText()
 			}
 		}
 
-		// Line: "Size: 1x4"
-		// Only show for non-public land
-		/*
-		if ( hover_parcel && LLUUID::null != owner)
-		{
-			line = llformat("Size: %dx%d", width, height );
-			mText.push_back(line);
-		}
-		*/
 		if (hover_parcel && hover_parcel->getParcelFlag(PF_FOR_SALE))
 		{
 			LLStringUtil::format_map_t args;
@@ -690,8 +725,15 @@ void LLHoverView::updateText()
 			mText.push_back(line);
 		}
 	}
-}
 
+	//<singu>
+	if (retrieving_data)
+	{
+		// Keep doing this twice per second, until all data was retrieved.
+		mLastTextHoverObjectTimer.start(DELAY_BEFORE_REFRESH_TIP);
+	}
+	//</singu>
+}
 
 void LLHoverView::draw()
 {

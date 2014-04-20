@@ -7,6 +7,7 @@
  * $LicenseInfo:firstyear=2005&license=viewerlgpl$
  * Second Life Viewer Source Code
  * Copyright (C) 2010, Linden Research, Inc.
+ * Copyright (C) 2012, Aleric Inglewood.
  * 
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
@@ -35,60 +36,25 @@
  */
 
 #include <string>
-#include "lliopipe.h"
-#include "llchainio.h"
-#include "llerror.h"
-#include "llcurl.h"
+#include "aicurleasyrequeststatemachine.h"
+#include "aihttpheaders.h"
 
-
-extern const std::string CONTEXT_REQUEST;
-extern const std::string CONTEXT_DEST_URI_SD_LABEL;
-extern const std::string CONTEXT_RESPONSE;
-extern const std::string CONTEXT_TRANSFERED_BYTES;
-
-class LLURLRequestDetail;
-
-class LLURLRequestComplete;
-
-struct x509_store_ctx_st;
-typedef struct x509_store_ctx_st X509_STORE_CTX;
-
-/** 
- * @class LLURLRequest
- * @brief Class to handle url based requests.
- * @see LLIOPipe
- *
- * Currently, this class is implemented on top of curl. From the
- * vantage of a programmer using this class, you do not care so much,
- * but it's useful to know since in order to accomplish 'non-blocking'
- * behavior, we have to use a more expensive curl interface which can
- * still block if the server enters a half-accepted state. It would be
- * worth the time and effort to eventually port this to a raw client
- * socket.
- */
-class LLURLRequest : public LLIOPipe
+class Injector
 {
-	LOG_CLASS(LLURLRequest);
-public:
+  public:
+	typedef LLHTTPClient::ResponderBase::buffer_ptr_t buffer_ptr_t;
+	virtual char const* contentType(void) const = 0;
+	virtual U32 get_body(LLChannelDescriptors const& channels, buffer_ptr_t& buffer) = 0;
+	// To avoid compiler warning.
+	virtual ~Injector() { }
+};
 
-	typedef int (* SSLCertVerifyCallback)(X509_STORE_CTX *ctx, void *param);
-	/** 
-	 * @brief This enumeration is for specifying the type of request.
-	 */
-	enum ERequestAction
-	{
-		INVALID,
-		HTTP_HEAD,
-		HTTP_GET,
-		HTTP_PUT,
-		HTTP_POST,
-		HTTP_DELETE,
-		HTTP_MOVE, // Caller will need to set 'Destination' header
-		REQUEST_ACTION_COUNT
-	};
+class LLURLRequest : public AICurlEasyRequestStateMachine {
+  public:
+	typedef LLHTTPClient::ERequestAction ERequestAction;
 
 	/**
-	 * @brief Turn the requst action into an http verb.
+	 * @brief Turn the request action into an http verb.
 	 */
 	static std::string actionAsVerb(ERequestAction action);
 
@@ -96,36 +62,28 @@ public:
 	 * @brief Constructor.
 	 *
 	 * @param action One of the ERequestAction enumerations.
-	 */
-	LLURLRequest(ERequestAction action);
-
-	/** 
-	 * @brief Constructor.
-	 *
-	 * @param action One of the ERequestAction enumerations.
 	 * @param url The url of the request. It should already be encoded.
 	 */
-	LLURLRequest(ERequestAction action, const std::string& url);
+	LLURLRequest(ERequestAction action, std::string const& url, Injector* body,
+				 LLHTTPClient::ResponderPtr responder, AIHTTPHeaders& headers,
+				 AIPerService::Approvement* approved,
+				 bool keepalive, bool is_auth, bool no_compression);
 
-	/** 
-	 * @brief Destructor.
+	/**
+	 * @brief Cached value of responder->getName() as passed to the constructor.
 	 */
-	virtual ~LLURLRequest();
+	char const* getResponderName(void) const { return mResponderNameCache; }
 
-	/* @name Instance methods
-	 */
-	//@{
-	/** 
-	 * @brief Set the url for the request
-	 *
-	 * This method assumes the url is encoded appropriately for the
-	 * request. 
-	 * The url must be set somehow before the first call to process(),
-	 * or the url will not be set correctly.
-	 * 
-	 */
-	void setURL(const std::string& url);
-	std::string getURL() const;
+  protected:
+	// Call abort(), not delete.
+	/*virtual*/ ~LLURLRequest() { }
+
+  public:
+    /**
+     * @ brief Turn off (or on) the CURLOPT_PROXY header.
+     */
+    void useProxy(bool use_proxy);
+
 	/** 
 	 * @brief Add a header to the http post.
 	 *
@@ -135,250 +93,31 @@ public:
 	 * required headers will be automatically constructed, so this is
 	 * usually useful for encoding parameters.
 	 */
-	void addHeader(const char* header);
+	void addHeader(char const* header);
 
-	/**
-	 * @brief Check remote server certificate signed by a known root CA.
-	 *
-	 * Set whether request will check that remote server
-	 * certificates are signed by a known root CA when using HTTPS.
-	 */
-	void setSSLVerifyCallback(SSLCertVerifyCallback callback, void * param);
-
-	
-	/**
-	 * @brief Return at most size bytes of body.
-	 *
-	 * If the body had more bytes than this limit, they will not be
-	 * returned and the connection closed.  In this case, STATUS_STOP
-	 * will be passed to responseStatus();
-	 */
-	void setBodyLimit(U32 size);
-
-	/** 
-	 * @brief Set a completion callback for this URLRequest.
-	 *
-	 * The callback is added to this URLRequet's pump when either the
-	 * entire buffer is known or an error like timeout or connection
-	 * refused has happened. In the case of a complete transfer, this
-	 * object builds a response chain such that the callback and the
-	 * next process consumer get to read the output.
-	 *
-	 * This setup is a little fragile since the url request consumer
-	 * might not just read the data - it may do a channel change,
-	 * which invalidates the input to the callback, but it works well
-	 * in practice.
-	 */
-	void setCallback(LLURLRequestComplete* callback);
-	//@}
-
-	/* @name LLIOPipe virtual implementations
-	 */
-
-    /**
-     * @ brief Turn off (or on) the CURLOPT_PROXY header.
-     */
-    void useProxy(bool use_proxy);
-
-    /**
-     * @ brief Set the CURLOPT_PROXY header to the given value.
-     */
-	void useProxy(const std::string& proxy);
-
-	/**
-	 * @brief Turn on cookie handling for this request with CURLOPT_COOKIEFILE.
-	 */
-	void allowCookies();
-
-	/*virtual*/ bool isValid() ;
-
-public:
-	/** 
-	 * @brief Give this pipe a chance to handle a generated error
-	 */
-	virtual EStatus handleError(EStatus status, LLPumpIO* pump);
-
-	
-protected:
-	/** 
-	 * @brief Process the data in buffer
-	 */
-	virtual EStatus process_impl(
-		const LLChannelDescriptors& channels,
-		buffer_ptr_t& buffer,
-		bool& eos,
-		LLSD& context,
-		LLPumpIO* pump);
-	//@}
-
-protected:
-	enum EState
-	{
-		STATE_INITIALIZED,
-		STATE_WAITING_FOR_RESPONSE,
-		STATE_PROCESSING_RESPONSE,
-		STATE_HAVE_RESPONSE,
-	};
-	EState mState;
-	ERequestAction mAction;
-	LLURLRequestDetail* mDetail;
-	LLIOPipe::ptr_t mCompletionCallback;
-	 S32 mRequestTransferedBytes;
-	 S32 mResponseTransferedBytes;
-
-	static CURLcode _sslCtxCallback(CURL * curl, void *sslctx, void *param);
-	
-private:
-	/** 
-	 * @brief Initialize the object. Called during construction.
-	 */
-	void initialize();
-
+  private:
 	/** 
 	 * @brief Handle action specific url request configuration.
 	 *
 	 * @return Returns true if this is configured.
 	 */
-	bool configure();
+	bool configure(AICurlEasyRequest_wat const& curlEasyRequest_w);
 
-	/** 
-	 * @brief Download callback method.
-	 */
- 	static size_t downCallback(
-		char* data,
-		size_t size,
-		size_t nmemb,
-		void* user);
+  private:
+	ERequestAction mAction;
+	std::string mURL;
+	bool mKeepAlive;					// Set to false only when explicitely requested.
+	bool mIsAuth;						// Set for authentication messages (login, buy land, buy currency).
+	bool mNoCompression;				// Set to disable using gzip.
+	Injector* mBody;					// Non-zero iff the action is HTTP_POST and HTTP_PUT.
+	U32 mBodySize;
+	LLHTTPClient::ResponderPtr mResponder;
+	AIHTTPHeaders mHeaders;
+	char const* mResponderNameCache;
 
-	/** 
-	 * @brief Upload callback method.
-	 */
- 	static size_t upCallback(
-		char* data,
-		size_t size,
-		size_t nmemb,
-		void* user);
-
-	/** 
-	 * @brief Declaration of unimplemented method to prevent copy
-	 * construction.
-	 */
-	LLURLRequest(const LLURLRequest&);
+  protected:
+	// Handle initializing the object.
+	/*virtual*/ void initialize_impl(void);
 };
-
-
-/** 
- * @class LLContextURLExtractor
- * @brief This class unpacks the url out of a agent usher service so
- * it can be packed into a LLURLRequest object.
- * @see LLIOPipe
- *
- * This class assumes that the context is a map that contains an entry
- * named CONTEXT_DEST_URI_SD_LABEL.
- */
-class LLContextURLExtractor : public LLIOPipe
-{
-public:
-	LLContextURLExtractor(LLURLRequest* req) : mRequest(req) {}
-	~LLContextURLExtractor() {}
-
-protected:
-	/* @name LLIOPipe virtual implementations
-	 */
-	//@{
-	/** 
-	 * @brief Process the data in buffer
-	 */
-	virtual EStatus process_impl(
-		const LLChannelDescriptors& channels,
-		buffer_ptr_t& buffer,
-		bool& eos,
-		LLSD& context,
-		LLPumpIO* pump);
-	//@}
-
-protected:
-	LLURLRequest* mRequest;
-};
-
-
-/** 
- * @class LLURLRequestComplete
- * @brief Class which can optionally be used with an LLURLRequest to
- * get notification when the url request is complete.
- */
-class LLURLRequestComplete : public LLIOPipe
-{
-public:
-	
-	// Called once for each header received, except status lines
-	virtual void header(const std::string& header, const std::string& value);
-
-	// May be called more than once, particularly for redirects and proxy madness.
-	// Ex. a 200 for a connection to https through a proxy, followed by the "real" status
-	//     a 3xx for a redirect followed by a "real" status, or more redirects.
-	virtual void httpStatus(U32 status, const std::string& reason) { }
-
-	virtual void complete(
-		const LLChannelDescriptors& channels,
-		const buffer_ptr_t& buffer);
-
-	/** 
-	 * @brief This method is called when we got a valid response.
-	 *
-	 * It is up to class implementers to do something useful here.
-	 */
-	virtual void response(
-		const LLChannelDescriptors& channels,
-		const buffer_ptr_t& buffer);
-
-	/** 
-	 * @brief This method is called if there was no response.
-	 *
-	 * It is up to class implementers to do something useful here.
-	 */
-	virtual void noResponse();
-
-	/** 
-	 * @brief This method will be called by the LLURLRequest object.
-	 *
-	 * If this is set to STATUS_OK or STATUS_STOP, then the transfer
-	 * is asssumed to have worked. This will lead to calling response()
-	 * on the next call to process(). Otherwise, this object will call
-	 * noResponse() on the next call to process.
-	 * @param status The status of the URLRequest.
-	 */
-	void responseStatus(EStatus status);
-
-	// constructor & destructor.
-	LLURLRequestComplete();
-	virtual ~LLURLRequestComplete();
-
-protected:
-	/* @name LLIOPipe virtual implementations
-	 */
-	//@{
-	/** 
-	 * @brief Process the data in buffer
-	 */
-	virtual EStatus process_impl(
-		const LLChannelDescriptors& channels,
-		buffer_ptr_t& buffer,
-		bool& eos,
-		LLSD& context,
-		LLPumpIO* pump);
-	//@}
-
-	// value to note if we actually got the response. This value
-	// depends on correct useage from the LLURLRequest instance.
-	EStatus mRequestStatus;
-};
-
-
-
-/**
- * External constants
- */
-extern const std::string CONTEXT_DEST_URI_SD_LABEL;
 
 #endif // LL_LLURLREQUEST_H

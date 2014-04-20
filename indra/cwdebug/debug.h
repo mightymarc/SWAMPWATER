@@ -27,6 +27,98 @@
 
 #ifndef CWDEBUG
 
+#ifdef DEBUG_CURLIO
+
+// If CWDEBUG is not defined, but DEBUG_CURLIO is, then replace
+// some of the cwd macro's with something that generates viewer
+// specific debug output. Note that this generates a LOT of
+// output and should not normally be defined.
+
+#include <string>
+#include "llpreprocessor.h"
+
+namespace debug {
+namespace libcwd {
+
+struct buf2str {
+  buf2str(char const* buf, int size) : mBuf(buf), mSize(size) { }
+  char const* mBuf;
+  int mSize;
+};
+
+struct libcwd_do_type {
+ void on() const { }
+};
+extern LL_COMMON_API libcwd_do_type const libcw_do;
+
+} // namespace libcwd
+
+enum print_thread_id_t { print_thread_id };
+inline void init() { }
+struct Indent {
+  int M_indent;
+  static ll_thread_local int S_indentation;
+  enum LL_COMMON_API print_nt { print };
+  LL_COMMON_API Indent(int indent);
+  LL_COMMON_API ~Indent();
+};
+
+extern LL_COMMON_API std::ostream& operator<<(std::ostream& os, libcwd::buf2str const& b2s);
+extern LL_COMMON_API std::ostream& operator<<(std::ostream& os, Indent::print_nt);
+extern LL_COMMON_API std::ostream& operator<<(std::ostream& os, print_thread_id_t);
+
+namespace dc {
+
+struct fake_channel {
+  int mOn;
+  char const* mLabel;
+  fake_channel(int on, char const* label) : mOn(on), mLabel(label) { }
+  fake_channel(void) : mOn(0) { }
+  fake_channel& operator()(bool) { return *this; }
+  fake_channel const& operator()(bool) const { return *this; }
+  bool is_on() const { return !!mOn; }
+  bool is_off() const { return !mOn; }
+  void on() const { }
+  void off() const { }
+};
+extern LL_COMMON_API fake_channel const warning;
+extern LL_COMMON_API fake_channel const curl;
+extern LL_COMMON_API fake_channel const curlio;
+extern LL_COMMON_API fake_channel const curltr;
+extern LL_COMMON_API fake_channel const statemachine;
+extern LL_COMMON_API fake_channel const notice;
+extern LL_COMMON_API fake_channel const snapshot;
+
+} // namespace dc
+} // namespace debug
+
+#define LIBCWD_DEBUG_CHANNELS debug
+#define LibcwDoutScopeBegin(a, b, c) do { using namespace debug; using namespace debug::libcwd; llinfos_nf << print_thread_id << (c).mLabel << ": " << Indent::print;
+#define LibcwDoutStream llcont
+#define LibcwDoutScopeEnd llcont << llendl; } while(0)
+
+#define Debug(x) do { using namespace debug; using namespace debug::libcwd; x; } while(0)
+#define Dout(a, b) do { using namespace debug; using namespace debug::libcwd; if ((a).mOn) { llinfos_nf << print_thread_id << (a).mLabel << ": " << Indent::print << b << llendl; } } while(0)
+#define DoutEntering(a, b) \
+  int __slviewer_debug_indentation = 2; \
+  { \
+	using namespace debug; \
+	using namespace debug::libcwd; \
+	if ((a).mOn) \
+	  llinfos_nf << print_thread_id << (a).mLabel << ": " << Indent::print << "Entering " << b << llendl; \
+    else \
+	  __slviewer_debug_indentation = 0; \
+  } \
+  debug::Indent __slviewer_debug_indent(__slviewer_debug_indentation);
+
+#else // !DEBUG_CURLIO
+
+#define Debug(x)
+#define Dout(a, b)
+#define DoutEntering(a, b)
+
+#endif // !DEBUG_CURLIO
+
 #ifndef DOXYGEN         // No need to document this.  See http://libcwd.sourceforge.net/ for more info.
 
 #include <iostream>
@@ -36,9 +128,6 @@
 #define AllocTag2(p, desc)
 #define AllocTag_dynamic_description(p, x)
 #define AllocTag(p, x)
-#define Debug(x)
-#define Dout(a, b)
-#define DoutEntering(a, b)
 #define DoutFatal(a, b) LibcwDoutFatal(::std, , a, b)
 #define ForAllDebugChannels(STATEMENT)
 #define ForAllDebugObjects(STATEMENT)
@@ -57,6 +146,11 @@
 #define CWDEBUG_MARKER 0
 
 #define BACKTRACE do { } while(0)
+#ifdef DEBUG_CURLIO
+#define CWD_ONLY(...) __VA_ARGS__
+#else
+#define CWD_ONLY(...)
+#endif
 
 #endif // !DOXYGEN
 
@@ -89,8 +183,11 @@
 #if CWDEBUG_LOCATION
 #include <execinfo.h>		// Needed for 'backtrace'.
 #endif
+#include "llpreprocessor.h"	// LL_COMMON_API
+#include <set>
 
 #define CWD_API __attribute__ ((visibility("default")))
+#define CWD_ONLY(...) __VA_ARGS__
 
 //! Debug specific code.
 namespace debug {
@@ -118,6 +215,10 @@ extern CWD_API channel_ct sdl;
 extern CWD_API channel_ct backtrace;
 extern CWD_API channel_ct statemachine;
 extern CWD_API channel_ct caps;
+extern CWD_API channel_ct curl;
+extern CWD_API channel_ct curlio;
+extern CWD_API channel_ct curltr;
+extern CWD_API channel_ct snapshot;
 
 #endif
 
@@ -182,10 +283,12 @@ class TeeStream : public std::ostream {
 };
 
 #if CWDEBUG_LOCATION
-class BackTrace {
+class LL_COMMON_API BackTrace {
   private:
     boost::shared_array<void*> M_buffer;
     int M_frames;
+  public:
+  	static ll_thread_local size_t S_number;
   public:
     BackTrace(void** buffer, int frames) : M_buffer(new void* [frames]), M_frames(frames) { std::memcpy(M_buffer.get(), buffer, sizeof(void*) * frames); }
 
@@ -212,18 +315,80 @@ extern pthread_mutex_t backtrace_mutex;
     using namespace debug; \
     void* buffer[32]; \
     int frames = backtrace(buffer, 32); \
-    size_t size; \
     { \
       pthread_mutex_lock(&backtrace_mutex); \
       backtraces.push_back(BackTrace(buffer, frames)); \
-      size = backtraces.size(); \
+      BackTrace::S_number = backtraces.size(); \
       pthread_mutex_unlock(&backtrace_mutex); \
     } \
-    Dout(dc::backtrace, "Stored backtrace #" << size); \
+    Dout(dc::backtrace, "Stored backtrace #" << BackTrace::S_number); \
   } while(0)
+
+class LL_COMMON_API BackTraces {
+  private:
+	typedef std::vector<size_t> trace_container_type;
+	trace_container_type mBackTraces;
+
+  public:
+	void store_trace(size_t trace);
+	void remove_trace(size_t trace);
+
+	void dump(void) const;
+};
+
+class LL_COMMON_API BackTraceTracker {
+  private:
+	BackTraces* mBackTraces;
+	size_t mTrace;
+
+  public:
+	BackTraceTracker(BackTraces* back_traces);
+	~BackTraceTracker();
+
+	BackTraceTracker(BackTraceTracker const&);
+	BackTraceTracker& operator=(BackTraceTracker const&);
+
+	void dump(void) const { mBackTraces->dump(); }
+};
+
 #else
 #define BACKTRACE do { } while(0)
 #endif // CWDEBUG_LOCATION
+
+template<class T>
+class LL_COMMON_API InstanceTracker {
+  private:
+	T const* mInstance;
+	static pthread_mutex_t sInstancesMutex;
+	static std::set<T const*> sInstances;
+	static void remember(T const* instance) { pthread_mutex_lock(&sInstancesMutex); sInstances.insert(instance); pthread_mutex_unlock(&sInstancesMutex); }
+	static void forget(T const* instance) { pthread_mutex_lock(&sInstancesMutex); sInstances.erase(instance); pthread_mutex_unlock(&sInstancesMutex); }
+  public:
+	InstanceTracker(T const* instance) : mInstance(instance) { remember(mInstance); }
+	~InstanceTracker() { forget(mInstance); }
+	InstanceTracker& operator=(InstanceTracker const& orig) { forget(mInstance); mInstance = orig.mInstance; remember(mInstance); return *this; }
+	static void dump(void);
+  private:
+	// Non-copyable. Instead of copying, call InstanceTracker(T const*) with the this pointer of the new instance.
+    InstanceTracker(InstanceTracker const& orig);
+};
+
+template<class T>
+pthread_mutex_t InstanceTracker<T>::sInstancesMutex = PTHREAD_MUTEX_INITIALIZER;
+
+template<class T>
+std::set<T const*> InstanceTracker<T>::sInstances;
+
+template<class T>
+void InstanceTracker<T>::dump(void)
+{
+  pthread_mutex_lock(&sInstancesMutex);
+  for (typename std::set<T const*>::iterator iter = sInstances.begin(); iter != sInstances.end(); ++iter)
+  {
+	std::cout << *iter << std::endl;
+  }
+  pthread_mutex_unlock(&sInstancesMutex);
+}
 
 } // namespace debug
 
@@ -232,21 +397,21 @@ extern pthread_mutex_t backtrace_mutex;
 // Print "Entering " << \a data to channel \a cntrl and increment
 // debugging output indentation until the end of the current scope.
 #define DoutEntering(cntrl, data) \
-  int __slviewer_debug_indentation = 2;                                                                      \
+  int __slviewer_debug_indentation = 2;                                                                                 \
   {                                                                                                                     \
     LIBCWD_TSD_DECLARATION;                                                                                             \
     if (LIBCWD_DO_TSD_MEMBER_OFF(::libcwd::libcw_do) < 0)                                                               \
     {                                                                                                                   \
       ::libcwd::channel_set_bootstrap_st __libcwd_channel_set(LIBCWD_DO_TSD(::libcwd::libcw_do) LIBCWD_COMMA_TSD);      \
-      bool on;                                                                                                          \
+      bool __slviewer_debug_on;                                                                                         \
       {                                                                                                                 \
         using namespace LIBCWD_DEBUGCHANNELS;                                                                           \
-        on = (__libcwd_channel_set|cntrl).on;                                                                           \
+        __slviewer_debug_on = (__libcwd_channel_set|cntrl).on;                                                          \
       }                                                                                                                 \
-      if (on)                                                                                                           \
+      if (__slviewer_debug_on)                                                                                          \
         Dout(cntrl, "Entering " << data);                                                                               \
       else                                                                                                              \
-        __slviewer_debug_indentation = 0;                                                                    \
+        __slviewer_debug_indentation = 0;                                                                               \
     }                                                                                                                   \
   }                                                                                                                     \
   debug::Indent __slviewer_debug_indent(__slviewer_debug_indentation);

@@ -86,9 +86,9 @@ public:
 			glNormalPointer(GL_FLOAT, LLVertexBuffer::sTypeSize[TYPE_NORMAL], (void*)(base + mOffsets[TYPE_NORMAL]));
 		}
 		if (data_mask & MAP_TEXCOORD3)
-		{ //substitute tex coord 0 for tex coord 3
+		{ //substitute tex coord 1 for tex coord 3
 			glClientActiveTextureARB(GL_TEXTURE3_ARB);
-			glTexCoordPointer(2,GL_FLOAT, LLVertexBuffer::sTypeSize[TYPE_TEXCOORD0], (void*)(base + mOffsets[TYPE_TEXCOORD0]));
+			glTexCoordPointer(2,GL_FLOAT, LLVertexBuffer::sTypeSize[TYPE_TEXCOORD1], (void*)(base + mOffsets[TYPE_TEXCOORD1]));
 			glClientActiveTextureARB(GL_TEXTURE0_ARB);
 		}
 		if (data_mask & MAP_TEXCOORD2)
@@ -103,10 +103,10 @@ public:
 			glTexCoordPointer(2,GL_FLOAT, LLVertexBuffer::sTypeSize[TYPE_TEXCOORD1], (void*)(base + mOffsets[TYPE_TEXCOORD1]));
 			glClientActiveTextureARB(GL_TEXTURE0_ARB);
 		}
-		if (data_mask & MAP_BINORMAL)
+		if (data_mask & MAP_TANGENT)
 		{
 			glClientActiveTextureARB(GL_TEXTURE2_ARB);
-			glTexCoordPointer(3,GL_FLOAT, LLVertexBuffer::sTypeSize[TYPE_BINORMAL], (void*)(base + mOffsets[TYPE_BINORMAL]));
+			glTexCoordPointer(3,GL_FLOAT, LLVertexBuffer::sTypeSize[TYPE_TANGENT], (void*)(base + mOffsets[TYPE_TANGENT]));
 			glClientActiveTextureARB(GL_TEXTURE0_ARB);
 		}
 		if (data_mask & MAP_TEXCOORD0)
@@ -473,7 +473,7 @@ void LLVOSurfacePatch::updateNorthGeometry(LLFace *facep,
 	S32 vertex_count = 0;
 	S32 i, x, y;
 
-	S32 num_vertices, num_indices;
+	S32 num_vertices;
 
 	U32 render_stride = mLastStride;
 	S32 patch_size = mPatchp->getSurface()->getGridsPerPatchEdge();
@@ -491,7 +491,6 @@ void LLVOSurfacePatch::updateNorthGeometry(LLFace *facep,
 	if (north_stride == render_stride)
 	{
 		num_vertices = 2 * length + 1;
-		num_indices = length * 6 - 3;
 
 		facep->mCenterAgent = (mPatchp->getPointAgent(8, 15) + mPatchp->getPointAgent(8, 16))*0.5f;
 
@@ -542,7 +541,6 @@ void LLVOSurfacePatch::updateNorthGeometry(LLFace *facep,
 	{
 		// North stride is longer (has less vertices)
 		num_vertices = length + length/2 + 1;
-		num_indices = half_length*9 - 3;
 
 		facep->mCenterAgent = (mPatchp->getPointAgent(7, 15) + mPatchp->getPointAgent(8, 16))*0.5f;
 
@@ -601,7 +599,6 @@ void LLVOSurfacePatch::updateNorthGeometry(LLFace *facep,
 		length = patch_size / north_stride;
 		half_length = length / 2;
 		num_vertices = length + half_length + 1;
-		num_indices = 9*half_length - 3;
 
 		facep->mCenterAgent = (mPatchp->getPointAgent(15, 7) + mPatchp->getPointAgent(16, 8))*0.5f;
 
@@ -672,7 +669,7 @@ void LLVOSurfacePatch::updateEastGeometry(LLFace *facep,
 {
 	S32 i, x, y;
 
-	S32 num_vertices, num_indices;
+	S32 num_vertices;
 
 	U32 render_stride = mLastStride;
 	S32 patch_size = mPatchp->getSurface()->getGridsPerPatchEdge();
@@ -685,7 +682,6 @@ void LLVOSurfacePatch::updateEastGeometry(LLFace *facep,
 	if (east_stride == render_stride)
 	{
 		num_vertices = 2 * length + 1;
-		num_indices = length * 6 - 3;
 
 		facep->mCenterAgent = (mPatchp->getPointAgent(8, 15) + mPatchp->getPointAgent(8, 16))*0.5f;
 
@@ -734,7 +730,6 @@ void LLVOSurfacePatch::updateEastGeometry(LLFace *facep,
 	{
 		// East stride is longer (has less vertices)
 		num_vertices = length + half_length + 1;
-		num_indices = half_length*9 - 3;
 
 		facep->mCenterAgent = (mPatchp->getPointAgent(7, 15) + mPatchp->getPointAgent(8, 16))*0.5f;
 
@@ -789,7 +784,6 @@ void LLVOSurfacePatch::updateEastGeometry(LLFace *facep,
 		length = patch_size / east_stride;
 		half_length = length / 2;
 		num_vertices = length + length/2 + 1;
-		num_indices = 9*(length/2) - 3;
 
 		facep->mCenterAgent = (mPatchp->getPointAgent(15, 7) + mPatchp->getPointAgent(16, 8))*0.5f;
 
@@ -948,8 +942,8 @@ void LLVOSurfacePatch::getGeomSizesEast(const S32 stride, const S32 east_stride,
 	}
 }
 
-BOOL LLVOSurfacePatch::lineSegmentIntersect(const LLVector3& start, const LLVector3& end, S32 face, BOOL pick_transparent, S32 *face_hitp,
-									  LLVector3* intersection,LLVector2* tex_coord, LLVector3* normal, LLVector3* bi_normal)
+BOOL LLVOSurfacePatch::lineSegmentIntersect(const LLVector4a& start, const LLVector4a& end, S32 face, BOOL pick_transparent, S32 *face_hitp,
+									  LLVector4a* intersection,LLVector2* tex_coord, LLVector4a* normal, LLVector4a* tangent)
 	
 {
 
@@ -958,7 +952,9 @@ BOOL LLVOSurfacePatch::lineSegmentIntersect(const LLVector3& start, const LLVect
 		return FALSE;
 	}
 
-	LLVector3 delta = end-start;
+	LLVector4a da;
+	da.setSub(end, start);
+	LLVector3 delta(da.getF32ptr());
 		
 	LLVector3 pdelta = delta;
 	pdelta.mV[2] = 0;
@@ -967,7 +963,9 @@ BOOL LLVOSurfacePatch::lineSegmentIntersect(const LLVector3& start, const LLVect
 	
 	F32 tdelta = 1.f/plength;
 
-	LLVector3 origin = start - mRegionp->getOriginAgent();
+	LLVector3 v_start(start.getF32ptr());
+
+	LLVector3 origin = v_start - mRegionp->getOriginAgent();
 
 	if (mRegionp->getLandHeightRegion(origin) > origin.mV[2])
 	{
@@ -1022,12 +1020,12 @@ BOOL LLVOSurfacePatch::lineSegmentIntersect(const LLVector3& start, const LLVect
 					{
 						sample.mV[2] = mRegionp->getLandHeightRegion(sample);
 					}
-					*intersection = sample + mRegionp->getOriginAgent();
+					intersection->load3((sample + mRegionp->getOriginAgent()).mV);
 				}
 
 				if (normal)
 				{
-					*normal = mRegionp->getLand().resolveNormalGlobal(mRegionp->getPosGlobalFromRegion(sample));
+					normal->load3((mRegionp->getLand().resolveNormalGlobal(mRegionp->getPosGlobalFromRegion(sample))).mV);
 				}
 
 				return TRUE;
@@ -1049,6 +1047,7 @@ void LLVOSurfacePatch::updateSpatialExtents(LLVector4a& newMin, LLVector4a &newM
 {
 	LLVector3 posAgent = getPositionAgent();
 	LLVector3 scale = getScale();
+	//make z-axis scale at least 1 to avoid shadow artifacts on totally flat land
 	scale.mV[VZ] = llmax(scale.mV[VZ], 1.f);
 	newMin.load3( (posAgent-scale*0.5f).mV); // Changing to 2.f makes the culling a -little- better, but still wrong
 	newMax.load3( (posAgent+scale*0.5f).mV);

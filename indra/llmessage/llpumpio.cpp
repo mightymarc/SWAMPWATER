@@ -35,7 +35,6 @@
 
 #include "llapr.h"
 #include "llfasttimer.h"
-#include "llmemtype.h"
 #include "llstl.h"
 #include "llstat.h"
 #include "llthread.h"
@@ -155,7 +154,6 @@ struct ll_delete_apr_pollset_fd_client_data
 	typedef std::pair<LLIOPipe::ptr_t, apr_pollfd_t> pipe_conditional_t;
 	void operator()(const pipe_conditional_t& conditional)
 	{
-		LLMemType m1(LLMemType::MTYPE_IO_PUMP);
 		S32* client_id = (S32*)conditional.second.client_data;
 		delete client_id;
 	}
@@ -177,13 +175,11 @@ LLPumpIO::LLPumpIO(void) :
 {
 	mCurrentChain = mRunningChains.end();
 
-	LLMemType m1(LLMemType::MTYPE_IO_PUMP);
 	initialize();
 }
 
 LLPumpIO::~LLPumpIO()
 {
-	LLMemType m1(LLMemType::MTYPE_IO_PUMP);
 #if LL_THREADS_APR
 	if (mChainsMutex) apr_thread_mutex_destroy(mChainsMutex);
 	if (mCallbackMutex) apr_thread_mutex_destroy(mCallbackMutex);
@@ -198,19 +194,15 @@ LLPumpIO::~LLPumpIO()
 	}
 }
 
-bool LLPumpIO::addChain(const chain_t& chain, F32 timeout, bool has_curl_request)
+bool LLPumpIO::addChain(chain_t const& chain, F32 timeout)
 {
-	LLMemType m1(LLMemType::MTYPE_IO_PUMP);
-	if(chain.empty()) return false;
+	chain_t::const_iterator it = chain.begin();
+	chain_t::const_iterator const end = chain.end();
+	if (it == end) return false;
 
-#if LL_THREADS_APR
-	LLScopedLock lock(mChainsMutex);
-#endif
 	LLChainInfo info;
-	info.mHasCurlRequest = has_curl_request;
 	info.setTimeoutSeconds(timeout);
 	info.mData = LLIOPipe::buffer_ptr_t(new LLBufferArray);
-	info.mData->setThreaded(has_curl_request);
 	LLLinkInfo link;
 #if LL_DEBUG_PIPE_TYPE_IN_PUMP
 	lldebugs << "LLPumpIO::addChain() " << chain[0] << " '"
@@ -218,14 +210,17 @@ bool LLPumpIO::addChain(const chain_t& chain, F32 timeout, bool has_curl_request
 #else
 	lldebugs << "LLPumpIO::addChain() " << chain[0] <<llendl;
 #endif
-	chain_t::const_iterator it = chain.begin();
-	chain_t::const_iterator end = chain.end();
 	for(; it != end; ++it)
 	{
+		info.mHasExpiration = info.mHasExpiration || (*it)->hasExpiration();
 		link.mPipe = (*it);
 		link.mChannels = info.mData->nextChannel();
 		info.mChainLinks.push_back(link);
 	}
+
+#if LL_THREADS_APR
+	LLScopedLock lock(mChainsMutex);
+#endif
 	mPendingChains.push_back(info);
 	return true;
 }
@@ -236,17 +231,14 @@ bool LLPumpIO::addChain(
 	LLSD context,
 	F32 timeout)
 {
-	LLMemType m1(LLMemType::MTYPE_IO_PUMP);
-
 	// remember that if the caller is providing a full link
 	// description, we need to have that description matched to a
 	// particular buffer.
 	if(!data) return false;
-	if(links.empty()) return false;
+	links_t::const_iterator link = links.begin();
+	links_t::const_iterator const end = links.end();
+	if (link == end) return false;
 
-#if LL_THREADS_APR
-	LLScopedLock lock(mChainsMutex);
-#endif
 #if LL_DEBUG_PIPE_TYPE_IN_PUMP
 	lldebugs << "LLPumpIO::addChain() " << links[0].mPipe << " '"
 		<< typeid(*(links[0].mPipe)).name() << "'" << llendl;
@@ -258,6 +250,17 @@ bool LLPumpIO::addChain(
 	info.mChainLinks = links;
 	info.mData = data;
 	info.mContext = context;
+	for (; link != end; ++link)
+	{
+		if (link->mPipe->hasExpiration())
+		{
+			info.mHasExpiration = true;
+			break;
+		}
+	}
+#if LL_THREADS_APR
+	LLScopedLock lock(mChainsMutex);
+#endif
 	mPendingChains.push_back(info);
 	return true;
 }
@@ -314,7 +317,6 @@ static std::string events_2_string(apr_int16_t events)
 
 bool LLPumpIO::setConditional(LLIOPipe* pipe, const apr_pollfd_t* poll)
 {
-	LLMemType m1(LLMemType::MTYPE_IO_PUMP);
 	if(!pipe) return false;
 	ll_debug_poll_fd("Set conditional", poll);
 
@@ -425,7 +427,6 @@ bool LLPumpIO::sleepChain(F64 seconds)
 
 bool LLPumpIO::copyCurrentLinkInfo(links_t& links) const
 {
-	LLMemType m1(LLMemType::MTYPE_IO_PUMP);
 	if(mRunningChains.end() == mCurrentChain)
 	{
 		return false;
@@ -443,6 +444,7 @@ void LLPumpIO::pump()
 }
 
 static LLFastTimer::DeclareTimer FTM_PUMP_IO("Pump IO");
+static LLFastTimer::DeclareTimer FTM_PUMP_POLL("Pump Poll");
 
 LLPumpIO::current_chain_t LLPumpIO::removeRunningChain(LLPumpIO::current_chain_t& run_chain) 
 {
@@ -456,7 +458,6 @@ LLPumpIO::current_chain_t LLPumpIO::removeRunningChain(LLPumpIO::current_chain_t
 //timeout is in microseconds
 void LLPumpIO::pump(const S32& poll_timeout)
 {
-	LLMemType m1(LLMemType::MTYPE_IO_PUMP);
 	LLFastTimer t1(FTM_PUMP_IO);
 	//llinfos << "LLPumpIO::pump()" << llendl;
 
@@ -538,7 +539,7 @@ void LLPumpIO::pump(const S32& poll_timeout)
 		S32 count = 0;
 		S32 client_id = 0;
         {
-            LLPerfBlock polltime("pump_poll");
+			LLFastTimer _(FTM_PUMP_POLL);
             apr_pollset_poll(mPollset, poll_timeout, &count, &poll_fd);
         }
 		PUMP_DEBUG;
@@ -749,7 +750,6 @@ void LLPumpIO::pump(const S32& poll_timeout)
 
 bool LLPumpIO::respond(LLIOPipe* pipe)
 {
-	LLMemType m1(LLMemType::MTYPE_IO_PUMP);
 	if(NULL == pipe) return false;
 
 #if LL_THREADS_APR
@@ -768,7 +768,6 @@ bool LLPumpIO::respond(
 	LLIOPipe::buffer_ptr_t data,
 	LLSD context)
 {
-	LLMemType m1(LLMemType::MTYPE_IO_PUMP);
 	// if the caller is providing a full link description, we need to
 	// have that description matched to a particular buffer.
 	if(!data) return false;
@@ -791,7 +790,6 @@ static LLFastTimer::DeclareTimer FTM_PUMP_CALLBACK_CHAIN("Chain");
 
 void LLPumpIO::callback()
 {
-	LLMemType m1(LLMemType::MTYPE_IO_PUMP);
 	//llinfos << "LLPumpIO::callback()" << llendl;
 	if(true)
 	{
@@ -842,7 +840,6 @@ void LLPumpIO::control(LLPumpIO::EControl op)
 
 void LLPumpIO::initialize(void)
 {
-	LLMemType m1(LLMemType::MTYPE_IO_PUMP);
 	mPool.create();
 #if LL_THREADS_APR
 	// SJB: Windows defaults to NESTED and OSX defaults to UNNESTED, so use UNNESTED explicitly.
@@ -853,7 +850,6 @@ void LLPumpIO::initialize(void)
 
 void LLPumpIO::rebuildPollset()
 {
-	LLMemType m1(LLMemType::MTYPE_IO_PUMP);
 //	lldebugs << "LLPumpIO::rebuildPollset()" << llendl;
 	if(mPollset)
 	{
@@ -904,7 +900,6 @@ void LLPumpIO::rebuildPollset()
 void LLPumpIO::processChain(LLChainInfo& chain)
 {
 	PUMP_DEBUG;
-	LLMemType m1(LLMemType::MTYPE_IO_PUMP);
 	LLIOPipe::EStatus status = LLIOPipe::STATUS_OK;
 	links_t::iterator it = chain.mHead;
 	links_t::iterator end = chain.mChainLinks.end();
@@ -1086,14 +1081,14 @@ void LLPumpIO::processChain(LLChainInfo& chain)
 
 bool LLPumpIO::isChainExpired(LLChainInfo& chain)
 {
-	if(!chain.mHasCurlRequest)
+	if(!chain.mHasExpiration)
 	{
 		return false ;
 	}
 
 	for(links_t::iterator iter = chain.mChainLinks.begin(); iter != chain.mChainLinks.end(); ++iter)
 	{
-		if(!(*iter).mPipe->isValid())
+		if(!(*iter).mPipe->hasNotExpired())
 		{
 			return true ;
 		}
@@ -1106,7 +1101,8 @@ bool LLPumpIO::handleChainError(
 	LLChainInfo& chain,
 	LLIOPipe::EStatus error)
 {
-	LLMemType m1(LLMemType::MTYPE_IO_PUMP);
+	DoutEntering(dc::notice, "LLPumpIO::handleChainError(" << (void*)&chain << ", " << LLIOPipe::lookupStatusString(error) << ")");
+
 	links_t::reverse_iterator rit;
 	if(chain.mHead == chain.mChainLinks.end())
 	{
@@ -1168,21 +1164,17 @@ LLPumpIO::LLChainInfo::LLChainInfo() :
 	mInit(false),
 	mLock(0),
 	mEOS(false),
-	mHasCurlRequest(false),
+	mHasExpiration(false),
 	mDescriptorsPool(new LLAPRPool(LLThread::tldata().mRootPool))
 {
-	LLMemType m1(LLMemType::MTYPE_IO_PUMP);
 	mTimer.setTimerExpirySec(DEFAULT_CHAIN_EXPIRY_SECS);
 }
 
 void LLPumpIO::LLChainInfo::setTimeoutSeconds(F32 timeout)
 {
-	LLMemType m1(LLMemType::MTYPE_IO_PUMP);
 	if(timeout > 0.0f)
 	{
-		mTimer.start();
-		mTimer.reset();
-		mTimer.setTimerExpirySec(timeout);
+		mTimer.start(timeout);
 	}
 	else
 	{
@@ -1192,7 +1184,6 @@ void LLPumpIO::LLChainInfo::setTimeoutSeconds(F32 timeout)
 
 void LLPumpIO::LLChainInfo::adjustTimeoutSeconds(F32 delta)
 {
-	LLMemType m1(LLMemType::MTYPE_IO_PUMP);
 	if(mTimer.getStarted())
 	{
 		F64 expiry = mTimer.expiresAt();

@@ -103,6 +103,10 @@ LLFastTimerView::LLFastTimerView(const std::string& name, const LLRect& rect)
 	FTV_NUM_TIMERS = LLFastTimer::NamedTimer::instanceCount();
 	mPrintStats = -1;	
 	mAverageCyclesPerTimer = 0;
+	// <FS:LO> Making the ledgend part of fast timers scrollable
+	mOverLegend = false;
+	mScrollOffset = 0;
+	// </FS:LO>
 	LLUICtrlFactory::getInstance()->buildFloater(this, "floater_fast_timers.xml");
 }
 
@@ -258,6 +262,7 @@ BOOL LLFastTimerView::handleHover(S32 x, S32 y, MASK mask)
 	}
 	mHoverTimer = NULL;
 	mHoverID = NULL;
+	mOverLegend = false; // <FS:LO> Making the ledgend part of fast timers scrollable
 
 	if(LLFastTimer::sPauseHistory && mBarRect.pointInRect(x, y))
 	{
@@ -311,6 +316,7 @@ BOOL LLFastTimerView::handleHover(S32 x, S32 y, MASK mask)
 		{
 			mHoverID = timer_id;
 		}
+		mOverLegend = true; // <FS:LO> Making the ledgend part of fast timers scrollable
 	}
 	
 	return LLFloater::handleHover(x, y, mask);
@@ -358,10 +364,36 @@ BOOL LLFastTimerView::handleToolTip(S32 x, S32 y, std::string& msg, LLRect* stic
 
 BOOL LLFastTimerView::handleScrollWheel(S32 x, S32 y, S32 clicks)
 {
-	LLFastTimer::sPauseHistory = TRUE;
-	mScrollIndex = llclamp(	mScrollIndex + clicks,
-							0,
-							llmin(LLFastTimer::getLastFrameIndex(), (S32)LLFastTimer::NamedTimer::HISTORY_NUM - MAX_VISIBLE_HISTORY));
+	//LLFastTimer::sPauseHistory = TRUE;
+	//mScrollIndex = llclamp(	mScrollIndex + clicks,
+							//0,
+							//llmin(LLFastTimer::getLastFrameIndex(), (S32)LLFastTimer::NamedTimer::HISTORY_NUM - MAX_VISIBLE_HISTORY));
+	// <FS:LO> Making the ledgend part of fast timers scrollable
+	if(mOverLegend)
+	{
+		mScrollOffset += clicks;
+		S32 count = 0;
+		for (timer_tree_iterator_t it = begin_timer_tree(LLFastTimer::NamedTimer::getRootNamedTimer());
+			it != timer_tree_iterator_t();
+			++it)
+		{
+			count++;
+			LLFastTimer::NamedTimer* idp = (*it);
+			if (idp->getCollapsed()) 
+			{
+				it.skipDescendants();
+			}
+		}
+		mScrollOffset = llclamp(mScrollOffset,0,count-5);
+	}
+	else
+	{
+		LLFastTimer::sPauseHistory = TRUE;
+		mScrollIndex = llclamp(	mScrollIndex + clicks,
+								0,
+								llmin(LLFastTimer::getLastFrameIndex(), (S32)LLFastTimer::NamedTimer::HISTORY_NUM - MAX_VISIBLE_HISTORY));
+	}
+	// </FS:LO>
 	return TRUE;
 }
 
@@ -388,7 +420,7 @@ void LLFastTimerView::draw()
 
 	S32 left, top, right, bottom;
 	S32 x, y, barw, barh, dx, dy;
-	S32 texth, textw;
+	S32 texth;
 	LLPointer<LLUIImage> box_imagep = LLUI::getUIImage("rounded_square.tga");
 
 	// Draw the window background
@@ -429,7 +461,6 @@ void LLFastTimerView::draw()
 
 		tdesc = llformat("Full bar = %s [Click to pause/reset] [SHIFT-Click to toggle]",modedesc[mDisplayMode]);
 		LLFontGL::getFontMonospace()->renderUTF8(tdesc, 0, x, y, LLColor4::white, LLFontGL::LEFT, LLFontGL::TOP);
-		textw = LLFontGL::getFontMonospace()->getWidth(tdesc);
 
 		x = xleft, y -= (texth + 2);
 		tdesc = llformat("Justification = %s [CTRL-Click to toggle]",centerdesc[mDisplayCenter]);
@@ -453,8 +484,8 @@ void LLFastTimerView::draw()
 	sTimerColors[&LLFastTimer::NamedTimer::getRootNamedTimer()] = LLColor4::grey;
 
 	F32 hue = 0.f;
-
-	for (timer_tree_iterator_t it = begin_timer_tree(LLFastTimer::NamedTimer::getRootNamedTimer());
+	// <ALCH:LL> Move color generation down to be in the next loop.
+	/*for (timer_tree_iterator_t it = begin_timer_tree(LLFastTimer::NamedTimer::getRootNamedTimer());
 		it != timer_tree_iterator_t();
 		++it)
 	{
@@ -471,7 +502,8 @@ void LLFastTimerView::draw()
 		child_color.setHSL(hue, saturation, lightness);
 
 		sTimerColors[idp] = child_color;
-	}
+	}*/
+	// </ALCH:LL>
 
 	const S32 LEGEND_WIDTH = 220;
 	{
@@ -479,11 +511,37 @@ void LLFastTimerView::draw()
 		S32 cur_line = 0;
 		ft_display_idx.clear();
 		std::map<LLFastTimer::NamedTimer*, S32> display_line;
+		S32 mScrollOffset_tmp = mScrollOffset; // <FS:LO> Making the ledgend part of fast timers scrollable
 		for (timer_tree_iterator_t it = begin_timer_tree(LLFastTimer::NamedTimer::getRootNamedTimer());
 			it != timer_tree_iterator_t();
 			++it)
 		{
 			LLFastTimer::NamedTimer* idp = (*it);
+			// <ALCH:LL> Move color generation down to be in the next loop.
+			const F32 HUE_INCREMENT = 0.23f;
+			hue = fmodf(hue + HUE_INCREMENT, 1.f);
+			// saturation increases with depth
+			F32 saturation = clamp_rescale((F32)idp->getDepth(), 0.f, 3.f, 0.f, 1.f);
+			// lightness alternates with depth
+			F32 lightness = idp->getDepth() % 2 ? 0.5f : 0.6f;
+
+			LLColor4 child_color;
+			child_color.setHSL(hue, saturation, lightness);
+
+			sTimerColors[idp] = child_color;
+			// </ALCH:LL>
+
+			// <FS:LO> Making the ledgend part of fast timers scrollable
+			if(mScrollOffset_tmp)
+			{
+				--mScrollOffset_tmp;
+				if (idp->getCollapsed()) 
+				{
+					it.skipDescendants();
+				}
+				continue;
+			}
+			// </FS:LO>
 			display_line[idp] = cur_line;
 			ft_display_idx.push_back(idp);
 			cur_line++;
@@ -555,8 +613,6 @@ void LLFastTimerView::draw()
 											is_child_of_hover_item ? LLFontGL::BOLD : LLFontGL::NORMAL);
 
 			y -= (texth + 2);
-
-			textw = dx + LLFontGL::getFontMonospace()->getWidth(idp->getName()) + 40;
 
 			if (idp->getCollapsed()) 
 			{
@@ -927,7 +983,7 @@ void LLFastTimerView::draw()
 				gGL.color4f(col[0], col[1], col[2], alpha);				
 				gGL.begin(LLRender::TRIANGLE_STRIP);
 				for (U32 j = llmax(0, LLFastTimer::NamedTimer::HISTORY_NUM - LLFastTimer::getLastFrameIndex());
-					j < LLFastTimer::NamedTimer::HISTORY_NUM;
+					j < (U32)LLFastTimer::NamedTimer::HISTORY_NUM;
 					j++)
 				{
 					U64 ticks = idp->getHistoricalCount(j);
@@ -1102,7 +1158,7 @@ void LLFastTimerView::exportCharts(const std::string& base, const std::string& t
 	{ //read base log into memory
 		S32 i = 0;
 		std::ifstream is(base.c_str());
-		while (!is.eof() && LLSDSerialize::fromXML(cur, is))
+		while (!is.eof() && LLSDSerialize::fromXML(cur, is) > 0)
 		{
 			base_data[i++] = cur;
 		}
@@ -1115,7 +1171,7 @@ void LLFastTimerView::exportCharts(const std::string& base, const std::string& t
 	{ //read current log into memory
 		S32 i = 0;
 		std::ifstream is(target.c_str());
-		while (!is.eof() && LLSDSerialize::fromXML(cur, is))
+		while (!is.eof() && LLSDSerialize::fromXML(cur, is) > 0)
 		{
 			cur_data[i++] = cur;
 
@@ -1406,7 +1462,7 @@ LLSD LLFastTimerView::analyzePerformanceLogDefault(std::istream& is)
 	stats_map_t time_stats;
 	stats_map_t sample_stats;
 
-	while (!is.eof() && LLSDSerialize::fromXML(cur, is))
+	while (!is.eof() && LLSDSerialize::fromXML(cur, is) > 0)
 	{
 		for (LLSD::map_iterator iter = cur.beginMap(); iter != cur.endMap(); ++iter)
 		{

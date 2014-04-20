@@ -74,7 +74,10 @@ LLVOWater::LLVOWater(const LLUUID &id,
 {
 	// Terrain must draw during selection passes so it can block objects behind it.
 	mbCanSelect = FALSE;
-	setScale(LLVector3(256.f, 256.f, 0.f)); // Hack for setting scale for bounding boxes/visibility.
+// <FS:CR> Aurora Sim
+	//setScale(LLVector3(256.f, 256.f, 0.f)); // Hack for setting scale for bounding boxes/visibility.
+	setScale(LLVector3(mRegionp->getWidth(), mRegionp->getWidth(), 0.f));
+// </FS:CR> Aurora Sim
 
 	mUseTexture = TRUE;
 	mIsEdgePatch = FALSE;
@@ -106,17 +109,8 @@ void LLVOWater::updateTextures()
 }
 
 // Never gets called
-BOOL LLVOWater::idleUpdate(LLAgent &agent, LLWorld &world, const F64 &time)
+void  LLVOWater::idleUpdate(LLAgent &agent, LLWorld &world, const F64 &time)
 {
- 	/*if (mDead || !(gPipeline.hasRenderType(LLPipeline::RENDER_TYPE_WATER)))
-	{
-		return TRUE;
-	}
-	if (mDrawable) 
-	{
-		gPipeline.markRebuild(mDrawable, LLDrawable::REBUILD_VOLUME, TRUE);
-	}*/
-	return TRUE;
 }
 
 LLDrawable *LLVOWater::createDrawable(LLPipeline *pipeline)
@@ -140,6 +134,7 @@ LLDrawable *LLVOWater::createDrawable(LLPipeline *pipeline)
 }
 
 static LLFastTimer::DeclareTimer FTM_UPDATE_WATER("Update Water");
+
 BOOL LLVOWater::updateGeometry(LLDrawable *drawable)
 {
 	LLFastTimer ftm(FTM_UPDATE_WATER);
@@ -170,7 +165,8 @@ BOOL LLVOWater::updateGeometry(LLDrawable *drawable)
 	static const unsigned int indices_per_quad = 6;
 
 	static const LLCachedControl<bool> render_transparent_water("RenderTransparentWater",false);
-	const S32 size = (render_transparent_water && LLGLSLShader::sNoFixedFunction) ? 16 : 1;
+	static const LLCachedControl<U32> water_subdiv("SianaVoidWaterSubdivision", 16);
+	const S32 size = (render_transparent_water && LLGLSLShader::sNoFixedFunction) ? water_subdiv : 1;
 	const S32 num_quads = size * size;
 	face->setSize(vertices_per_quad * num_quads,
 				  indices_per_quad * num_quads);
@@ -212,6 +208,7 @@ BOOL LLVOWater::updateGeometry(LLDrawable *drawable)
 	{ //bump edge patches down 10 cm to prevent aliasing along edges
 		z_fudge = -0.1f;
 	}
+
 	for (y = 0; y < size; y++)
 	{
 		for (x = 0; x < size; x++)

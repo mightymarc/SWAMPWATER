@@ -57,8 +57,6 @@ public:
 	static U32 sBytesPooled;
 	static U32 sIndexBytesPooled;
 	
-	static U32 sCurGLName;
-
 	LLVBOPool(U32 vboUsage, U32 vboType);
 		
 	const U32 mUsage;
@@ -86,12 +84,12 @@ public:
 		volatile U8* mClientData;
 	};
 
-	std::list<U32> mGLNamePool;
-
 	typedef std::list<Record> record_list_t;
 	std::vector<record_list_t> mFreeList;
 	std::vector<U32> mMissCount;
+
 };
+
 
 //============================================================================
 // base class 
@@ -141,7 +139,6 @@ public:
 	static void initClass(bool use_vbo, bool no_vbo_mapping);
 	static void cleanupClass();
 	static void setupClientArrays(U32 data_mask);
-	static void pushPositions(U32 mode, const LLVector4a* pos, U32 count);
 	static void drawArrays(U32 mode, const std::vector<LLVector3>& pos, const std::vector<LLVector3>& norm);
 	static void drawElements(U32 mode, const LLVector4a* pos, const LLVector2* tc, S32 num_indices, const U16* indicesp);
 
@@ -172,7 +169,7 @@ public:
 		TYPE_TEXCOORD3,
 		TYPE_COLOR,
 		TYPE_EMISSIVE,
-		TYPE_BINORMAL,
+		TYPE_TANGENT,
 		TYPE_WEIGHT,
 		TYPE_WEIGHT4,
 		TYPE_CLOTHWEIGHT,
@@ -190,7 +187,7 @@ public:
 		MAP_COLOR = (1<<TYPE_COLOR),
 		MAP_EMISSIVE = (1<<TYPE_EMISSIVE),
 		// These use VertexAttribPointer and should possibly be made generic
-		MAP_BINORMAL = (1<<TYPE_BINORMAL),
+		MAP_TANGENT = (1<<TYPE_TANGENT),
 		MAP_WEIGHT = (1<<TYPE_WEIGHT),
 		MAP_WEIGHT4 = (1<<TYPE_WEIGHT4),
 		MAP_CLOTHWEIGHT = (1<<TYPE_CLOTHWEIGHT),
@@ -221,6 +218,7 @@ protected:
 	void	unmapBuffer();
 		
 public:
+
 	LLVertexBuffer(U32 typemask, S32 usage);
 	
 	// map for data access
@@ -248,17 +246,18 @@ public:
 	bool getIndexStrider(LLStrider<U16>& strider, S32 index=0, S32 count = -1, bool map_range = false);
 	bool getTexCoord0Strider(LLStrider<LLVector2>& strider, S32 index=0, S32 count = -1, bool map_range = false);
 	bool getTexCoord1Strider(LLStrider<LLVector2>& strider, S32 index=0, S32 count = -1, bool map_range = false);
+	bool getTexCoord2Strider(LLStrider<LLVector2>& strider, S32 index=0, S32 count = -1, bool map_range = false);
 	bool getNormalStrider(LLStrider<LLVector3>& strider, S32 index=0, S32 count = -1, bool map_range = false);
-	bool getBinormalStrider(LLStrider<LLVector3>& strider, S32 index=0, S32 count = -1, bool map_range = false);
+	bool getTangentStrider(LLStrider<LLVector3>& strider, S32 index=0, S32 count = -1, bool map_range = false);
+	bool getTangentStrider(LLStrider<LLVector4a>& strider, S32 index=0, S32 count = -1, bool map_range = false);
 	bool getColorStrider(LLStrider<LLColor4U>& strider, S32 index=0, S32 count = -1, bool map_range = false);
-	bool getTextureIndexStrider(LLStrider<LLColor4U>& strider, S32 index=0, S32 count = -1, bool map_range = false);
 	bool getEmissiveStrider(LLStrider<LLColor4U>& strider, S32 index=0, S32 count = -1, bool map_range = false);
 	bool getWeightStrider(LLStrider<F32>& strider, S32 index=0, S32 count = -1, bool map_range = false);
 	bool getWeight4Strider(LLStrider<LLVector4>& strider, S32 index=0, S32 count = -1, bool map_range = false);
 	bool getClothWeightStrider(LLStrider<LLVector4>& strider, S32 index=0, S32 count = -1, bool map_range = false);
 	
 
-	bool useVBOs() const;
+	bool	useVBOs() const;
 	bool isEmpty() const					{ return mEmpty; }
 	bool isLocked() const					{ return mVertexLocked || mIndexLocked; }
 	S32 getNumVerts() const					{ return mNumVerts; }

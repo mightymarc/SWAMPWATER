@@ -45,6 +45,7 @@
 #include "llagentcamera.h"
 #include "llbutton.h"
 #include "llviewercontrol.h"
+#include "llviewerkeyboard.h"
 #include "lldrawable.h"
 #include "llhoverview.h"
 #include "llhudmanager.h"
@@ -57,6 +58,7 @@
 #include "llviewerwindow.h"
 #include "llvoavatarself.h"
 #include "llmorphview.h"
+#include "llfloatercustomize.h"
 
 // Globals
 BOOL gCameraBtnZoom = TRUE;
@@ -221,7 +223,7 @@ void LLToolCamera::pickCallback(const LLPickInfo& pick_info)
 			gViewerWindow->getLeftMouseDown() && 
 			!freeze_time &&
 			(hit_obj == gAgentAvatarp || 
-				(hit_obj && hit_obj->isAttachment() && LLVOAvatar::findAvatarFromAttachment(hit_obj)->isSelf())))
+			 (hit_obj && hit_obj->isAttachment() && LLVOAvatar::findAvatarFromAttachment(hit_obj)->isSelf())))
 		{
 			LLToolCamera::getInstance()->mMouseSteering = TRUE;
 		}
@@ -232,6 +234,7 @@ void LLToolCamera::pickCallback(const LLPickInfo& pick_info)
 
 	if( CAMERA_MODE_CUSTOMIZE_AVATAR == gAgentCamera.getCameraMode() )
 	{
+		if(CAMERA_MODE_CUSTOMIZE_AVATAR == gAgentCamera.getCameraMode())
 		gAgentCamera.setFocusOnAvatar(FALSE, FALSE);
 		
 		LLVector3d cam_pos = gAgentCamera.getCameraPositionGlobal();
@@ -310,14 +313,18 @@ BOOL LLToolCamera::handleMouseUp(S32 x, S32 y, MASK mask)
 	return TRUE;
 }
 
+static bool right_hold_mouse_walk=false;
 
 BOOL LLToolCamera::handleHover(S32 x, S32 y, MASK mask)
 {
+	if(right_hold_mouse_walk)
+	{
+		agent_push_forward(KEYSTATE_LEVEL);
+	}
+
 	S32 dx = gViewerWindow->getCurrentMouseDX();
 	S32 dy = gViewerWindow->getCurrentMouseDY();
-	
-	BOOL moved_outside_slop = FALSE;
-	
+
 	if (hasMouseCapture() && mValidClickPoint)
 	{
 		mAccumX += llabs(dx);
@@ -325,19 +332,11 @@ BOOL LLToolCamera::handleHover(S32 x, S32 y, MASK mask)
 
 		if (mAccumX >= SLOP_RANGE)
 		{
-			if (!mOutsideSlopX)
-			{
-				moved_outside_slop = TRUE;
-			}
 			mOutsideSlopX = TRUE;
 		}
 
 		if (mAccumY >= SLOP_RANGE)
 		{
-			if (!mOutsideSlopY)
-			{
-				moved_outside_slop = TRUE;
-			}
 			mOutsideSlopY = TRUE;
 		}
 	}
@@ -457,8 +456,36 @@ BOOL LLToolCamera::handleHover(S32 x, S32 y, MASK mask)
 	return TRUE;
 }
 
+BOOL LLToolCamera::handleRightMouseDown(S32 x, S32 y, MASK mask)
+{
+	if(mMouseSteering)
+	{
+		agent_push_forward(KEYSTATE_DOWN);
+		right_hold_mouse_walk = true;
+		return TRUE;
+	}
+	else
+	{
+		return FALSE;
+	}
+}
+
+BOOL LLToolCamera::handleRightMouseUp(S32 x, S32 y, MASK mask)
+{
+	if(mMouseSteering || right_hold_mouse_walk)
+	{
+		agent_push_forward(KEYSTATE_UP);
+		right_hold_mouse_walk = false;
+		return TRUE;
+	}
+	else
+	{
+		return FALSE;
+	}
+}
 
 void LLToolCamera::onMouseCaptureLost()
 {
 	releaseMouse();
+	handleRightMouseUp(0,0,0);
 }

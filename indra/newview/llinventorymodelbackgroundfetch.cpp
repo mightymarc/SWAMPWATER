@@ -37,6 +37,11 @@
 #include "llviewermessage.h"
 #include "llviewerregion.h"
 #include "llviewerwindow.h"
+#include "hippogridmanager.h"
+
+class AIHTTPTimeoutPolicy;
+extern AIHTTPTimeoutPolicy inventoryModelFetchDescendentsResponder_timeout;
+extern AIHTTPTimeoutPolicy inventoryModelFetchItemResponder_timeout;
 
 const F32 MAX_TIME_FOR_SINGLE_FETCH = 10.f;
 const S32 MAX_FETCH_RETRIES = 10;
@@ -111,7 +116,6 @@ void LLInventoryModelBackgroundFetch::start(const LLUUID& id, BOOL recursive)
 	{	// it's a folder, do a bulk fetch
 		LL_DEBUGS("InventoryFetch") << "Start fetching category: " << id << ", recursive: " << recursive << LL_ENDL;
 
-		mBackgroundFetchActive = TRUE;
 		mFolderFetchActive = true;
 		if (id.isNull())
 		{
@@ -120,12 +124,14 @@ void LLInventoryModelBackgroundFetch::start(const LLUUID& id, BOOL recursive)
 				mRecursiveInventoryFetchStarted |= recursive;
 				mFetchQueue.push_back(FetchQueueInfo(gInventory.getRootFolderID(), recursive));
 				gIdleCallbacks.addFunction(&LLInventoryModelBackgroundFetch::backgroundFetchCB, NULL);
+				mBackgroundFetchActive = TRUE;
 			}
 			if (!mRecursiveLibraryFetchStarted)
 			{
 				mRecursiveLibraryFetchStarted |= recursive;
 				mFetchQueue.push_back(FetchQueueInfo(gInventory.getLibraryRootFolderID(), recursive));
 				gIdleCallbacks.addFunction(&LLInventoryModelBackgroundFetch::backgroundFetchCB, NULL);
+				mBackgroundFetchActive = TRUE;
 			}
 		}
 		else
@@ -135,6 +141,7 @@ void LLInventoryModelBackgroundFetch::start(const LLUUID& id, BOOL recursive)
 			{
 				mFetchQueue.push_front(FetchQueueInfo(id, recursive));
 				gIdleCallbacks.addFunction(&LLInventoryModelBackgroundFetch::backgroundFetchCB, NULL);
+				mBackgroundFetchActive = TRUE;
 			}
 			if (id == gInventory.getLibraryRootFolderID())
 			{
@@ -174,6 +181,11 @@ void LLInventoryModelBackgroundFetch::setAllFoldersFetched()
 		mAllFoldersFetched = TRUE;
 	}
 	mFolderFetchActive = false;
+	if (mBackgroundFetchActive)
+	{
+	  gIdleCallbacks.deleteFunction(&LLInventoryModelBackgroundFetch::backgroundFetchCB, NULL);
+	  mBackgroundFetchActive = FALSE;
+	}
 }
 
 void LLInventoryModelBackgroundFetch::backgroundFetchCB(void *)
@@ -181,18 +193,37 @@ void LLInventoryModelBackgroundFetch::backgroundFetchCB(void *)
 	LLInventoryModelBackgroundFetch::instance().backgroundFetch();
 }
 
-//static 
 void LLInventoryModelBackgroundFetch::backgroundFetch()
 {
-	if (mBackgroundFetchActive && gAgent.getRegion())
+	LLViewerRegion* region = gAgent.getRegion();
+	if (mBackgroundFetchActive && region && region->capabilitiesReceived())
 	{
-		// If we'll be using the capability, we'll be sending batches and the background thing isn't as important.
-		if (gSavedSettings.getBOOL("UseHTTPInventory")) 
+		if (gSavedSettings.getBOOL("UseHTTPInventory"))
 		{
-			bulkFetch();
-			return;
-		}
-		
+			// If we'll be using the capability, we'll be sending batches and the background thing isn't as important.
+			std::string url = region->getCapability("FetchInventory2");
+			if (!url.empty())
+			{
+				bool mPerServicePtr_initialized = !!mPerServicePtr;
+				if (!mPerServicePtr_initialized)
+				{
+					// One time initialization needed for bulkFetch().
+					std::string servicename = AIPerService::extract_canonical_servicename(url);
+					if (!servicename.empty())
+					{
+						llinfos << "Initialized service name for bulk inventory fetching with \"" << servicename << "\"." << llendl;
+						mPerServicePtr = AIPerService::instance(servicename);
+						mPerServicePtr_initialized = true;
+					}
+				}
+				if (mPerServicePtr_initialized)
+				{
+					bulkFetch();
+					return;
+				}
+			}
+	  }
+
 #if 1
 		//--------------------------------------------------------------------------------
 		// DEPRECATED OLD CODE
@@ -202,10 +233,7 @@ void LLInventoryModelBackgroundFetch::backgroundFetch()
 		if (mFetchQueue.empty())
 		{
 			llinfos << "Inventory fetch completed" << llendl;
-
 			setAllFoldersFetched();
-			mBackgroundFetchActive = false;
-			mFolderFetchActive = false;
 
 			return;
 		}
@@ -365,8 +393,10 @@ class LLInventoryModelFetchItemResponder : public LLInventoryModel::fetchInvento
 {
 public:
 	LLInventoryModelFetchItemResponder(const LLSD& request_sd) : LLInventoryModel::fetchInventoryResponder(request_sd) {};
-	void result(const LLSD& content);			
-	void error(U32 status, const std::string& reason);
+	/*virtual*/ void result(const LLSD& content);			
+	/*virtual*/ void error(U32 status, const std::string& reason);
+	/*virtual*/ AIHTTPTimeoutPolicy const& getHTTPTimeoutPolicy(void) const { return inventoryModelFetchItemResponder_timeout; }
+	/*virtual*/ char const* getName(void) const { return "LLInventoryModelFetchItemResponder"; }
 };
 
 void LLInventoryModelFetchItemResponder::result( const LLSD& content )
@@ -381,17 +411,19 @@ void LLInventoryModelFetchItemResponder::error( U32 status, const std::string& r
 	LLInventoryModelBackgroundFetch::instance().incrFetchCount(-1);
 }
 
-
-class LLInventoryModelFetchDescendentsResponder: public LLHTTPClient::Responder
+class LLInventoryModelFetchDescendentsResponder : public LLHTTPClient::ResponderWithResult
 {
 	public:
 	LLInventoryModelFetchDescendentsResponder(const LLSD& request_sd, uuid_vec_t recursive_cats) : 
 		mRequestSD(request_sd),
 		mRecursiveCatUUIDs(recursive_cats)
 	{};
-	//LLInventoryModelFetchDescendentsResponder() {};
-	void result(const LLSD& content);
-	void error(U32 status, const std::string& reason);
+	/*virtual*/ void result(const LLSD& content);
+	/*virtual*/ void error(U32 status, const std::string& reason);
+	/*virtual*/ AICapabilityType capability_type(void) const { return cap_inventory; }
+	/*virtual*/ AIHTTPTimeoutPolicy const& getHTTPTimeoutPolicy(void) const { return inventoryModelFetchDescendentsResponder_timeout; }
+	/*virtual*/ char const* getName(void) const { return "LLInventoryModelFetchDescendentsResponder"; }
+
 protected:
 	BOOL getIsRecursive(const LLUUID& cat_id) const;
 private:
@@ -538,7 +570,7 @@ void LLInventoryModelFetchDescendentsResponder::error(U32 status, const std::str
 						
 	fetcher->incrFetchCount(-1);
 
-	if (status==499) // timed out
+	if (is_internal_http_error_that_warrants_a_retry(status)) // timed out
 	{
 		for(LLSD::array_const_iterator folder_it = mRequestSD["folders"].beginArray();
 			folder_it != mRequestSD["folders"].endArray();
@@ -566,61 +598,43 @@ BOOL LLInventoryModelFetchDescendentsResponder::getIsRecursive(const LLUUID& cat
 }
 
 // Bundle up a bunch of requests to send all at once.
-// static   
 void LLInventoryModelBackgroundFetch::bulkFetch()
 {
 	//Background fetch is called from gIdleCallbacks in a loop until background fetch is stopped.
 	//If there are items in mFetchQueue, we want to check the time since the last bulkFetch was 
 	//sent.  If it exceeds our retry time, go ahead and fire off another batch.  
 	LLViewerRegion* region = gAgent.getRegion();
-	if (!region) return;
+	if (gDisconnected || !region) return;
 
-	S16 max_concurrent_fetches=8;
-	F32 new_min_time = 0.5f;			//HACK!  Clean this up when old code goes away entirely.
-	if (mMinTimeBetweenFetches < new_min_time) 
-	{
-		mMinTimeBetweenFetches=new_min_time;  //HACK!  See above.
-	}
-	
-	if (gDisconnected ||
-		(mFetchCount > max_concurrent_fetches) ||
-		(mFetchTimer.getElapsedTimeF32() < mMinTimeBetweenFetches))
-	{
-		return; // just bail if we are disconnected
-	}	
-
-	U32 item_count=0;
-	U32 folder_count=0;
-	U32 max_batch_size=5;
+	U32 const max_batch_size = 5;
 
 	U32 sort_order = gSavedSettings.getU32(LLInventoryPanel::DEFAULT_SORT_ORDER) & 0x1;
 
 	uuid_vec_t recursive_cats;
+
+	U32 folder_count=0;
+	U32 folder_lib_count=0;
+	U32 item_count=0;
+	U32 item_lib_count=0;
+
+	// This function can do up to four requests at once.
+	LLPointer<AIPerService::Approvement> approved_folder;
+	LLPointer<AIPerService::Approvement> approved_folder_lib;
+	LLPointer<AIPerService::Approvement> approved_item;
+	LLPointer<AIPerService::Approvement> approved_item_lib;
 
 	LLSD folder_request_body;
 	LLSD folder_request_body_lib;
 	LLSD item_request_body;
 	LLSD item_request_body_lib;
 
-	while (!mFetchQueue.empty() 
-			&& (item_count + folder_count) < max_batch_size)
+	while (!mFetchQueue.empty())
 	{
 		const FetchQueueInfo& fetch_info = mFetchQueue.front();
 		if (fetch_info.mIsCategory)
 		{
 			const LLUUID &cat_id = fetch_info.mUUID;
-			if (cat_id.isNull()) //DEV-17797
-			{
-				LLSD folder_sd;
-				folder_sd["folder_id"]		= LLUUID::null.asString();
-				folder_sd["owner_id"]		= gAgent.getID();
-				folder_sd["sort_order"]		= (LLSD::Integer)sort_order;
-				folder_sd["fetch_folders"]	= (LLSD::Boolean)FALSE;
-				folder_sd["fetch_items"]	= (LLSD::Boolean)TRUE;
-				folder_request_body["folders"].append(folder_sd);
-				folder_count++;
-			}
-			else
+			if (!cat_id.isNull())
 			{
 				const LLViewerInventoryCategory* cat = gInventory.getCategory(cat_id);
 		
@@ -636,10 +650,27 @@ void LLInventoryModelBackgroundFetch::bulkFetch()
 						folder_sd["fetch_items"]	= (LLSD::Boolean)TRUE;
 				    
 						if (ALEXANDRIA_LINDEN_ID == cat->getOwnerID())
+						{
+							if (folder_lib_count == max_batch_size ||
+								(folder_lib_count == 0 &&
+								 !(approved_folder_lib = AIPerService::approveHTTPRequestFor(mPerServicePtr, cap_inventory))))
+							{
+								break;
+							}
 							folder_request_body_lib["folders"].append(folder_sd);
+							++folder_lib_count;
+						}
 						else
+						{
+							if (folder_count == max_batch_size ||
+								(folder_count == 0 &&
+								 !(approved_folder = AIPerService::approveHTTPRequestFor(mPerServicePtr, cap_inventory))))
+							{
+								break;
+							}
 							folder_request_body["folders"].append(folder_sd);
-						folder_count++;
+							++folder_count;
+						}
 					}
 					// May already have this folder, but append child folders to list.
 					if (fetch_info.mRecursive)
@@ -655,9 +686,9 @@ void LLInventoryModelBackgroundFetch::bulkFetch()
 						}
 					}
 				}
+				if (fetch_info.mRecursive)
+					recursive_cats.push_back(cat_id);
 			}
-			if (fetch_info.mRecursive)
-				recursive_cats.push_back(cat_id);
 		}
 		else
 		{
@@ -669,89 +700,75 @@ void LLInventoryModelBackgroundFetch::bulkFetch()
 				item_sd["item_id"] = itemp->getUUID();
 				if (itemp->getPermissions().getOwner() == gAgent.getID())
 				{
+					if (item_count == max_batch_size ||
+						(item_count == 0 &&
+						 !(approved_item = AIPerService::approveHTTPRequestFor(mPerServicePtr, cap_inventory))))
+					{
+						break;
+					}
 					item_request_body.append(item_sd);
+					++item_count;
 				}
 				else
 				{
+					if (item_lib_count == max_batch_size ||
+						(item_lib_count == 0 &&
+						 !(approved_item_lib = AIPerService::approveHTTPRequestFor(mPerServicePtr, cap_inventory))))
+					{
+						break;
+					}
 					item_request_body_lib.append(item_sd);
+					++item_lib_count;
 				}
-				//itemp->fetchFromServer();
-				item_count++;
 			}
 		}
 
 		mFetchQueue.pop_front();
 	}
 		
-	if (item_count + folder_count > 0)
+	if (item_count + folder_count + item_lib_count + folder_lib_count > 0)
 	{
 		if (folder_count)
 		{
 			std::string url = region->getCapability("FetchInventoryDescendents2");   
-			mFetchCount++;
-			if (folder_request_body["folders"].size())
-			{
-				LLInventoryModelFetchDescendentsResponder *fetcher = new LLInventoryModelFetchDescendentsResponder(folder_request_body, recursive_cats);
-				LLHTTPClient::post(url, folder_request_body, fetcher, 300.0);
-			}
-			if (folder_request_body_lib["folders"].size())
-			{
-				std::string url_lib = gAgent.getRegion()->getCapability("FetchLibDescendents2");
-
-				LLInventoryModelFetchDescendentsResponder *fetcher = new LLInventoryModelFetchDescendentsResponder(folder_request_body_lib, recursive_cats);
-				LLHTTPClient::post(url_lib, folder_request_body_lib, fetcher, 300.0);
-			}
+			llassert(!url.empty());
+			++mFetchCount;
+			LLInventoryModelFetchDescendentsResponder *fetcher = new LLInventoryModelFetchDescendentsResponder(folder_request_body, recursive_cats);
+			LLHTTPClient::post_approved(url, folder_request_body, fetcher, approved_folder);
+		}
+		if (folder_lib_count)
+		{
+			std::string url = gAgent.getRegion()->getCapability("FetchLibDescendents2");
+			llassert(!url.empty());
+			++mFetchCount;
+			LLInventoryModelFetchDescendentsResponder *fetcher = new LLInventoryModelFetchDescendentsResponder(folder_request_body_lib, recursive_cats);
+			LLHTTPClient::post_approved(url, folder_request_body_lib, fetcher, approved_folder_lib);
 		}
 		if (item_count)
 		{
-			std::string url;
-
-			if (item_request_body.size())
-			{
-				mFetchCount++;
-				url = region->getCapability("FetchInventory2");
-				if (!url.empty())
-				{
-					LLSD body;
-					body["agent_id"]	= gAgent.getID();
-					body["items"] = item_request_body;
-
-					LLHTTPClient::post(url, body, new LLInventoryModelFetchItemResponder(body));
-				}
-				//else
-				//{
-				//	LLMessageSystem* msg = gMessageSystem;
-				//	msg->newMessage("FetchInventory");
-				//	msg->nextBlock("AgentData");
-				//	msg->addUUID("AgentID", gAgent.getID());
-				//	msg->addUUID("SessionID", gAgent.getSessionID());
-				//	msg->nextBlock("InventoryData");
-				//	msg->addUUID("OwnerID", mPermissions.getOwner());
-				//	msg->addUUID("ItemID", mUUID);
-				//	gAgent.sendReliableMessage();
-				//}
-			}
-
-			if (item_request_body_lib.size())
-			{
-				mFetchCount++;
-
-				url = region->getCapability("FetchLib2");
-				if (!url.empty())
-				{
-					LLSD body;
-					body["agent_id"]	= gAgent.getID();
-					body["items"] = item_request_body_lib;
-
-					LLHTTPClient::post(url, body, new LLInventoryModelFetchItemResponder(body));
-				}
-			}
+			std::string url = region->getCapability("FetchInventory2");
+			llassert(!url.empty());
+			++mFetchCount;
+			LLSD body;
+			body["agent_id"] = gAgent.getID();
+			body["items"] = item_request_body;
+			LLHTTPClient::post_approved(url, body, new LLInventoryModelFetchItemResponder(body), approved_item);
+		}
+		if (item_lib_count)
+		{
+			std::string url = region->getCapability("FetchLib2");
+			llassert(!url.empty());
+			++mFetchCount;
+			LLSD body;
+			body["agent_id"] = gAgent.getID();
+			body["items"] = item_request_body_lib;
+			LLHTTPClient::post_approved(url, body, new LLInventoryModelFetchItemResponder(body), approved_item_lib);
 		}
 		mFetchTimer.reset();
 	}
-
 	else if (isBulkFetchProcessingComplete())
 	{
+		llinfos << "Inventory fetch completed" << llendl;
 		setAllFoldersFetched();
 	}
 }

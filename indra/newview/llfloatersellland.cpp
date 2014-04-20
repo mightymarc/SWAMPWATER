@@ -33,6 +33,7 @@
 
 #include "llfloatersellland.h"
 
+#include "llavatarnamecache.h"
 #include "llfloateravatarpicker.h"
 #include "llfloater.h"
 #include "llfloaterland.h"
@@ -46,6 +47,7 @@
 #include "llviewerparcelmgr.h"
 #include "lluictrlfactory.h"
 #include "llviewerwindow.h"
+#include "lltrans.h"
 
 #include "hippogridmanager.h"
 
@@ -87,7 +89,7 @@ private:
 	static void doShowObjects(void *userdata);
 	static bool callbackHighlightTransferable(const LLSD& notification, const LLSD& response);
 
-	static void callbackAvatarPick(const std::vector<std::string>& names, const std::vector<LLUUID>& ids, void* data);
+	void callbackAvatarPick(const uuid_vec_t& ids, const std::vector<LLAvatarName>& names);
 
 public:
 	virtual BOOL postBuild();
@@ -182,7 +184,7 @@ BOOL LLFloaterSellLandUI::postBuild()
 {
 	childSetCommitCallback("sell_to", onChangeValue, this);
 	childSetCommitCallback("price", onChangeValue, this);
-	childSetPrevalidate("price", LLLineEditor::prevalidateNonNegativeS32);
+	getChild<LLLineEditor>("price")->setPrevalidate(LLLineEditor::prevalidateNonNegativeS32);
 	childSetCommitCallback("sell_objects", onChangeValue, this);
 	childSetAction("sell_to_select_agent", doSelectAgent, this);
 	childSetAction("cancel_btn", doCancel, this);
@@ -412,25 +414,23 @@ void LLFloaterSellLandUI::doSelectAgent(void *userdata)
 {
 	LLFloaterSellLandUI* floaterp = (LLFloaterSellLandUI*)userdata;
 	// grandparent is a floater, in order to set up dependency
-	floaterp->addDependentFloater(LLFloaterAvatarPicker::show(callbackAvatarPick, floaterp, FALSE, TRUE));
+	floaterp->addDependentFloater(LLFloaterAvatarPicker::show(boost::bind(&LLFloaterSellLandUI::callbackAvatarPick, floaterp, _1, _2), FALSE, TRUE));
 }
 
-// static
-void LLFloaterSellLandUI::callbackAvatarPick(const std::vector<std::string>& names, const std::vector<LLUUID>& ids, void* data)
+void LLFloaterSellLandUI::callbackAvatarPick(const uuid_vec_t& ids, const std::vector<LLAvatarName>& names)
 {	
-	LLFloaterSellLandUI* floaterp = (LLFloaterSellLandUI*)data;
-	LLParcel* parcel = floaterp->mParcelSelection->getParcel();
+	LLParcel* parcel = mParcelSelection->getParcel();
 
 	if (names.empty() || ids.empty()) return;
 	
 	LLUUID id = ids[0];
 	parcel->setAuthorizedBuyerID(id);
 
-	floaterp->mAuthorizedBuyer = ids[0];
+	mAuthorizedBuyer = ids[0];
 
-	floaterp->childSetText("sell_to_agent", names[0]);
+	childSetText("sell_to_agent", names[0].getCompleteName());
 
-	floaterp->refreshUI();
+	refreshUI();
 }
 
 // static
@@ -471,7 +471,7 @@ void LLFloaterSellLandUI::doSellLand(void *userdata)
 	// Do a confirmation
 	S32 sale_price = self->childGetValue("price");
 	S32 area = parcel->getArea();
-	std::string authorizedBuyerName = "Anyone";
+	std::string authorizedBuyerName = LLTrans::getString("Anyone");
 	bool sell_to_anyone = true;
 	if ("user" == self->childGetValue("sell_to").asString())
 	{

@@ -33,12 +33,10 @@
 #include "llapr.h"
 #include "llbuffer.h"
 #include "llbufferstream.h"
-#include "llfasttimer.h"
 #include "llhttpnode.h"
 #include "lliopipe.h"
 #include "lliosocket.h"
 #include "llioutil.h"
-#include "llmemtype.h"
 #include "llmemorystream.h"
 #include "llpumpio.h"
 #include "llsd.h"
@@ -142,6 +140,11 @@ private:
 };
 
 static LLFastTimer::DeclareTimer FTM_PROCESS_HTTP_PIPE("HTTP Pipe");
+static LLFastTimer::DeclareTimer FTM_PROCESS_HTTP_GET("HTTP Get");
+static LLFastTimer::DeclareTimer FTM_PROCESS_HTTP_PUT("HTTP Put");
+static LLFastTimer::DeclareTimer FTM_PROCESS_HTTP_POST("HTTP Post");
+static LLFastTimer::DeclareTimer FTM_PROCESS_HTTP_DELETE("HTTP Delete");
+
 LLIOPipe::EStatus LLHTTPPipe::process_impl(
 	const LLChannelDescriptors& channels,
     buffer_ptr_t& buffer,
@@ -178,12 +181,12 @@ LLIOPipe::EStatus LLHTTPPipe::process_impl(
 		std::string verb = context[CONTEXT_REQUEST][CONTEXT_VERB];
 		if(verb == HTTP_VERB_GET)
 		{
-            LLPerfBlock getblock("http_get");   
+			LLFastTimer _(FTM_PROCESS_HTTP_GET);
 			mNode.get(LLHTTPNode::ResponsePtr(mResponse), context);
 		}
 		else if(verb == HTTP_VERB_PUT)
 		{
-            LLPerfBlock putblock("http_put");
+			LLFastTimer _(FTM_PROCESS_HTTP_PUT);
 			LLSD input;
 			if (mNode.getContentType() == LLHTTPNode::CONTENT_TYPE_LLSD)
 			{
@@ -199,7 +202,7 @@ LLIOPipe::EStatus LLHTTPPipe::process_impl(
 		}
 		else if(verb == HTTP_VERB_POST)
 		{
-            LLPerfBlock postblock("http_post");
+			LLFastTimer _(FTM_PROCESS_HTTP_POST);
 			LLSD input;
 			if (mNode.getContentType() == LLHTTPNode::CONTENT_TYPE_LLSD)
 			{
@@ -215,7 +218,7 @@ LLIOPipe::EStatus LLHTTPPipe::process_impl(
 		}
 		else if(verb == HTTP_VERB_DELETE)
 		{
-            LLPerfBlock delblock("http_delete");
+			LLFastTimer _(FTM_PROCESS_HTTP_DELETE);
 			mNode.del(LLHTTPNode::ResponsePtr(mResponse), context);
 		}		
 		else if(verb == HTTP_VERB_OPTIONS)
@@ -273,6 +276,7 @@ LLIOPipe::EStatus LLHTTPPipe::process_impl(
 			context[CONTEXT_RESPONSE][CONTEXT_HEADERS] = headers;
 			LLBufferStream ostr(channels, buffer.get());
 			LLSDSerialize::toXML(mGoodResult, ostr);
+			ostr << std::flush;
 
 			return STATUS_DONE;
 		}
@@ -285,7 +289,7 @@ LLIOPipe::EStatus LLHTTPPipe::process_impl(
 			context[CONTEXT_RESPONSE]["statusCode"] = mStatusCode;
 			context[CONTEXT_RESPONSE]["statusMessage"] = mStatusMessage;
 			LLBufferStream ostr(channels, buffer.get());
-			ostr << mStatusMessage;
+			ostr << mStatusMessage << std::flush;
 
 			return STATUS_DONE;
 		}
@@ -294,7 +298,7 @@ LLIOPipe::EStatus LLHTTPPipe::process_impl(
 			context[CONTEXT_RESPONSE][CONTEXT_HEADERS] = mHeaders;
 			context[CONTEXT_RESPONSE]["statusCode"] = mStatusCode;
 			LLBufferStream ostr(channels, buffer.get());
-			ostr << mStatusMessage;
+			ostr << mStatusMessage << std::flush;
 
 			return STATUS_DONE;
 		}
@@ -444,7 +448,6 @@ LLIOPipe::EStatus LLHTTPResponseHeader::process_impl(
 {
 	LLFastTimer t(FTM_PROCESS_HTTP_HEADER);
 	PUMP_DEBUG;
-	LLMemType m1(LLMemType::MTYPE_IO_HTTP_SERVER);
 	if(eos)
 	{
 		PUMP_DEBUG;
@@ -588,13 +591,11 @@ LLHTTPResponder::LLHTTPResponder(const LLHTTPNode& tree, const LLSD& ctx) :
 	mContentLength(0),
 	mRootNode(tree)
 {
-	LLMemType m1(LLMemType::MTYPE_IO_HTTP_SERVER);
 }
 
 // virtual
 LLHTTPResponder::~LLHTTPResponder()
 {
-	LLMemType m1(LLMemType::MTYPE_IO_HTTP_SERVER);
 	//lldebugs << "destroying LLHTTPResponder" << llendl;
 }
 
@@ -604,7 +605,6 @@ bool LLHTTPResponder::readHeaderLine(
 	U8* dest,
 	S32& len)
 {
-	LLMemType m1(LLMemType::MTYPE_IO_HTTP_SERVER);
 	--len;
 	U8* last = buffer->readAfter(channels.in(), mLastRead, dest, len);
 	dest[len] = '\0';
@@ -629,12 +629,11 @@ void LLHTTPResponder::markBad(
 	const LLChannelDescriptors& channels,
 	buffer_ptr_t buffer)
 {
-	LLMemType m1(LLMemType::MTYPE_IO_HTTP_SERVER);
 	mState = STATE_SHORT_CIRCUIT;
 	LLBufferStream out(channels, buffer.get());
 	out << HTTP_VERSION_STR << " 400 Bad Request\r\n\r\n<html>\n"
 		<< "<title>Bad Request</title>\n<body>\nBad Request.\n"
-		<< "</body>\n</html>\n";
+		<< "</body>\n</html>\n" << std::flush;
 }
 
 static LLFastTimer::DeclareTimer FTM_PROCESS_HTTP_RESPONDER("HTTP Responder");
@@ -649,7 +648,6 @@ LLIOPipe::EStatus LLHTTPResponder::process_impl(
 {
 	LLFastTimer t(FTM_PROCESS_HTTP_RESPONDER);
 	PUMP_DEBUG;
-	LLMemType m1(LLMemType::MTYPE_IO_HTTP_SERVER);
 	LLIOPipe::EStatus status = STATUS_OK;
 
 	// parsing headers
@@ -927,7 +925,7 @@ LLIOPipe::EStatus LLHTTPResponder::process_impl(
 			mState = STATE_SHORT_CIRCUIT;
 			str << HTTP_VERSION_STR << " 404 Not Found\r\n\r\n<html>\n"
 				<< "<title>Not Found</title>\n<body>\nNode '" << mAbsPathAndQuery
-				<< "' not found.\n</body>\n</html>\n";
+				<< "' not found.\n</body>\n</html>\n" << std::flush;
 		}
 	}
 

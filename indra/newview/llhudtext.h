@@ -99,6 +99,7 @@ public:
 	void setAlpha(F32 alpha);
 	void setZCompare(const BOOL zcompare);
 	void setDoFade(const BOOL do_fade);
+	bool getDoFade() const { return mDoFade; }
 //	void setVisibleOffScreen(BOOL visible) { mVisibleOffScreen = visible; }
 	
 	// mMaxLines of -1 means unlimited lines.
@@ -123,8 +124,10 @@ public:
 	static void renderAllHUD();
 	static void reshape();
 	static void setDisplayText(BOOL flag) { sDisplayText = flag ; }
-// [RLVa:KB] - Checked: 2009-07-09 (RLVa-1.0.0f) | Added: RLVa-1.0.0f
-	const std::string &getPreFilteredText() const {return mPreFilteredText;}
+
+// [RLVa:KB] - Checked: 2010-03-27 (RLVa-1.4.0a) | Added: RLVa-1.0.0f
+	const std::string& getObjectText() const						{ return mObjText; }
+	void               setObjectText(const std::string &utf8string)	{ mObjText = utf8string; }
 	static void        refreshAllObjectText();
 // [/RLVa:KB]
 
@@ -169,8 +172,8 @@ private:
 	ETextAlignment	mTextAlignment;
 	EVertAlignment	mVertAlignment;
 	BOOL			mHidden;
-// [RLVa:KB] - Checked: 2009-07-09 (RLVa-1.0.0f) | Added: RLVa-1.0.0f
-	std::string		mPreFilteredText;
+// [RLVa:KB] - Checked: 2010-03-27 (RLVa-1.4.0a) | Added: RLVa-1.0.0f
+	std::string     mObjText;
 // [/RLVa:KB]
 
 	static BOOL    sDisplayText ;

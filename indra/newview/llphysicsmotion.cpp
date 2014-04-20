@@ -2,31 +2,25 @@
  * @file llphysicsmotion.cpp
  * @brief Implementation of LLPhysicsMotion class.
  *
- * $LicenseInfo:firstyear=2001&license=viewergpl$
- * 
- * Copyright (c) 2001-2009, Linden Research, Inc.
- * 
+ * $LicenseInfo:firstyear=2011&license=viewerlgpl$
  * Second Life Viewer Source Code
- * The source code in this file ("Source Code") is provided by Linden Lab
- * to you under the terms of the GNU General Public License, version 2.0
- * ("GPL"), unless you have obtained a separate licensing agreement
- * ("Other License"), formally executed by you and Linden Lab.  Terms of
- * the GPL can be found in doc/GPL-license.txt in this distribution, or
- * online at http://secondlifegrid.net/programs/open_source/licensing/gplv2
+ * Copyright (C) 2011, Linden Research, Inc.
  * 
- * There are special exceptions to the terms and conditions of the GPL as
- * it is applied to this Source Code. View the full text of the exception
- * in the file doc/FLOSS-exception.txt in this software distribution, or
- * online at
- * http://secondlifegrid.net/programs/open_source/licensing/flossexception
+ * This library is free software; you can redistribute it and/or
+ * modify it under the terms of the GNU Lesser General Public
+ * License as published by the Free Software Foundation;
+ * version 2.1 of the License only.
  * 
- * By copying, modifying or distributing this software, you acknowledge
- * that you have read and understood your obligations described above,
- * and agree to abide by those obligations.
+ * This library is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+ * Lesser General Public License for more details.
  * 
- * ALL LINDEN LAB SOURCE CODE IS PROVIDED "AS IS." LINDEN LAB MAKES NO
- * WARRANTIES, EXPRESS, IMPLIED OR OTHERWISE, REGARDING ITS ACCURACY,
- * COMPLETENESS OR PERFORMANCE.
+ * You should have received a copy of the GNU Lesser General Public
+ * License along with this library; if not, write to the Free Software
+ * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301  USA
+ * 
+ * Linden Research, Inc., 945 Battery Street, San Francisco, CA  94111  USA
  * $/LicenseInfo$
  */
 
@@ -51,7 +45,8 @@ typedef std::map<std::string, std::string> controller_map_t;
 typedef std::map<std::string, F32> default_controller_map_t;
 
 #define MIN_REQUIRED_PIXEL_AREA_AVATAR_PHYSICS_MOTION 0.f
-#define TIME_ITERATION_STEP 0.1f
+#define TIME_ITERATION_STEP 0.05f
+#define MINIMUM_UPDATE_TIMESTEP 0.025f
 
 inline F64 llsgn(const F64 a)
 {
@@ -74,6 +69,19 @@ inline F64 llsgn(const F64 a)
 class LLPhysicsMotion
 {
 public:
+	typedef enum
+	{
+		SMOOTHING = 0,
+		MASS,
+		GRAVITY,
+		SPRING,
+		GAIN,
+		DAMPING,
+		DRAG,
+		MAX_EFFECT,
+		NUM_PARAMS
+	} eParamName;
+
         /*
           param_driver_name: The param that controls the params that are being affected by the physics.
           joint_name: The joint that the body part is attached to.  The joint is
@@ -104,14 +112,19 @@ public:
                 mVelocityJoint_local(0),
                 mPositionLastUpdate_local(0),
 				mAccelerationJoint_local(0),
-				mVelocity_local(0)
+				mVelocity_local(0) 
         {
                 mJointState = new LLJointState;
+
+				for (U32 i = 0; i < NUM_PARAMS; ++i)
+				{
+					mParamCache[i] = NULL;
+				}
         }
 
-		void getString(std::ostringstream &oss);
-
         BOOL initialize();
+
+		void getString(std::ostringstream &oss); 
 
         ~LLPhysicsMotion() {}
 
@@ -121,22 +134,49 @@ public:
         {
                 return mJointState;
         }
-		
+
 		void reset();
 protected:
-        F32 getParamValue(const std::string& controller_key)
-        {
-                const controller_map_t::const_iterator& entry = mParamControllers.find(controller_key);
+
+		F32 getParamValue(eParamName param)
+		{
+			static std::string controller_key[] = 
+			{
+				"Smoothing",
+				"Mass",
+				"Gravity",
+				"Spring",
+				"Gain",
+				"Damping",
+				"Drag",
+				"MaxEffect"
+			};
+
+			if (!mParamCache[param])
+			{
+				const controller_map_t::const_iterator& entry = mParamControllers.find(controller_key[param]);
                 if (entry == mParamControllers.end())
                 {
-                        return sDefaultController[controller_key];
+                        return sDefaultController[controller_key[param]];
                 }
                 const std::string& param_name = (*entry).second.c_str();
-                return mCharacter->getVisualParamWeight(param_name.c_str());
-        }
-        void setParamValue(LLViewerVisualParam *param,
+                mParamCache[param] = mCharacter->getVisualParam(param_name.c_str());
+			}
+				
+			if (mParamCache[param])
+			{
+				return mParamCache[param]->getWeight();
+			}
+			else
+			{
+				return sDefaultController[controller_key[param]];
+			}
+		}
+
+        
+        void setParamValue(const LLViewerVisualParam *param,
                            const F32 new_value_local,
-						   F32 behavior_maxeffect);
+                                                   F32 behavior_maxeffect);
 
         F32 toLocal(const LLVector3 &world);
         F32 calculateVelocity_local();
@@ -164,6 +204,8 @@ private:
 
         F32 mLastTime;
         
+		LLVisualParam* mParamCache[NUM_PARAMS];
+
         static default_controller_map_t sDefaultController;
 };
 
@@ -202,12 +244,12 @@ std::string LLPhysicsMotionController::getString()
 {
 	std::ostringstream oss;
 	oss << "{" << std::endl <<
-	 	"Active: " << mActive << std::endl <<
+		"Active: " << mActive << std::endl <<
 		"IsDefault: " << mIsDefault << std::endl <<
 		"Stopped: " << isStopped() << std::endl <<
 		"Name: " << getName() << std::endl <<
 		"ID: " << getID().asString() << std::endl;
-
+	
 	for (motion_vec_t::iterator iter = mMotions.begin();iter != mMotions.end();++iter)
 	{
 		(*iter)->getString(oss);
@@ -219,7 +261,7 @@ void getParamString(U32 depth, LLViewerVisualParam *param, std::ostringstream &o
 {
 	std::string indent;
 	indent.resize(depth,' ');
-
+	
 	oss <<
 		indent << "getID: " << param->getID() << std::endl << 
 		indent << "getName: " << param->getName() << std::endl << 
@@ -235,6 +277,7 @@ void getParamString(U32 depth, LLViewerVisualParam *param, std::ostringstream &o
 		indent << "isAnimating: " << param->isAnimating() << std::endl << 
 		indent << "isTweakable: " << param->isTweakable() << std::endl;
 }
+
 void LLPhysicsMotion::getString(std::ostringstream &oss)
 {
 	oss << 
@@ -247,7 +290,7 @@ void LLPhysicsMotion::getString(std::ostringstream &oss)
 		" mAccelerationJoint_local: " << mAccelerationJoint_local << std::endl << 
 		" mPositionLastUpdate_local: " << mPositionLastUpdate_local << std::endl << 
 		" mPosition_world: " << mPosition_world << std::endl << 
-		" mVelocity_local: " << mVelocity_local << std::endl;
+	" mVelocity_local: " << mVelocity_local << std::endl;
 	if(mParamDriver)
 	{
 		oss << " <DRIVER>" << std::endl;
@@ -256,10 +299,10 @@ void LLPhysicsMotion::getString(std::ostringstream &oss)
 		if(driver_param)
 		{
 			for (LLDriverParam::entry_list_t::iterator iter = driver_param->mDriven.begin();
-				 iter != driver_param->mDriven.end();++iter)
+			   iter != driver_param->mDriven.end();++iter)
 			{
-				oss << "  <DRIVEN>" << std::endl;
-				getParamString(3,iter->mParam,oss);
+			  oss << "  <DRIVEN>" << std::endl;
+			  getParamString(3,iter->mParam,oss);
 			}
 		}
 	}
@@ -268,9 +311,9 @@ void LLPhysicsMotion::getString(std::ostringstream &oss)
 	oss << " Controllers:" << std::endl;
 	for(controller_map_t::const_iterator it = mParamControllers.begin(); it!= mParamControllers.end(); ++it)
 	{
-		oss << "  mParamControllers[\"" << it->first << "\"] = \"" << it->second << "\" =" << getParamValue(it->first) << std::endl;
+		oss << "  mParamControllers[\"" << it->first << "\"] = \"" << it->second << "\" =" << mCharacter->getVisualParamWeight(it->first.c_str()) << std::endl;
 	}
-}
+} 
 
 LLPhysicsMotionController::LLPhysicsMotionController(const LLUUID &id) : 
         LLMotion(id),
@@ -470,14 +513,13 @@ F32 LLPhysicsMotion::toLocal(const LLVector3 &world)
 F32 LLPhysicsMotion::calculateVelocity_local()
 {
 	const F32 world_to_model_scale = 100.0f;
-        LLJoint *joint = mJointState->getJoint();
-        const LLVector3 position_world = joint->getWorldPosition();
-        const LLQuaternion rotation_world = joint->getWorldRotation();
-        const LLVector3 last_position_world = mPosition_world;
+	LLJoint *joint = mJointState->getJoint();
+	const LLVector3 position_world = joint->getWorldPosition();
+	const LLVector3 last_position_world = mPosition_world;
 	const LLVector3 positionchange_world = (position_world-last_position_world) * world_to_model_scale;
-        const LLVector3 velocity_world = positionchange_world;
-        const F32 velocity_local = toLocal(velocity_world);
-        return velocity_local;
+	const LLVector3 velocity_world = positionchange_world;
+	const F32 velocity_local = toLocal(velocity_world);
+	return velocity_local;
 }
 
 F32 LLPhysicsMotion::calculateAcceleration_local(const F32 velocity_local)
@@ -497,10 +539,10 @@ BOOL LLPhysicsMotionController::onUpdate(F32 time, U8* joint_mask)
 {
         // Skip if disabled globally.
 		static const LLCachedControl<bool> avatar_physics("AvatarPhysics",false);
-		bool physics_unsupported = !avatar_physics || (!((LLVOAvatar*)mCharacter)->isSelf() && !((LLVOAvatar*)mCharacter)->mSupportsPhysics);
-		//Treat lod 0 as AvatarPhyiscs:FALSE. AvatarPhyiscs setting is superfluous unless we decide to hook it into param sending.
-        if (physics_unsupported || !LLVOAvatar::sPhysicsLODFactor)
-        {
+		bool skip_physics = !avatar_physics || (!((LLVOAvatar*)mCharacter)->isSelf() && !((LLVOAvatar*)mCharacter)->mHasPhysicsParameters);
+		//Treat lod 0 as AvatarPhysics:FALSE. AvatarPhysics setting is superfluous unless we decide to hook it into param sending.
+		if (skip_physics || !LLVOAvatar::sPhysicsLODFactor) 
+		{
 			if(!mIsDefault)
 			{
 				mIsDefault = true;
@@ -510,12 +552,11 @@ BOOL LLPhysicsMotionController::onUpdate(F32 time, U8* joint_mask)
 				}
 				mCharacter->updateVisualParams();
 			}
-			((LLVOAvatar*)mCharacter)->idleUpdateBoobEffect(); //Emerald physics will fix params it altered if wearable physics are disabled.
 			return TRUE;
 		}
-        
-		mIsDefault = false;
 
+		mIsDefault = false; 
+        
         BOOL update_visuals = FALSE;
         for (motion_vec_t::iterator iter = mMotions.begin();
              iter != mMotions.end();
@@ -552,7 +593,7 @@ BOOL LLPhysicsMotion::onUpdate(F32 time)
         const F32 time_delta = time - mLastTime;
 
 	// Don't update too frequently, to avoid precision errors from small time slices.
-	if (time_delta <= .01)
+	if (time_delta <= MINIMUM_UPDATE_TIMESTEP)
 	{
 		return FALSE;
 	}
@@ -574,15 +615,16 @@ BOOL LLPhysicsMotion::onUpdate(F32 time)
 
         LLJoint *joint = mJointState->getJoint();
 
-        const F32 behavior_mass = getParamValue("Mass");
-        const F32 behavior_gravity = getParamValue("Gravity");
-        const F32 behavior_spring = getParamValue("Spring");
-        const F32 behavior_gain = getParamValue("Gain");
-        const F32 behavior_damping = getParamValue("Damping");
-        const F32 behavior_drag = getParamValue("Drag");
-        const BOOL physics_test = FALSE; // Enable this to simulate bouncing on all parts.
+		const F32 behavior_mass = getParamValue(MASS);
+		const F32 behavior_gravity = getParamValue(GRAVITY);
+		const F32 behavior_spring = getParamValue(SPRING);
+		const F32 behavior_gain = getParamValue(GAIN);
+		const F32 behavior_damping = getParamValue(DAMPING);
+		const F32 behavior_drag = getParamValue(DRAG);
+		F32 behavior_maxeffect = getParamValue(MAX_EFFECT);
+		
+		const BOOL physics_test = FALSE; // Enable this to simulate bouncing on all parts.
         
-        F32 behavior_maxeffect = getParamValue("MaxEffect");
         if (physics_test)
                 behavior_maxeffect = 1.0f;
 
@@ -729,12 +771,10 @@ BOOL LLPhysicsMotion::onUpdate(F32 time)
 								 0,
 								 FALSE);
 			}
-			for (LLDriverParam::entry_list_t::iterator iter = driver_param->mDriven.begin();
-			     iter != driver_param->mDriven.end();
-			     ++iter)
+			S32 num_driven = driver_param->getDrivenParamsCount();
+			for (S32 i = 0; i < num_driven; ++i)
 			{
-				LLDrivenEntry &entry = (*iter);
-				LLViewerVisualParam *driven_param = entry.mParam;
+				const LLViewerVisualParam *driven_param = driver_param->getDrivenParam(i);
 				setParamValue(driven_param,position_new_local_clamped, behavior_maxeffect);
 			}
 		}
@@ -814,7 +854,7 @@ BOOL LLPhysicsMotion::onUpdate(F32 time)
 }
 
 // Range of new_value_local is assumed to be [0 , 1] normalized.
-void LLPhysicsMotion::setParamValue(LLViewerVisualParam *param,
+void LLPhysicsMotion::setParamValue(const LLViewerVisualParam *param,
                                     F32 new_value_normalized,
 				    F32 behavior_maxeffect)
 {
@@ -840,14 +880,14 @@ void LLPhysicsMotion::reset()
 	if (driver_param)
 	{
 		if ((driver_param->getGroup() != VISUAL_PARAM_GROUP_TWEAKABLE) &&
-			(driver_param->getGroup() != VISUAL_PARAM_GROUP_TWEAKABLE_NO_TRANSMIT))
+		  (driver_param->getGroup() != VISUAL_PARAM_GROUP_TWEAKABLE_NO_TRANSMIT))
 		{
 			mCharacter->setVisualParamWeight(driver_param,driver_param->getDefaultWeight());
 		}
 		for (LLDriverParam::entry_list_t::iterator iter = driver_param->mDriven.begin();
-			 iter != driver_param->mDriven.end();++iter)
+		   iter != driver_param->mDriven.end();++iter)
 		{
 			mCharacter->setVisualParamWeight((*iter).mParam,(*iter).mParam->getDefaultWeight());
 		}
 	}
-}
+} 

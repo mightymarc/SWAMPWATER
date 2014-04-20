@@ -2,31 +2,25 @@
  * @file lloctree.h
  * @brief Octree declaration. 
  *
- * $LicenseInfo:firstyear=2005&license=viewergpl$
- * 
- * Copyright (c) 2005-2009, Linden Research, Inc.
- * 
+ * $LicenseInfo:firstyear=2005&license=viewerlgpl$
  * Second Life Viewer Source Code
- * The source code in this file ("Source Code") is provided by Linden Lab
- * to you under the terms of the GNU General Public License, version 2.0
- * ("GPL"), unless you have obtained a separate licensing agreement
- * ("Other License"), formally executed by you and Linden Lab.  Terms of
- * the GPL can be found in doc/GPL-license.txt in this distribution, or
- * online at http://secondlifegrid.net/programs/open_source/licensing/gplv2
+ * Copyright (C) 2010, Linden Research, Inc.
  * 
- * There are special exceptions to the terms and conditions of the GPL as
- * it is applied to this Source Code. View the full text of the exception
- * in the file doc/FLOSS-exception.txt in this software distribution, or
- * online at
- * http://secondlifegrid.net/programs/open_source/licensing/flossexception
+ * This library is free software; you can redistribute it and/or
+ * modify it under the terms of the GNU Lesser General Public
+ * License as published by the Free Software Foundation;
+ * version 2.1 of the License only.
  * 
- * By copying, modifying or distributing this software, you acknowledge
- * that you have read and understood your obligations described above,
- * and agree to abide by those obligations.
+ * This library is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+ * Lesser General Public License for more details.
  * 
- * ALL LINDEN LAB SOURCE CODE IS PROVIDED "AS IS." LINDEN LAB MAKES NO
- * WARRANTIES, EXPRESS, IMPLIED OR OTHERWISE, REGARDING ITS ACCURACY,
- * COMPLETENESS OR PERFORMANCE.
+ * You should have received a copy of the GNU Lesser General Public
+ * License along with this library; if not, write to the Free Software
+ * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301  USA
+ * 
+ * Linden Research, Inc., 945 Battery Street, San Francisco, CA  94111  USA
  * $/LicenseInfo$
  */
 
@@ -37,15 +31,21 @@
 #include "v3math.h"
 #include "llvector4a.h"
 #include <vector>
-#include <set>
+#ifdef TIME_UTC
+//Singu note: TIME_UTC is defined as '1' in time.h, and boost thread (1.49) tries to use it as an enum member.
+#undef TIME_UTC
+#endif
+#include <boost/pool/pool.hpp>
 
 #if LL_RELEASE_WITH_DEBUG_INFO || LL_DEBUG
 #define OCT_ERRS LL_ERRS("OctreeErrors")
+#define OCTREE_GUARD_CHECK
 #else
 #define OCT_ERRS LL_WARNS("OctreeErrors")
 #endif
 
 extern U32 gOctreeMaxCapacity;
+extern U32 gOctreeReserveCapacity;
 #if LL_DEBUG
 #define LL_OCTREE_PARANOIA_CHECK 0
 #else
@@ -55,6 +55,106 @@ extern U32 gOctreeMaxCapacity;
 //#define LL_OCTREE_MAX_CAPACITY 128
 
 template <class T> class LLOctreeNode;
+
+#include "lltimer.h"
+
+//#define LL_OCTREE_STATS
+#define LL_OCTREE_POOLS
+#ifdef LL_OCTREE_STATS
+class OctreeStats : public LLSingleton<OctreeStats>
+{
+public:
+	OctreeStats() :
+		mPeriodNodesCreated(0),
+		mPeriodNodesDestroyed(0),
+		mPeriodAllocs(0),
+		mPeriodFrees(0),
+		mPeriodLargestSize(0),
+		mTotalNodes(0),
+		mTotalAllocs(0),
+		mTotalFrees(0),
+		mLargestSize(0),
+		mTotalSize(0)
+	{
+		mTotalTimer.reset();
+		mPeriodTimer.reset();
+	}
+	void addNode()
+	{
+		++mTotalNodes;
+		++mPeriodNodesCreated;
+	}
+	void removeNode()
+	{
+		--mTotalNodes;
+		++mPeriodNodesDestroyed;
+	}
+	void realloc(U32 old_count, U32 new_count)
+	{
+		if(new_count >= old_count)
+			mTotalSize+=new_count-old_count;
+		else
+			mTotalSize-=old_count-new_count;
+		if(mLargestSize < new_count)
+			mLargestSize = new_count;
+		if(mPeriodLargestSize < new_count)
+			mPeriodLargestSize = new_count;
+		++mTotalAllocs;
+		++mPeriodAllocs;
+	}
+	void free(U32 count)
+	{
+		mTotalSize-=count;
+		++mTotalFrees;
+		++mPeriodFrees;
+	}
+	void dump()
+	{
+		llinfos << llformat("Lifetime: Allocs:(+%u|-%u) Allocs/s: (+%lf|-%lf) Nodes: %u AccumSize: %llubytes Avg: %lf LargestSize: %u",
+			mTotalAllocs,
+			mTotalFrees,
+			F64(mTotalAllocs)/mTotalTimer.getElapsedTimeF64(),
+			F64(mTotalFrees)/mTotalTimer.getElapsedTimeF64(),
+			mTotalNodes,
+			mTotalSize*sizeof(LLPointer<LLRefCount>),
+			F64(mTotalSize)/F64(mTotalNodes),
+			mLargestSize
+			) << llendl;
+		llinfos << llformat("Timeslice: Allocs:(+%u|-%u) Allocs/s: (+%lf|-%lf) Nodes:(+%u|-%u) LargestSize: %u",
+			mPeriodAllocs,
+			mPeriodFrees,
+			F64(mPeriodAllocs)/mPeriodTimer.getElapsedTimeF64(),
+			F64(mPeriodFrees)/mPeriodTimer.getElapsedTimeF64(),
+			mPeriodNodesCreated,
+			mPeriodNodesDestroyed,
+			mPeriodLargestSize
+			) << llendl;
+
+		mPeriodNodesCreated=0;
+		mPeriodNodesDestroyed=0;
+		mPeriodAllocs=0;
+		mPeriodFrees=0;
+		mPeriodLargestSize=0;
+		mPeriodTimer.reset();
+	}
+private:
+	//Accumulate per timer update
+	U32 mPeriodNodesCreated;
+	U32 mPeriodNodesDestroyed;
+	U32 mPeriodAllocs;
+	U32 mPeriodFrees;
+	U32 mPeriodLargestSize;
+	LLTimer mPeriodTimer;
+	
+	//Accumulate through entire app lifetime:
+	U32 mTotalNodes;
+	U32 mTotalAllocs;
+	U32 mTotalFrees;
+	U32 mLargestSize;
+	U64 mTotalSize;
+	LLTimer mTotalTimer;
+};
+#endif //LL_OCTREE_STATS
 
 template <class T>
 class LLOctreeListener: public LLTreeListener<T>
@@ -82,6 +182,46 @@ public:
 	virtual void traverse(const LLOctreeNode<T>* node);
 };
 
+#ifdef OCTREE_GUARD_CHECK
+struct OctreeGuard
+{
+	template <typename T>
+	OctreeGuard(const LLOctreeNode<T>* node)
+		{mNode = (void*)node;getNodes().push_back(this);}
+	~OctreeGuard()
+		{llassert_always(getNodes().back() == this); getNodes().pop_back();}
+	template <typename T>
+	static bool checkGuarded(const LLOctreeNode<T>* node)
+	{
+		for(std::vector<OctreeGuard*>::const_iterator it=getNodes().begin();it != getNodes().end();++it)
+		{
+			if((*it)->mNode == node)
+			{
+				OCT_ERRS << "!!! MANIPULATING OCTREE BRANCH DURING ITERATION !!!" << llendl;
+				return true;
+			}
+		}
+		return false;
+	}
+	static std::vector<OctreeGuard*>& getNodes()
+	{
+		static std::vector<OctreeGuard*> gNodes;
+		return gNodes;
+	}
+	void* mNode;
+};
+#else
+struct OctreeGuard
+{
+	template <typename T>
+	OctreeGuard(const LLOctreeNode<T>* node) {}
+	~OctreeGuard() {}
+	template <typename T>
+	static bool checkGuarded(const LLOctreeNode<T>* node) {return false;}
+};
+#endif
+
+
 template <class T>
 class LLOctreeNode : public LLTreeNode<T>
 {
@@ -89,24 +229,52 @@ public:
 
 	typedef LLOctreeTraveler<T>									oct_traveler;
 	typedef LLTreeTraveler<T>									tree_traveler;
-	typedef typename std::set<LLPointer<T> >					element_list;
+	typedef std::vector<LLPointer<T> >							element_list;
 	typedef typename element_list::iterator						element_iter;
-	typedef typename element_list::const_iterator	const_element_iter;
+	typedef typename element_list::const_iterator				const_element_iter;
 	typedef typename std::vector<LLTreeListener<T>*>::iterator	tree_listener_iter;
-	typedef typename std::vector<LLOctreeNode<T>* >				child_list;
+	typedef LLOctreeNode<T>**									child_list;
+	typedef LLOctreeNode<T>**									child_iter;
+
 	typedef LLTreeNode<T>		BaseType;
 	typedef LLOctreeNode<T>		oct_node;
 	typedef LLOctreeListener<T>	oct_listener;
 
-	/*void* operator new(size_t size)
+#ifdef LL_OCTREE_POOLS
+	struct octree_pool_alloc
+	{
+		typedef std::size_t size_type;
+		typedef std::ptrdiff_t difference_type;
+
+		static char * malloc(const std::size_t bytes)
+		{ return (char *)ll_aligned_malloc_16(bytes); }
+		static void free(char * const block)
+		{ ll_aligned_free_16(block); }
+	};
+	static boost::pool<octree_pool_alloc>& getPool(const std::size_t& size)
+	{
+		static boost::pool<octree_pool_alloc> sPool((std::size_t)LL_NEXT_ALIGNED_ADDRESS((char*)size),1200);
+		llassert_always((std::size_t)LL_NEXT_ALIGNED_ADDRESS((char*)size) == sPool.get_requested_size());
+		return sPool;
+	}
+	void* operator new(size_t size)
+	{
+		return getPool(size).malloc();
+	}
+	void operator delete(void* ptr)
+	{
+		getPool(sizeof(LLOctreeNode<T>)).free(ptr);
+	}
+#else
+	void* operator new(size_t size)
 	{
 		return ll_aligned_malloc_16(size);
 	}
-
 	void operator delete(void* ptr)
 	{
 		ll_aligned_free_16(ptr);
-	}*/
+	}
+#endif
 
 	LLOctreeNode(	const LLVector4a& center, 
 					const LLVector4a& size, 
@@ -115,6 +283,17 @@ public:
 	:	mParent((oct_node*)parent), 
 		mOctant(octant) 
 	{ 
+#ifdef LL_OCTREE_STATS
+		OctreeStats::getInstance()->addNode();
+#endif
+		if(gOctreeReserveCapacity)
+			mData.reserve(gOctreeReserveCapacity);
+#ifdef LL_OCTREE_STATS
+		OctreeStats::getInstance()->realloc(0,mData.capacity());
+#endif
+		//mData = NULL;
+		//mDataEnd = NULL;
+
 		mCenter = center;
 		mSize = size;
 
@@ -124,15 +303,32 @@ public:
 			mOctant = ((oct_node*) mParent)->getOctant(mCenter);
 		}
 
-		mElementCount = 0;
+		//mElementCount = 0;
 
 		clearChildren();
 	}
 
 	virtual ~LLOctreeNode()								
-	{ 
+	{
+#ifdef LL_OCTREE_STATS
+		OctreeStats::getInstance()->removeNode();
+#endif
 		BaseType::destroyListeners(); 
 		
+		//for (U32 i = 0; i < mElementCount; ++i)
+		for (U32 i = 0; i < mData.size(); ++i)
+		{
+			mData[i]->setBinIndex(-1);
+			mData[i] = NULL;
+		}
+
+#ifdef LL_OCTREE_STATS
+		OctreeStats::getInstance()->free(mData.capacity());
+#endif
+		//free(mData);
+		//mData = NULL;
+		//mDataEnd = NULL;
+
 		for (U32 i = 0; i < getChildCount(); i++)
 		{
 			delete getChild(i);
@@ -229,12 +425,17 @@ public:
 	}
 
 	void accept(oct_traveler* visitor)				{ visitor->visit(this); }
-	virtual bool isLeaf() const						{ return mChild.empty(); }
+	virtual bool isLeaf() const						{ return mChildCount == 0; }
 	
-	U32 getElementCount() const						{ return mElementCount; }
-	element_list& getData()							{ return mData; }
-	const element_list& getData() const				{ return mData; }
-	
+	U32 getElementCount() const						{ return mData.size(); }
+	bool isEmpty() const							{ return mData.size() == 0; }
+	//element_list& getData()							{ return mData; }
+	//const element_list& getData() const				{ return mData; }
+	element_iter getDataBegin()						{ return mData.begin(); }
+	element_iter getDataEnd()						{ return mData.end(); }
+	const_element_iter getDataBegin() const			{ return mData.begin(); }
+	const_element_iter getDataEnd() const			{ return mData.end(); }
+		
 	U32 getChildCount()	const						{ return mChildCount; }
 	oct_node* getChild(U32 index)					{ return mChild[index]; }
 	const oct_node* getChild(U32 index) const		{ return mChild[index]; }
@@ -299,7 +500,8 @@ public:
 	
 	virtual bool insert(T* data)
 	{
-		if (data == NULL)
+		OctreeGuard::checkGuarded(this);
+		if (data == NULL || data->getBinIndex() != -1)
 		{
 			OCT_ERRS << "!!! INVALID ELEMENT ADDED TO OCTREE BRANCH !!!" << llendl;
 			return false;
@@ -312,19 +514,30 @@ public:
 			if (((getElementCount() < gOctreeMaxCapacity && contains(data->getBinRadius())) ||
 				(data->getBinRadius() > getSize()[0] &&	parent && parent->getElementCount() >= gOctreeMaxCapacity))) 
 			{ //it belongs here
-#if LL_OCTREE_PARANOIA_CHECK
-				//if this is a redundant insertion, error out (should never happen)
-				if (mData.find(data) != mData.end())
-				{
-					llwarns << "Redundant octree insertion detected. " << data << llendl;
-					return false;
-				}
+				/*mElementCount++;
+#ifdef LL_OCTREE_STATS
+				OctreeStats::getInstance()->realloc(mElementCount-1,mElementCount);
 #endif
+				mData = (element_list) realloc(mData, sizeof(LLPointer<T>)*mElementCount);
 
-				mData.insert(data);
+				//avoid unref on uninitialized memory
+				memset(mData+mElementCount-1, 0, sizeof(LLPointer<T>));
+
+				mData[mElementCount-1] = data;
+				mDataEnd = mData + mElementCount;
+				data->setBinIndex(mElementCount-1);*/
+
+#ifdef LL_OCTREE_STATS
+				U32 old_cap = mData.capacity();
+#endif
+				data->setBinIndex(mData.size());
+				mData.push_back(data);
+#ifdef LL_OCTREE_STATS
+				if(old_cap != mData.capacity())
+					OctreeStats::getInstance()->realloc(old_cap,mData.capacity());
+#endif
+				
 				BaseType::insert(data);
-
-				mElementCount = mData.size();
 				return true;
 			}
 			else
@@ -358,10 +571,29 @@ public:
 
 				if( lt == 0x7 )
 				{
-					mData.insert(data);
-					BaseType::insert(data);
+					/*mElementCount++;
+#ifdef LL_OCTREE_STATS
+					OctreeStats::getInstance()->realloc(mElementCount-1,mElementCount);
+#endif
+					mData = (element_list) realloc(mData, sizeof(LLPointer<T>)*mElementCount);
 
-					mElementCount = mData.size();
+					//avoid unref on uninitialized memory
+					memset(mData+mElementCount-1, 0, sizeof(LLPointer<T>));
+
+					mData[mElementCount-1] = data;
+					mDataEnd = mData + mElementCount;
+					data->setBinIndex(mElementCount-1);*/
+#ifdef LL_OCTREE_STATS
+					U32 old_cap = mData.capacity();
+#endif
+					data->setBinIndex(mData.size());
+					mData.push_back(data);
+#ifdef LL_OCTREE_STATS
+					if(old_cap != mData.capacity())
+						OctreeStats::getInstance()->realloc(old_cap,mData.capacity());
+#endif
+					
+					BaseType::insert(data);
 					return true;
 				}
 
@@ -391,6 +623,9 @@ public:
 				child->insert(data);
 			}
 		}
+// Singu note: now that we allow wider range in octree, discard them here
+// if they fall out of range
+#if 0
 		else 
 		{
 			//it's not in here, give it to the root
@@ -404,29 +639,107 @@ public:
 				parent = node->getOctParent();
 			}
 
-			node->insert(data);
+			if(node != this)
+			{
+				node->insert(data);
+			}
 		}
+#endif
 
 		return false;
 	}
 
+	void _remove(T* data, S32 i)
+	{ //precondition -- mElementCount > 0, idx is in range [0, mElementCount)
+		OctreeGuard::checkGuarded(this);
+		//mElementCount--;
+		data->setBinIndex(-1); 
+	
+/*		if (mElementCount > 0)
+		{
+			if (mElementCount != i)
+			{
+				mData[i] = mData[mElementCount]; //might unref data, do not access data after this point
+				mData[i]->setBinIndex(i);
+			}
+
+			mData[mElementCount] = NULL; //needed for unref
+#ifdef LL_OCTREE_STATS
+			OctreeStats::getInstance()->realloc(mElementCount+1,mElementCount);
+#endif
+			mData = (element_list) realloc(mData, sizeof(LLPointer<T>)*mElementCount);
+			mDataEnd = mData+mElementCount;
+		}
+		else
+		{
+			mData[0] = NULL; //needed for unref
+#ifdef LL_OCTREE_STATS
+			OctreeStats::getInstance()->free(1);
+#endif
+			free(mData);
+			mData = NULL;
+			mDataEnd = NULL;
+		}*/
+
+		if(mData.size())
+		{
+			if((mData.size()-1)!=i)
+			{
+				mData[i] = mData[mData.size()-1];
+				mData[i]->setBinIndex(i);
+			}
+#ifdef LL_OCTREE_STATS
+			U32 old_cap = mData.capacity();
+#endif
+			mData.pop_back();
+			if(	mData.size() == gOctreeReserveCapacity || 
+				(mData.size() > gOctreeReserveCapacity && mData.capacity() > gOctreeReserveCapacity + mData.size() - 1 - (mData.size() - gOctreeReserveCapacity - 1) % 4))
+			{
+				//Shrink to lowest possible (reserve)+4*i size.. Say reserve is 5, here are [size,capacity] pairs. [10,13],[9,9],[8,9],[7,9],[6,9],[5,5],[4,5],[3,5],[2,5],[1,5],[0,5]
+				//For Windows: We always assume vs2010 or later, which support this c++11 feature with no configuration needed.
+				//For GCC: __cplusplus >= 201103L indicates C++11 support. __GXX_EXPERIMENTAL_CXX0X being set indicates experimental c++0x support. C++11 support replaces C++0x support.
+				//		   std::vector::shrink_to_fit was added to GCCs C++0x implementation in version 4.5.0.
+#if defined(LL_WINDOWS) || __cplusplus >= 201103L || (defined(__GXX_EXPERIMENTAL_CXX0X) && __GNUC_MINOR__ >= 5)
+				mData.shrink_to_fit();
+#else
+				std::vector<LLPointer<T> >(mData.begin(), mData.end()).swap(mData);	//Need to confirm this works on OSX..
+#endif
+			}
+#ifdef LL_OCTREE_STATS
+			if(old_cap != mData.capacity())
+				OctreeStats::getInstance()->realloc(old_cap,mData.capacity());
+#endif
+		}
+
+		this->notifyRemoval(data);
+		checkAlive();
+	}
+
 	bool remove(T* data)
 	{
-		if (mData.find(data) != mData.end())
-		{	//we have data
-			mData.erase(data);
-			mElementCount = mData.size();
-			this->notifyRemoval(data);
-			checkAlive();
-			return true;
+		OctreeGuard::checkGuarded(this);
+		S32 i = data->getBinIndex();
+
+		//if (i >= 0 && i < mElementCount)
+		if (i >= 0 && i < (S32)mData.size())
+		{
+			if (mData[i] == data)
+			{ //found it
+				_remove(data, i);
+				llassert(data->getBinIndex() == -1);
+				return true;
+			}
 		}
-		else if (isInside(data))
+		
+		if (isInside(data))
 		{
 			oct_node* dest = getNodeAt(data);
 
 			if (dest != this)
 			{
-				return dest->remove(data);
+				bool ret = dest->remove(data);
+				llassert(data->getBinIndex() == -1);
+				return ret;
 			}
 		}
 
@@ -443,21 +756,24 @@ public:
 		}
 
 		//node is now root
-		llwarns << "!!! OCTREE REMOVING FACE BY ADDRESS, SEVERE PERFORMANCE PENALTY |||" << llendl;
+		llwarns << "!!! OCTREE REMOVING ELEMENT BY ADDRESS, SEVERE PERFORMANCE PENALTY |||" << llendl;
 		node->removeByAddress(data);
+		llassert(data->getBinIndex() == -1);
 		return true;
 	}
 
 	void removeByAddress(T* data)
 	{
-        if (mData.find(data) != mData.end())
+		OctreeGuard::checkGuarded(this);
+		//for (U32 i = 0; i < mElementCount; ++i)
+        for (U32 i = 0; i < mData.size(); ++i)
 		{
-			mData.erase(data);
-			mElementCount = mData.size();
-			this->notifyRemoval(data);
-			llwarns << "FOUND!" << llendl;
-			checkAlive();
-			return;
+			if (mData[i] == data)
+			{ //we have data
+				_remove(data, i);
+				llwarns << "FOUND!" << llendl;
+				return;
+			}
 		}
 		
 		for (U32 i = 0; i < getChildCount(); i++)
@@ -469,8 +785,9 @@ public:
 
 	void clearChildren()
 	{
-		mChild.clear();
+		OctreeGuard::checkGuarded(this);
 		mChildCount = 0;
+
 		U32* foo = (U32*) mChildMap;
 		foo[0] = foo[1] = 0xFFFFFFFF;
 	}
@@ -529,10 +846,11 @@ public:
 			OCT_ERRS <<"Octree node has too many children... why?" << llendl;
 		}
 #endif
+		OctreeGuard::checkGuarded(this);
 
 		mChildMap[child->getOctant()] = mChildCount;
 
-		mChild.push_back(child);
+		mChild[mChildCount] = child;
 		++mChildCount;
 		child->setParent(this);
 
@@ -548,21 +866,24 @@ public:
 
 	void removeChild(S32 index, BOOL destroy = FALSE)
 	{
+		OctreeGuard::checkGuarded(this);
+
 		for (U32 i = 0; i < this->getListenerCount(); i++)
 		{
 			oct_listener* listener = getOctListener(i);
 			listener->handleChildRemoval(this, getChild(index));
 		}
 
-		
-
 		if (destroy)
 		{
 			mChild[index]->destroy();
 			delete mChild[index];
 		}
-		mChild.erase(mChild.begin() + index);
+
 		--mChildCount;
+
+		mChild[index] = mChild[mChildCount];
+		
 
 		//rebuild child map
 		U32* foo = (U32*) mChildMap;
@@ -619,12 +940,13 @@ protected:
 	oct_node* mParent;
 	U8 mOctant;
 
-	child_list mChild;
+	LLOctreeNode<T>* mChild[8];
 	U8 mChildMap[8];
 	U32 mChildCount;
 
 	element_list mData;
-	U32 mElementCount;
+	//element_iter mDataEnd;
+	//U32 mElementCount;
 		
 };
 
@@ -692,7 +1014,7 @@ public:
 		}
 		
 		LLVector4a MAX_MAG;
-		MAX_MAG.splat(1024.f*1024.f);
+		MAX_MAG.splat(1024.f * 1024.f);
 
 		const LLVector4a& v = data->getPositionGroup();
 

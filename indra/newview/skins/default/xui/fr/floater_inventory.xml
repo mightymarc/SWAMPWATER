@@ -1,30 +1,31 @@
 <?xml version="1.0" encoding="utf-8" standalone="yes"?>
 <floater name="Inventory" title="Inventaire">
-	<search_editor label="Saisissez votre recherche ici" name="inventory search editor"/>
-<text name="group_titles_textbox" halign="right" font="SansSerifSmall" follows="left|top"
-		height="16" left="30" bottom_delta="2" right="93">Filtre rapide:</text>
+  <filter_editor label="Saisir votre recherche ici" name="inventory search editor"/>
+  <button name="collapse_btn" tool_tip="Collapse All" />
+   <button name="Inventory.ExpandAll" tool_tip="Expand All"/>
+   <button name="Inventory.ResetAll" tool_tip="Réinitialisation de l'inventaire : Nettoye les filtres et réduit l'inventaire"/>
 	<!-- Inventory Type Filter Labels -->
 	<string name="filter_type_all">TOUT</string>
 	<string name="filter_type_animation">Animations</string>
 	<string name="filter_type_callingcard">Cartes de Visite</string>
 	<string name="filter_type_wearable">Habits / Body Parts</string>
 	<string name="filter_type_gesture">Gestures</string>
-	<string name="filter_type_landmark">Reperes / Landmarks</string>
+	<string name="filter_type_landmark">Rep&#xE8;res / Landmarks</string>
 	<string name="filter_type_notecard">Notecards</string>
 	<string name="filter_type_object">Objets</string>
 	<string name="filter_type_script">Scripts</string>
 	<string name="filter_type_sound">Sons</string>
 	<string name="filter_type_texture">Textures</string>
 	<string name="filter_type_snapshot">Photos</string>
-	<string name="filter_type_custom">Custom...</string>
-	<combo_box name="Quick Filter" label="Filtre Rapide" follows="left|top|right" height="20" left="95" right="-6" bottom_delta="0">
+	<string name="filter_type_custom">Personnalis&#xE9;</string>
+	<combo_box name="Quick Filter" tool_tip="filtrer par genre">
 		<combo_item name="filter_type_all">TOUT</combo_item>
 		<separator />
 		<combo_item name="filter_type_animation">Animations</combo_item>
 		<combo_item name="filter_type_callingcard">Cartes de Visite</combo_item>
 		<combo_item name="filter_type_wearable">Habits / Body Parts</combo_item>
 		<combo_item name="filter_type_gesture">Gestures</combo_item>
-		<combo_item name="filter_type_landmark">Reperes / Landmarks</combo_item>
+		<combo_item name="filter_type_landmark">Rep&#xE8;res / Landmarks</combo_item>
 		<combo_item name="filter_type_notecard">Notecards</combo_item>
 		<combo_item name="filter_type_object">Objets</combo_item>
 		<combo_item name="filter_type_script">Scripts</combo_item>
@@ -32,7 +33,7 @@
 		<combo_item name="filter_type_texture">Textures</combo_item>
 		<combo_item name="filter_type_snapshot">Photos</combo_item>
 		<separator />
-		<combo_item name="filter_type_custom">Custom...</combo_item>
+		<combo_item name="filter_type_custom">Personnalis&#xE9;</combo_item>
 	</combo_box>
 	<tab_container name="inventory filter tabs">
 		<inventory_panel label="Tous les objets" name="All Items"/>
@@ -41,7 +42,6 @@
 	</tab_container>
 	<menu_bar name="Inventory Menu">
 		<menu label="Fichier" name="File">
-			<tearoff_menu label="~~~~~~~~~~~" name="~~~~~~~~~~~"/>
 			<menu_item_call label="Ouvrir" name="Open"/>
 			<menu_item_call label="Nouvelle fenêtre" name="New Window"/>
 			<menu_item_call label="Afficher les filtres" name="Show Filters"/>
@@ -51,7 +51,6 @@
 			<menu_item_call label="Rafraichir l'inventaire" name="Refresh Inventory"/>
 		</menu>
 		<menu label="Créer" name="Create">
-			<tearoff_menu label="~~~~~~~~~~~" name="~~~~~~~~~~~"/>
 			<menu_item_call label="Nouveau dossier" name="New Folder"/>
 			<menu_item_call label="Nouveau script" name="New Script"/>
 			<menu_item_call label="Nouvelle note" name="New Note"/>
@@ -73,9 +72,9 @@
 				<menu_item_call label="Nouveaux cheveux" name="New Hair"/>
 				<menu_item_call label="Nouveaux yeux" name="New Eyes"/>
 			</menu>
+			<menu_item_call label="Nouvel ensemble" name="New Outfit"/>
 		</menu>
 		<menu label="Trier" name="Sort">
-			<tearoff_menu label="~~~~~~~~~~~" name="~~~~~~~~~~~"/>
 			<menu_item_check label="Par nom" name="By Name"/>
 			<menu_item_check label="Par date" name="By Date"/>
 			<menu_item_check label="Trier les dossiers par nom" name="Folders Always By Name"/>
@@ -87,7 +86,6 @@
 			<menu_item_check label="par créateur" name="Item creatorr"/>
 		</menu>
 		<menu label="Filters" name="Filters">
-			<tearoff_menu label="~~~~~~~~~~~" name="~~~~~~~~~~~"/>
 			<menu_item_check label="Modifier actuel" name="Modify Current"/>
 			<menu_item_call label="Réinitialiser actuel" name="Reset Current"/>
 		</menu>

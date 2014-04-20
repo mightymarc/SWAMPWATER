@@ -66,6 +66,7 @@
 #include "lltrans.h"
 #include "llurldispatcher.h"
 #include "llviewerobjectlist.h"
+#include "llviewerparcelmgr.h"
 #include "llviewerparceloverlay.h"
 #include "llviewerstatsrecorder.h"
 #include "llvlmanager.h"
@@ -78,9 +79,15 @@
 #include "llviewercontrol.h"
 #include "llsdserialize.h"
 
+#include "llviewerparcelmgr.h"	//Aurora Sim
 #ifdef LL_WINDOWS
 	#pragma warning(disable:4355)
 #endif
+
+class AIHTTPTimeoutPolicy;
+extern AIHTTPTimeoutPolicy baseCapabilitiesComplete_timeout;
+extern AIHTTPTimeoutPolicy gamingDataReceived_timeout;
+extern AIHTTPTimeoutPolicy simulatorFeaturesReceived_timeout;
 
 const F32 WATER_TEXTURE_SCALE = 8.f;			//  Number of times to repeat the water texture across a region
 const S16 MAX_MAP_DIST = 10;
@@ -88,7 +95,6 @@ const S16 MAX_MAP_DIST = 10;
 // We want to allow for seed cap retry, but its not useful after that 60 seconds.
 // Give it 3 chances, each at 18 seconds to give ourselves a few seconds to connect anyways if we give up.
 const S32 MAX_SEED_CAP_ATTEMPTS_BEFORE_LOGIN = 3;
-const F32 CAP_REQUEST_TIMEOUT = 18;
 // Even though we gave up on login, keep trying for caps after we are logged in:
 const S32 MAX_CAP_REQUEST_ATTEMPTS = 30;
 
@@ -177,7 +183,7 @@ class LLRegionHandler : public LLCommandHandler
 {
 public:
 	// requests will be throttled from a non-trusted browser
-	LLRegionHandler() : LLCommandHandler("region", /*V3: UNTRUSTED_THROTTLE*/ true) {}
+	LLRegionHandler() : LLCommandHandler("region", UNTRUSTED_THROTTLE) {}
 
 	bool handle(const LLSD& params, const LLSD& query_map, LLMediaCtrl* web)
 	{
@@ -200,13 +206,13 @@ public:
 		}
 
 		// Process the SLapp as if it was a secondlife://{PLACE} SLurl
-		LLURLDispatcher::dispatch(url, /*V3: "clicked",*/ web, true);
+		LLURLDispatcher::dispatch(url, "clicked", web, true);
 		return true;
 	}
 };
 LLRegionHandler gRegionHandler;
 
-class BaseCapabilitiesComplete : public LLHTTPClient::Responder
+class BaseCapabilitiesComplete : public LLHTTPClient::ResponderWithResult
 {
 	LOG_CLASS(BaseCapabilitiesComplete);
 public:
@@ -216,7 +222,7 @@ public:
 	virtual ~BaseCapabilitiesComplete()
 	{ }
 
-    void error(U32 statusNum, const std::string& reason)
+    /*virtual*/ void error(U32 statusNum, const std::string& reason)
     {
 		LL_WARNS2("AppInit", "Capabilities") << statusNum << ": " << reason << LL_ENDL;
 		LLViewerRegion *regionp = LLWorld::getInstance()->getRegionFromHandle(mRegionHandle);
@@ -226,7 +232,7 @@ public:
 		}
     }
 
-    void result(const LLSD& content)
+    /*virtual*/ void result(const LLSD& content)
     {
 		LLViewerRegion *regionp = LLWorld::getInstance()->getRegionFromHandle(mRegionHandle);
 		if(!regionp) //region was removed
@@ -262,6 +268,9 @@ public:
 		}
 	}
 
+	/*virtual*/ AIHTTPTimeoutPolicy const& getHTTPTimeoutPolicy(void) const { return baseCapabilitiesComplete_timeout; }
+	/*virtual*/ char const* getName(void) const { return "BaseCapabilitiesComplete"; }
+
     static boost::intrusive_ptr<BaseCapabilitiesComplete> build( U64 region_handle, S32 id )
     {
 		return boost::intrusive_ptr<BaseCapabilitiesComplete>( 
@@ -286,9 +295,13 @@ LLViewerRegion::LLViewerRegion(const U64 &handle,
 	mZoning(""),
 	mIsEstateManager(FALSE),
 	mRegionFlags( REGION_FLAGS_DEFAULT ),
+	mRegionProtocols( 0 ),
 	mSimAccess( SIM_ACCESS_MIN ),
+	mLastSimAccess( 0 ),
+	mSimAccessString( "unknown" ),
 	mBillableFactor(1.0),
 	mMaxTasks(DEFAULT_MAX_REGION_WIDE_PRIM_COUNT),
+	mCentralBakeVersion(0),
 	mClassID(0),
 	mCPURatio(0),
 	mColoName("unknown"),
@@ -298,9 +311,14 @@ LLViewerRegion::LLViewerRegion(const U64 &handle,
 	mCacheLoaded(FALSE),
 	mCacheDirty(FALSE),
 	mReleaseNotesRequested(FALSE),
-	mCapabilitiesReceived(false)
+	mCapabilitiesReceived(false),
+	mFeaturesReceived(false),
+	mGamingFlags(0),
+// <FS:CR> Aurora Sim
+	mWidth(region_width_meters)
 {
-	mWidth = region_width_meters;
+	// Moved this up... -> mWidth = region_width_meters;
+// </FS:CR>
 	mImpl->mOriginGlobal = from_region_handle(handle); 
 	updateRenderMatrix();
 
@@ -310,7 +328,10 @@ LLViewerRegion::LLViewerRegion(const U64 &handle,
 	mImpl->mCompositionp =
 		new LLVLComposition(mImpl->mLandp,
 							grids_per_region_edge,
-							region_width_meters / grids_per_region_edge);
+// <FS:CR> Aurora Sim
+							//region_width_meters / grids_per_region_edge);
+							mWidth / grids_per_region_edge);
+// </FS:CR> Aurora Sim
 	mImpl->mCompositionp->setSurface(mImpl->mLandp);
 
 	// Create the surfaces
@@ -320,14 +341,22 @@ LLViewerRegion::LLViewerRegion(const U64 &handle,
 					mImpl->mOriginGlobal,
 					mWidth);
 
-	mParcelOverlay = new LLViewerParcelOverlay(this, region_width_meters);
+// <FS:CR> Aurora Sim
+	//mParcelOverlay = new LLViewerParcelOverlay(this, region_width_meters);
+	mParcelOverlay = new LLViewerParcelOverlay(this, mWidth);
+	LLViewerParcelMgr::getInstance()->init(mWidth);
+// </FS:CR> Aurora Sim
 
 	setOriginGlobal(from_region_handle(handle));
 	calculateCenterGlobal();
 
 	// Create the object lists
 	initStats();
+	initPartitions();
+}
 
+void LLViewerRegion::initPartitions()
+{
 	//create object partitions
 	//MUST MATCH declaration of eObjectPartitions
 	mImpl->mObjectPartition.push_back(new LLHUDPartition());		//PARTITION_HUD
@@ -346,6 +375,12 @@ LLViewerRegion::LLViewerRegion(const U64 &handle,
 	mImpl->mObjectPartition.push_back(NULL);						//PARTITION_NONE
 }
 
+void LLViewerRegion::reInitPartitions()
+{
+	std::for_each(mImpl->mObjectPartition.begin(), mImpl->mObjectPartition.end(), DeletePointer());
+	mImpl->mObjectPartition.clear();
+	initPartitions();
+}
 
 void LLViewerRegion::initStats()
 {
@@ -467,18 +502,6 @@ void LLViewerRegion::sendReliableMessage()
 	gMessageSystem->sendReliable(mImpl->mHost);
 }
 
-void LLViewerRegion::setFlags(BOOL b, U32 flags)
-{
-	if (b)
-	{
-		mRegionFlags |=  flags;
-	}
-	else
-	{
-		mRegionFlags &= ~flags;
-	}
-}
-
 void LLViewerRegion::setWaterHeight(F32 water_level)
 {
 	mImpl->mLandp->setWaterHeight(water_level);
@@ -491,10 +514,10 @@ F32 LLViewerRegion::getWaterHeight() const
 
 BOOL LLViewerRegion::isVoiceEnabled() const
 {
-	return (getRegionFlags() & REGION_FLAGS_ALLOW_VOICE);
+	return getRegionFlag(REGION_FLAGS_ALLOW_VOICE);
 }
 
-void LLViewerRegion::setRegionFlags(U32 flags)
+void LLViewerRegion::setRegionFlags(U64 flags)
 {
 	mRegionFlags = flags;
 }
@@ -578,9 +601,15 @@ BOOL LLViewerRegion::canManageEstate() const
 		|| gAgent.getID() == getOwner();
 }
 
-const std::string LLViewerRegion::getSimAccessString() const
+std::string const& LLViewerRegion::getSimAccessString()
 {
-	return accessToString(mSimAccess);
+	// Singu: added a cache because this is called every frame.
+	if (mLastSimAccess != mSimAccess)
+	{
+		mSimAccessString = accessToString(mSimAccess);
+		mLastSimAccess = mSimAccess;
+	}
+	return mSimAccessString;
 }
 
 std::string LLViewerRegion::getLocalizedSimProductName() const
@@ -590,7 +619,7 @@ std::string LLViewerRegion::getLocalizedSimProductName() const
 }
 
 // static
-std::string LLViewerRegion::regionFlagsToString(U32 flags)
+std::string LLViewerRegion::regionFlagsToString(U64 flags)
 {
 	std::string result;
 
@@ -716,12 +745,37 @@ std::string LLViewerRegion::accessToShortString(U8 sim_access)
 }
 
 // static
+U8 LLViewerRegion::shortStringToAccess(const std::string &sim_access)
+{
+	U8 accessValue;
+
+	if (LLStringUtil::compareStrings(sim_access, "PG") == 0)
+	{
+		accessValue = SIM_ACCESS_PG;
+	}
+	else if (LLStringUtil::compareStrings(sim_access, "M") == 0)
+	{
+		accessValue = SIM_ACCESS_MATURE;
+	}
+	else if (LLStringUtil::compareStrings(sim_access, "A") == 0)
+	{
+		accessValue = SIM_ACCESS_ADULT;
+	}
+	else
+	{
+		accessValue = SIM_ACCESS_MIN;
+	}
+
+	return accessValue;
+}
+
+// static
 void LLViewerRegion::processRegionInfo(LLMessageSystem* msg, void**)
 {
 	// send it to 'observers'
 	// *TODO: switch the floaters to using LLRegionInfoModel
 	llinfos << "Processing region info" << llendl;
-	LLRegionInfoModel::getInstance()->update(msg);
+	LLRegionInfoModel::instance().update(msg);
 	LLFloaterGodTools::processRegionInfo(msg);
 	LLFloaterRegionInfo::processRegionInfo(msg);
 	LLFloaterReporter::processRegionInfo(msg);
@@ -756,7 +810,6 @@ void LLViewerRegion::dirtyHeights()
 
 BOOL LLViewerRegion::idleUpdate(F32 max_update_time)
 {
-	LLMemType mt_ivr(LLMemType::MTYPE_IDLE_UPDATE_VIEWER_REGION);
 	// did_update returns TRUE if we did at least one significant update
 	BOOL did_update = mImpl->mLandp->idleUpdate(max_update_time);
 	
@@ -805,11 +858,13 @@ LLVLComposition * LLViewerRegion::getComposition() const
 
 F32 LLViewerRegion::getCompositionXY(const S32 x, const S32 y) const
 {
-	if (x >= 256)
+// Singu Note: The Aurora Sim patches here were too many to read the code itself, mWidth and getWidth() (-1) replace 256 (255) in this function, only the first and last tags remain
+// <FS:CR> Aurora Sim
+	if (x >= mWidth)
 	{
-		if (y >= 256)
+		if (y >= mWidth)
 		{
-			LLVector3d center = getCenterGlobal() + LLVector3d(256.f, 256.f, 0.f);
+			LLVector3d center = getCenterGlobal() + LLVector3d(mWidth, mWidth, 0.f);
 			LLViewerRegion *regionp = LLWorld::getInstance()->getRegionFromPosGlobal(center);
 			if (regionp)
 			{
@@ -818,8 +873,8 @@ F32 LLViewerRegion::getCompositionXY(const S32 x, const S32 y) const
 				// If we're attempting to blend, then we want to make the fractional part of
 				// this region match the fractional of the adjacent.  For now, just minimize
 				// the delta.
-				F32 our_comp = getComposition()->getValueScaled(255, 255);
-				F32 adj_comp = regionp->getComposition()->getValueScaled(x - 256.f, y - 256.f);
+				F32 our_comp = getComposition()->getValueScaled(mWidth-1.f, mWidth-1.f);
+				F32 adj_comp = regionp->getComposition()->getValueScaled(x - regionp->getWidth(), y - regionp->getWidth());
 				while (llabs(our_comp - adj_comp) >= 1.f)
 				{
 					if (our_comp > adj_comp)
@@ -836,7 +891,7 @@ F32 LLViewerRegion::getCompositionXY(const S32 x, const S32 y) const
 		}
 		else
 		{
-			LLVector3d center = getCenterGlobal() + LLVector3d(256.f, 0, 0.f);
+			LLVector3d center = getCenterGlobal() + LLVector3d(mWidth, 0.f, 0.f);
 			LLViewerRegion *regionp = LLWorld::getInstance()->getRegionFromPosGlobal(center);
 			if (regionp)
 			{
@@ -845,8 +900,8 @@ F32 LLViewerRegion::getCompositionXY(const S32 x, const S32 y) const
 				// If we're attempting to blend, then we want to make the fractional part of
 				// this region match the fractional of the adjacent.  For now, just minimize
 				// the delta.
-				F32 our_comp = getComposition()->getValueScaled(255.f, (F32)y);
-				F32 adj_comp = regionp->getComposition()->getValueScaled(x - 256.f, (F32)y);
+				F32 our_comp = getComposition()->getValueScaled(mWidth-1.f, (F32)y);
+				F32 adj_comp = regionp->getComposition()->getValueScaled(x - regionp->getWidth(), (F32)y);
 				while (llabs(our_comp - adj_comp) >= 1.f)
 				{
 					if (our_comp > adj_comp)
@@ -862,9 +917,9 @@ F32 LLViewerRegion::getCompositionXY(const S32 x, const S32 y) const
 			}
 		}
 	}
-	else if (y >= 256)
+	else if (y >= mWidth)
 	{
-		LLVector3d center = getCenterGlobal() + LLVector3d(0.f, 256.f, 0.f);
+		LLVector3d center = getCenterGlobal() + LLVector3d(0.f, mWidth, 0.f);
 		LLViewerRegion *regionp = LLWorld::getInstance()->getRegionFromPosGlobal(center);
 		if (regionp)
 		{
@@ -873,8 +928,9 @@ F32 LLViewerRegion::getCompositionXY(const S32 x, const S32 y) const
 			// If we're attempting to blend, then we want to make the fractional part of
 			// this region match the fractional of the adjacent.  For now, just minimize
 			// the delta.
-			F32 our_comp = getComposition()->getValueScaled((F32)x, 255.f);
-			F32 adj_comp = regionp->getComposition()->getValueScaled((F32)x, y - 256.f);
+			F32 our_comp = getComposition()->getValueScaled((F32)x, mWidth-1.f);
+			F32 adj_comp = regionp->getComposition()->getValueScaled((F32)x, y - regionp->getWidth());
+// <FS:CR> Aurora Sim
 			while (llabs(our_comp - adj_comp) >= 1.f)
 			{
 				if (our_comp > adj_comp)
@@ -904,11 +960,6 @@ void LLViewerRegion::calculateCenterGlobal()
 void LLViewerRegion::calculateCameraDistance()
 {
 	mCameraDistanceSquared = (F32)(gAgentCamera.getCameraPositionGlobal() - getCenterGlobal()).magVecSquared();
-}
-
-U32 LLViewerRegion::getNetDetailsForLCD()
-{
-	return mPingDelay;
 }
 
 std::ostream& operator<<(std::ostream &s, const LLViewerRegion &region)
@@ -1232,6 +1283,40 @@ void LLViewerRegion::setSimulatorFeatures(const LLSD& sim_features)
 	LLSDSerialize::toPrettyXML(sim_features, str);
 	llinfos << str.str() << llendl;
 	mSimulatorFeatures = sim_features;
+
+	mFeaturesReceived = true;
+	mFeaturesReceivedSignal(getRegionID());
+	mFeaturesReceivedSignal.disconnect_all_slots();
+}
+
+void LLViewerRegion::setGamingData(const LLSD& gaming_data)
+{
+	mGamingFlags = 0;
+
+	if (!gaming_data.has("display"))
+		llerrs << "GamingData Capability requires \"display\"" << llendl;
+	if (gaming_data["display"].asBoolean())
+		mGamingFlags |= REGION_GAMING_PRESENT;
+	if (gaming_data.has("hide_parcel") && gaming_data["hide_parcel"].asBoolean())
+		mGamingFlags |= REGION_GAMING_HIDE_PARCEL;
+	if (gaming_data.has("hide_find_all") && gaming_data["hide_find_all"].asBoolean())
+		mGamingFlags |= REGION_GAMING_HIDE_FIND_ALL;
+	if (gaming_data.has("hide_find_classifieds") && gaming_data["hide_find_classifieds"].asBoolean())
+		mGamingFlags |= REGION_GAMING_HIDE_FIND_CLASSIFIEDS;
+	if (gaming_data.has("hide_find_events") && gaming_data["hide_find_events"].asBoolean())
+		mGamingFlags |= REGION_GAMING_HIDE_FIND_EVENTS;
+	if (gaming_data.has("hide_find_land") && gaming_data["hide_find_land"].asBoolean())
+		mGamingFlags |= REGION_GAMING_HIDE_FIND_LAND;
+	if (gaming_data.has("hide_find_sims") && gaming_data["hide_find_sims"].asBoolean())
+		mGamingFlags |= REGION_GAMING_HIDE_FIND_SIMS;
+	if (gaming_data.has("hide_find_groups") && gaming_data["hide_find_groups"].asBoolean())
+		mGamingFlags |= REGION_GAMING_HIDE_FIND_GROUPS;
+	if (gaming_data.has("hide_find_all_classic") && gaming_data["hide_find_all_classic"].asBoolean())
+		mGamingFlags |= REGION_GAMING_HIDE_FIND_ALL_CLASSIC;
+	if (gaming_data.has("hide_god_floater") && gaming_data["hide_god_floater"].asBoolean())
+		mGamingFlags |= REGION_GAMING_HIDE_GOD_FLOATER;
+
+	llinfos << "Gaming flags are " << mGamingFlags << llendl;
 }
 
 LLViewerRegion::eCacheUpdateResult LLViewerRegion::cacheFullUpdate(LLViewerObject* objectp, LLDataPackerBinaryBuffer &dp)
@@ -1389,11 +1474,8 @@ void LLViewerRegion::requestCacheMisses()
 
 	mCacheDirty = TRUE ;
 	// llinfos << "KILLDEBUG Sent cache miss full " << full_count << " crc " << crc_count << llendl;
-	#if LL_RECORD_VIEWER_STATS
-	LLViewerStatsRecorder::instance()->beginObjectUpdateEvents(this);
-	LLViewerStatsRecorder::instance()->recordRequestCacheMissesEvent(full_count + crc_count);
-	LLViewerStatsRecorder::instance()->endObjectUpdateEvents();
-	#endif
+	LLViewerStatsRecorder::instance().requestCacheMissesEvent(full_count + crc_count);
+	LLViewerStatsRecorder::instance().log(0.2f);
 }
 
 void LLViewerRegion::dumpCache()
@@ -1439,7 +1521,8 @@ void LLViewerRegion::unpackRegionHandshake()
 {
 	LLMessageSystem *msg = gMessageSystem;
 
-	U32 region_flags;
+	U64 region_flags = 0;
+	U64 region_protocols = 0;
 	U8 sim_access;
 	std::string sim_name;
 	LLUUID sim_owner;
@@ -1448,7 +1531,6 @@ void LLViewerRegion::unpackRegionHandshake()
 	F32 billable_factor;
 	LLUUID cache_id;
 
-	msg->getU32		("RegionInfo", "RegionFlags", region_flags);
 	msg->getU8		("RegionInfo", "SimAccess", sim_access);
 	msg->getString	("RegionInfo", "SimName", sim_name);
 	msg->getUUID	("RegionInfo", "SimOwner", sim_owner);
@@ -1457,7 +1539,20 @@ void LLViewerRegion::unpackRegionHandshake()
 	msg->getF32		("RegionInfo", "BillableFactor", billable_factor);
 	msg->getUUID	("RegionInfo", "CacheID", cache_id );
 
+	if (msg->has(_PREHASH_RegionInfo4))
+	{
+		msg->getU64Fast(_PREHASH_RegionInfo4, _PREHASH_RegionFlagsExtended, region_flags);
+		msg->getU64Fast(_PREHASH_RegionInfo4, _PREHASH_RegionProtocols, region_protocols);
+	}
+	else
+	{
+		U32 flags = 0;
+		msg->getU32Fast(_PREHASH_RegionInfo, _PREHASH_RegionFlags, flags);
+		region_flags = flags;
+	}
+
 	setRegionFlags(region_flags);
+	setRegionProtocols(region_protocols);
 	setSimAccess(sim_access);
 	setRegionNameAndZone(sim_name);
 	setOwner(sim_owner);
@@ -1496,6 +1591,8 @@ void LLViewerRegion::unpackRegionHandshake()
 		mProductName = productName;
 	}
 
+
+	mCentralBakeVersion = region_protocols & 1; // was (S32)gSavedSettings.getBOOL("UseServerTextureBaking");
 	LLVLComposition *compp = getComposition();
 	if (compp)
 	{
@@ -1533,6 +1630,8 @@ void LLViewerRegion::unpackRegionHandshake()
 		// all of our terrain stuff, by
 		if (compp->getParamsReady())
 		{
+			// The following line was commented out in http://hg.secondlife.com/viewer-development/commits/448b02f5b56f9e608952c810df5454f83051a992
+			// by davep. However, this is needed to see changes in region/estate texture elevation ranges, and to update the terrain textures after terraforming.
 			getLand().dirtyAllPatches();
 		}
 		else
@@ -1555,81 +1654,89 @@ void LLViewerRegion::unpackRegionHandshake()
 	msg->addUUID("AgentID", gAgent.getID());
 	msg->addUUID("SessionID", gAgent.getSessionID());
 	msg->nextBlock("RegionInfo");
-	msg->addU32("Flags", 0x0 );
+
+	U32 flags = 0;
+	flags |= REGION_HANDSHAKE_SUPPORTS_SELF_APPEARANCE;
+
+	msg->addU32("Flags", flags );
 	msg->sendReliable(host);
 }
 
-
 void LLViewerRegionImpl::buildCapabilityNames(LLSD& capabilityNames)
 {
-	//capabilityNames.append("AttachmentResources"); //Script limits (llfloaterscriptlimits.cpp)
+	capabilityNames.append("AgentState");
+	capabilityNames.append("AttachmentResources");
 	//capabilityNames.append("AvatarPickerSearch"); //Display name/SLID lookup (llfloateravatarpicker.cpp)
+	capabilityNames.append("CharacterProperties");
 	capabilityNames.append("ChatSessionRequest");
 	capabilityNames.append("CopyInventoryFromNotecard");
 	capabilityNames.append("CreateInventoryCategory");
+	capabilityNames.append("CustomMenuAction");
 	capabilityNames.append("DispatchRegionInfo");
+	capabilityNames.append("EnvironmentSettings");
 	capabilityNames.append("EstateChangeInfo");
 	capabilityNames.append("EventQueueGet");
-	capabilityNames.append("EnvironmentSettings");
-	/*capabilityNames.append("ObjectMedia");
-	capabilityNames.append("ObjectMediaNavigate");*/
-	
-	if (gSavedSettings.getBOOL("UseHTTPInventory")) //Caps suffixed with 2 by LL. Don't update until rest of fetch system is updated first.
-	{
-		capabilityNames.append("FetchLib2");
-		capabilityNames.append("FetchLibDescendents2");
-		capabilityNames.append("FetchInventory2");
-		capabilityNames.append("FetchInventoryDescendents2");
-	}
-
+	capabilityNames.append("FetchLib2");
+	capabilityNames.append("FetchLibDescendents2");
+	capabilityNames.append("FetchInventory2");
+	capabilityNames.append("FetchInventoryDescendents2");
+	capabilityNames.append("GamingData"); //Used by certain grids.
 	capabilityNames.append("GetDisplayNames");
-	capabilityNames.append("GetTexture");
 	capabilityNames.append("GetMesh");
+	capabilityNames.append("GetMesh2");		// Used on SecondLife(tm) sim versions 280647 and higher (13.09.17).
 	capabilityNames.append("GetObjectCost");
 	capabilityNames.append("GetObjectPhysicsData");
+	capabilityNames.append("GetTexture");
+	capabilityNames.append("GroupMemberData");
 	capabilityNames.append("GroupProposalBallot");
-
 	capabilityNames.append("HomeLocation");
-	//capabilityNames.append("LandResources"); //Script limits (llfloaterscriptlimits.cpp)
+	capabilityNames.append("LandResources");
 	capabilityNames.append("MapLayer");
 	capabilityNames.append("MapLayerGod");
-#if MESH_IMPORT
 	capabilityNames.append("MeshUploadFlag");
-#endif //MESH_IMPORT
+	capabilityNames.append("NavMeshGenerationStatus");
 	capabilityNames.append("NewFileAgentInventory");
+	capabilityNames.append("ObjectMedia");
+	capabilityNames.append("ObjectMediaNavigate");
+	capabilityNames.append("ObjectNavMeshProperties");
+	capabilityNames.append("ParcelNavigateMedia"); //Singu Note: Removed by Baker, do we need this?
 	capabilityNames.append("ParcelPropertiesUpdate");
-	capabilityNames.append("ParcelNavigateMedia");
 	capabilityNames.append("ParcelVoiceInfoRequest");
 	capabilityNames.append("ProductInfoRequest");
 	capabilityNames.append("ProvisionVoiceAccountRequest");
 	capabilityNames.append("RemoteParcelRequest");
+	capabilityNames.append("RenderMaterials");
 	capabilityNames.append("RequestTextureDownload");
-	capabilityNames.append("ResourceCostSelected"); //Unreferenced?
+	//capabilityNames.append("ResourceCostSelected"); //Object weights (llfloaterobjectweights.cpp)
+	capabilityNames.append("RetrieveNavMeshSrc");
 	capabilityNames.append("SearchStatRequest");
 	capabilityNames.append("SearchStatTracking");
 	capabilityNames.append("SendPostcard");
 	capabilityNames.append("SendUserReport");
 	capabilityNames.append("SendUserReportWithScreenshot");
 	capabilityNames.append("ServerReleaseNotes");
-	//capabilityNames.append("SimConsole");
-	capabilityNames.append("SimulatorFeatures");
 	capabilityNames.append("SetDisplayName");
-	//capabilityNames.append("SimConsoleAsync");
+	capabilityNames.append("SimConsole"); //Singu Note: Removed by Baker, sim console won't work without this.
+	capabilityNames.append("SimConsoleAsync");
+	capabilityNames.append("SimulatorFeatures");
 	capabilityNames.append("StartGroupProposal");
+	capabilityNames.append("TerrainNavMeshProperties");
 	capabilityNames.append("TextureStats");
 	capabilityNames.append("UntrustedSimulatorMessage");
 	capabilityNames.append("UpdateAgentInformation");
 	capabilityNames.append("UpdateAgentLanguage");
+	capabilityNames.append("UpdateAvatarAppearance");
 	capabilityNames.append("UpdateGestureAgentInventory");
-	capabilityNames.append("UpdateNotecardAgentInventory");
-	capabilityNames.append("UpdateScriptAgent");
 	capabilityNames.append("UpdateGestureTaskInventory");
+	capabilityNames.append("UpdateNotecardAgentInventory");
 	capabilityNames.append("UpdateNotecardTaskInventory");
+	capabilityNames.append("UpdateScriptAgent");
 	capabilityNames.append("UpdateScriptTask");
 	capabilityNames.append("UploadBakedTexture");
-	//capabilityNames.append("ViewerMetrics");
+	capabilityNames.append("ViewerMetrics");
 	capabilityNames.append("ViewerStartAuction");
 	capabilityNames.append("ViewerStats");
+	capabilityNames.append("WearablesLoaded");
 	
 	// Please add new capabilities alphabetically to reduce
 	// merge conflicts.
@@ -1656,8 +1763,7 @@ void LLViewerRegion::setSeedCapability(const std::string& url)
 
 	S32 id = ++mImpl->mHttpResponderID;
 	LLHTTPClient::post(url, capabilityNames, 
-						BaseCapabilitiesComplete::build(getHandle(), id),
-						LLSD(), CAP_REQUEST_TIMEOUT);
+						BaseCapabilitiesComplete::build(getHandle(), id));
 }
 
 S32 LLViewerRegion::getNumSeedCapRetries()
@@ -1692,8 +1798,7 @@ void LLViewerRegion::failedSeedCapability()
 
 		S32 id = ++mImpl->mHttpResponderID;
 		LLHTTPClient::post(url, capabilityNames, 
-						BaseCapabilitiesComplete::build(getHandle(), id),
-						LLSD(), CAP_REQUEST_TIMEOUT);
+						BaseCapabilitiesComplete::build(getHandle(), id));
 	}
 	else
 	{
@@ -1702,7 +1807,7 @@ void LLViewerRegion::failedSeedCapability()
 	}
 }
 
-class SimulatorFeaturesReceived : public LLHTTPClient::Responder
+class SimulatorFeaturesReceived : public LLHTTPClient::ResponderWithResult
 {
 	LOG_CLASS(SimulatorFeaturesReceived);
 public:
@@ -1712,13 +1817,13 @@ public:
     { }
 	
 	
-    void error(U32 statusNum, const std::string& reason)
+    /*virtual*/ void error(U32 statusNum, const std::string& reason)
     {
 		LL_WARNS2("AppInit", "SimulatorFeatures") << statusNum << ": " << reason << LL_ENDL;
 		retry();
     }
 
-    void result(const LLSD& content)
+    /*virtual*/ void result(const LLSD& content)
     {
 		LLViewerRegion *regionp = LLWorld::getInstance()->getRegionFromHandle(mRegionHandle);
 		if(!regionp) //region is removed or responder is not created.
@@ -1730,6 +1835,9 @@ public:
 		regionp->setSimulatorFeatures(content);
 	}
 
+	/*virtual*/ AIHTTPTimeoutPolicy const& getHTTPTimeoutPolicy(void) const { return simulatorFeaturesReceived_timeout; }
+	/*virtual*/ char const* getName(void) const { return "SimulatorFeaturesReceived"; }
+
 private:
 	void retry()
 	{
@@ -1737,10 +1845,50 @@ private:
 		{
 			mAttempt++;
 			LL_WARNS2("AppInit", "SimulatorFeatures") << "Re-trying '" << mRetryURL << "'.  Retry #" << mAttempt << LL_ENDL;
-			LLHTTPClient::get(mRetryURL, new SimulatorFeaturesReceived(*this), LLSD(), CAP_REQUEST_TIMEOUT);
+			LLHTTPClient::get(mRetryURL, new SimulatorFeaturesReceived(*this));
 		}
 	}
 	
+	std::string mRetryURL;
+	U64 mRegionHandle;
+	S32 mAttempt;
+	S32 mMaxAttempts;
+};
+
+class GamingDataReceived : public LLHTTPClient::ResponderWithResult
+{
+	LOG_CLASS(GamingDataReceived);
+public:
+	GamingDataReceived(const std::string& retry_url, U64 region_handle, S32 attempt = 0, S32 max_attempts = MAX_CAP_REQUEST_ATTEMPTS)
+	: mRetryURL(retry_url), mRegionHandle(region_handle), mAttempt(attempt), mMaxAttempts(max_attempts)
+	{}
+
+	/*virtual*/ void error(U32 statusNum, const std::string& reason)
+	{
+		LL_WARNS2("AppInit", "GamingData") << statusNum << ": " << reason << LL_ENDL;
+		retry();
+	}
+
+	/*virtual*/ void result(const LLSD& content)
+	{
+		LLViewerRegion *regionp = LLWorld::getInstance()->getRegionFromHandle(mRegionHandle);
+		if(regionp) regionp->setGamingData(content);
+	}
+
+	/*virtual*/ AIHTTPTimeoutPolicy const& getHTTPTimeoutPolicy(void) const { return gamingDataReceived_timeout; }
+	/*virtual*/ char const* getName(void) const { return "GamingDataReceived"; }
+
+private:
+	void retry()
+	{
+		if (mAttempt < mMaxAttempts)
+		{
+			mAttempt++;
+			LL_WARNS2("AppInit", "GamingData") << "Retrying '" << mRetryURL << "'.  Retry #" << mAttempt << LL_ENDL;
+			LLHTTPClient::get(mRetryURL, new GamingDataReceived(*this));
+		}
+	}
+
 	std::string mRetryURL;
 	U64 mRegionHandle;
 	S32 mAttempt;
@@ -1762,8 +1910,17 @@ void LLViewerRegion::setCapability(const std::string& name, const std::string& u
 	}
 	else if (name == "SimulatorFeatures")
 	{
+		// although this is not needed later, add it so we can check if the sim supports it at all later
+		mImpl->mCapabilities[name] = url;
+
 		// kick off a request for simulator features
-		LLHTTPClient::get(url, new SimulatorFeaturesReceived(url, getHandle()), LLSD(), CAP_REQUEST_TIMEOUT);
+		LLHTTPClient::get(url, new SimulatorFeaturesReceived(url, getHandle()));
+	}
+	else if (name == "GamingData")
+	{
+		LLSD gamingRequest = LLSD::emptyMap();
+		// request settings from simulator
+		LLHTTPClient::post(url, gamingRequest, new GamingDataReceived(url, getHandle()));
 	}
 	else
 	{
@@ -1782,6 +1939,11 @@ bool LLViewerRegion::isSpecialCapabilityName(const std::string &name)
 
 std::string LLViewerRegion::getCapability(const std::string& name) const
 {
+	if (!capabilitiesReceived() && (name!=std::string("Seed")) && (name!=std::string("ObjectMedia")))
+	{
+		llwarns << "getCapability("<<name<<") called before caps received" << llendl;
+	}
+	
 	CapabilityMap::const_iterator iter = mImpl->mCapabilities.find(name);
 	if(iter == mImpl->mCapabilities.end())
 	{
@@ -1808,6 +1970,15 @@ void LLViewerRegion::setCapabilitiesReceived(bool received)
 
 		// This is a single-shot signal. Forget callbacks to save resources.
 		mCapabilitiesReceivedSignal.disconnect_all_slots();
+
+		// If we don't have this cap, send the changed signal to simplify code
+		// in consumers by allowing them to expect this signal, regardless.
+		if (getCapability("SimulatorFeatures").empty())
+		{
+			mFeaturesReceived = true;
+			mFeaturesReceivedSignal(getRegionID());
+			mFeaturesReceivedSignal.disconnect_all_slots();
+		}
 	}
 }
 
@@ -1841,7 +2012,7 @@ LLSpatialPartition* LLViewerRegion::getSpatialPartition(U32 type)
 
 // the viewer can not yet distinquish between normal- and estate-owned objects
 // so we collapse these two bits and enable the UI if either are set
-const U32 ALLOW_RETURN_ENCROACHING_OBJECT = REGION_FLAGS_ALLOW_RETURN_ENCROACHING_OBJECT
+const U64 ALLOW_RETURN_ENCROACHING_OBJECT = REGION_FLAGS_ALLOW_RETURN_ENCROACHING_OBJECT
 											| REGION_FLAGS_ALLOW_RETURN_ENCROACHING_ESTATE_OBJECT;
 
 bool LLViewerRegion::objectIsReturnable(const LLVector3& pos, const std::vector<LLBBox>& boxes) const
@@ -1849,7 +2020,7 @@ bool LLViewerRegion::objectIsReturnable(const LLVector3& pos, const std::vector<
 	return (mParcelOverlay != NULL)
 		&& (mParcelOverlay->isOwnedSelf(pos)
 			|| mParcelOverlay->isOwnedGroup(pos)
-			|| ((mRegionFlags & ALLOW_RETURN_ENCROACHING_OBJECT)
+			|| (getRegionFlag(ALLOW_RETURN_ENCROACHING_OBJECT)
 				&& mParcelOverlay->encroachesOwned(boxes)) );
 }
 
@@ -1869,7 +2040,10 @@ void LLViewerRegion::getNeighboringRegions( std::vector<LLViewerRegion*>& unique
 {
 	mImpl->mLandp->getNeighboringRegions( uniqueRegions );
 }
-
+void LLViewerRegion::getNeighboringRegionsStatus( std::vector<S32>& regions )
+{
+	mImpl->mLandp->getNeighboringRegionsStatus( regions );
+}
 void LLViewerRegion::showReleaseNotes()
 {
 	std::string url = this->getCapability("ServerReleaseNotes");
@@ -1907,7 +2081,7 @@ bool LLViewerRegion::meshRezEnabled() const
 {
 	if (getCapability("SimulatorFeatures").empty())
 	{
-		return !getCapability("GetMesh").empty();
+		return !getCapability("GetMesh").empty() || !getCapability("GetMesh2").empty();
 	}
 	else
 	{
@@ -1916,3 +2090,56 @@ bool LLViewerRegion::meshRezEnabled() const
 	}
 }
 
+bool LLViewerRegion::dynamicPathfindingEnabled() const
+{
+	return ( mSimulatorFeatures.has("DynamicPathfindingEnabled") &&
+			 mSimulatorFeatures["DynamicPathfindingEnabled"].asBoolean());
+}
+
+boost::signals2::connection LLViewerRegion::setFeaturesReceivedCallback(const features_received_signal_t::slot_type& cb)
+{
+	return mFeaturesReceivedSignal.connect(cb);
+}
+
+void LLViewerRegion::resetMaterialsCapThrottle()
+{
+	F32 requests_per_sec = 	1.0f; // original default;
+	if (   mSimulatorFeatures.has("RenderMaterialsCapability")
+		&& mSimulatorFeatures["RenderMaterialsCapability"].isReal() )
+	{
+		requests_per_sec = mSimulatorFeatures["RenderMaterialsCapability"].asReal();
+		if ( requests_per_sec == 0.0f )
+		{
+			requests_per_sec = 1.0f;
+			LL_WARNS("Materials")
+				<< "region '" << getName()
+				<< "' returned zero for RenderMaterialsCapability; using default "
+				<< requests_per_sec << " per second"
+				<< LL_ENDL;
+		}
+		LL_DEBUGS("Materials") << "region '" << getName()
+							   << "' RenderMaterialsCapability " << requests_per_sec
+							   << LL_ENDL;
+	}
+	else
+	{
+		LL_DEBUGS("Materials")
+			<< "region '" << getName()
+			<< "' did not return RenderMaterialsCapability, using default "
+			<< requests_per_sec << " per second"
+			<< LL_ENDL;
+	}
+	
+	mMaterialsCapThrottleTimer.resetWithExpiry( 1.0f / requests_per_sec );
+}
+
+U32 LLViewerRegion::getMaxMaterialsPerTransaction() const
+{
+	U32 max_entries = 50; // original hard coded default
+	if (   mSimulatorFeatures.has( "MaxMaterialsPerTransaction" )
+		&& mSimulatorFeatures[ "MaxMaterialsPerTransaction" ].isInteger())
+	{
+		max_entries = mSimulatorFeatures[ "MaxMaterialsPerTransaction" ].asInteger();
+	}
+	return max_entries;
+}

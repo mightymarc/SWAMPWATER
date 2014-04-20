@@ -65,7 +65,6 @@ SHFloaterMediaTicker::SHFloaterMediaTicker() : LLFloater()/*, LLSingleton<SHFloa
 	if (!app_quitting)
 	{
 		gSavedSettings.setBOOL("SHShowMediaTicker", FALSE);
-		delete this;
 	}
 }
 /*virtual*/void SHFloaterMediaTicker::reshape(S32 width, S32 height, BOOL called_from_parent/*=TRUE*/)
@@ -84,6 +83,9 @@ SHFloaterMediaTicker::SHFloaterMediaTicker() : LLFloater()/*, LLSingleton<SHFloa
 }
 void SHFloaterMediaTicker::updateTickerText() //called via draw.
 {
+	if(!gAudiop)
+		return;
+
 	bool stream_paused = gAudiop->getStreamingAudioImpl()->isPlaying() != 1;	//will return 1 if playing.
 
 	bool dirty = setPaused(stream_paused);
@@ -120,7 +122,7 @@ void SHFloaterMediaTicker::updateTickerText() //called via draw.
 
 void SHFloaterMediaTicker::drawOscilloscope() //called via draw.
 {
-	if(!mVisualizer || !gAudiop->getStreamingAudioImpl()->supportsWaveData())
+	if(!gAudiop || !mVisualizer || !gAudiop->getStreamingAudioImpl()->supportsWaveData())
 		return;
 
 	static const S32 NUM_LINE_STRIPS = 64;			//How many lines to draw. 64 is more than enough.
@@ -254,10 +256,6 @@ void SHFloaterMediaTicker::showInstance()
 BOOL handle_ticker_enabled(void *)
 {
 	return gAudiop && gAudiop->getStreamingAudioImpl() && gAudiop->getStreamingAudioImpl()->supportsMetaData();
-}
-BOOL handle_ticker_check(void *)
-{
-	return SHFloaterMediaTicker::instanceExists();
 }
 void handle_ticker_toggle(void *)
 {

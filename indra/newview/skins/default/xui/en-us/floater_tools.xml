@@ -11,75 +11,135 @@
 	    image_disabled="tool_zoom.tga" image_disabled_selected="tool_zoom_active.tga"
 	    image_selected="tool_zoom_active.tga" image_unselected="tool_zoom.tga"
 	    label="" label_selected="" left="4" mouse_opaque="true" name="button focus"
-	    tool_tip="Focus" width="32" />
+	    tool_tip="Focus" width="32" >
+	  <button.commit_callback
+	     function="BuildTool.setTool"
+	     parameter="Focus" />
+	</button>
 	<button bottom="-34" follows="left|top" font="SansSerif" halign="center" height="32"
 	    image_disabled="UIImgGrabUUID" image_disabled_selected="UIImgGrabSelectedUUID"
 	    image_selected="UIImgGrabSelectedUUID" image_unselected="UIImgGrabUUID"
 	    label="" label_selected="" left="40" mouse_opaque="true" name="button move"
-	    tool_tip="Move" width="32" />
+	    tool_tip="Move" width="32" >
+	  <button.commit_callback
+	     function="BuildTool.setTool"
+	     parameter="Move" />
+	</button>
 	<button bottom="-34" follows="left|top" font="SansSerif" halign="center" height="32"
 	    image_disabled="UIImgFaceUUID" image_disabled_selected="UIImgFaceSelectedUUID"
 	    image_selected="UIImgFaceSelectedUUID" image_unselected="UIImgFaceUUID"
 	    label="" label_selected="" left="76" mouse_opaque="true" name="button edit"
-	    tool_tip="Edit" width="32" />
+	    tool_tip="Edit" width="32" >
+	  <button.commit_callback
+	     function="BuildTool.setTool"
+	     parameter="Edit" />
+	</button>
 	<button bottom="-34" follows="left|top" font="SansSerif" halign="center" height="32"
 	    image_disabled="UIImgCreateUUID" image_disabled_selected="UIImgCreateSelectedUUID"
 	    image_selected="UIImgCreateSelectedUUID" image_unselected="UIImgCreateUUID"
 	    label="" label_selected="" left="112" mouse_opaque="true"
-	    name="button create" tool_tip="Create" width="32" />
+	    name="button create" tool_tip="Create" width="32" >
+	  <button.commit_callback
+	     function="BuildTool.setTool"
+	     parameter="Create" />
+	</button>
 	<button bottom="-34" follows="left|top" font="SansSerif" halign="center" height="32"
 	    image_disabled="tool_dozer.tga" image_disabled_selected="tool_dozer_active.tga"
 	    image_selected="tool_dozer_active.tga" image_unselected="tool_dozer.tga"
 	    label="" label_selected="" left="148" mouse_opaque="true"
-	    name="button land" tool_tip="Land" width="32" />
+	    name="button land" tool_tip="Land" width="32" >
+	  <button.commit_callback
+	     function="BuildTool.setTool"
+	     parameter="Land" />
+	</button>
 
 <!-- Focus panel -->
 
 	<check_box bottom="-70" follows="left|top" font="SansSerifSmall" height="16"
 	    initial_value="false" label="Zoom" left="4" mouse_opaque="true"
-	    name="radio zoom" radio_style="true" width="114" />
+	    name="radio zoom" radio_style="true" width="114" >
+	    <check_box.commit_callback
+	     function="BuildTool.commitRadioFocus"/>
+	</check_box>
+	     
 	<volume_slider bottom="-69" follows="left|top" height="14" increment="0.01"
 	    initial_val="0.125" left="114" max_val="0.5" min_val="0"
-	    mouse_opaque="true" name="slider zoom" width="134" />
+	    mouse_opaque="true" name="slider zoom" width="134" >
+	 <volume_slider.commit_callback
+	     function="BuildTool.commitZoom"/>
+	</volume_slider>
 	<check_box bottom="-84" follows="left|top" font="SansSerifSmall" height="16"
 	    initial_value="false" label="Orbit (Ctrl)" left="4" mouse_opaque="true"
-	    name="radio orbit" radio_style="true" width="114" />
+	    name="radio orbit" radio_style="true" width="114" >
+	    <check_box.commit_callback
+	     function="BuildTool.commitRadioFocus"/>
+	</check_box>
 	<check_box bottom_delta="-15" follows="left|top" font="SansSerifSmall" height="16"
 	    initial_value="false" label="Pan (Ctrl-Shift)" left="4"
-	    mouse_opaque="true" name="radio pan" radio_style="true" width="114" />
+	    mouse_opaque="true" name="radio pan" radio_style="true" width="114" >
+	    <check_box.commit_callback
+	     function="BuildTool.commitRadioFocus"/>
+	</check_box>
 
 <!-- Move panel -->
 
 	<check_box bottom="-70" follows="left|top" font="SansSerifSmall" height="16"
 	    initial_value="false" label="Move" left="4" mouse_opaque="true"
-	    name="radio move" radio_style="true" width="114" />
+	    name="radio move" radio_style="true" width="114" >
+	    <check_box.commit_callback
+			function="BuildTool.commitRadioMove"/>
+	</check_box>
 	<check_box bottom_delta="-15" follows="left|top" font="SansSerifSmall" height="16"
 	    initial_value="false" label="Lift (Ctrl)" left="4" mouse_opaque="true"
-	    name="radio lift" radio_style="true" width="114" />
+	    name="radio lift" radio_style="true" width="114" >
+	    <check_box.commit_callback
+			function="BuildTool.commitRadioMove"/>
+	</check_box>
 	<check_box bottom_delta="-15" follows="left|top" font="SansSerifSmall" height="16"
 	    initial_value="false" label="Spin (Ctrl-Shift)" left="4"
-	    mouse_opaque="true" name="radio spin" radio_style="true" width="114" />
+	    mouse_opaque="true" name="radio spin" radio_style="true" width="114" >
+	    <check_box.commit_callback
+			function="BuildTool.commitRadioMove"/>
+	</check_box>
 
 <!-- Edit panel -->
 	<check_box bottom="-70" follows="left|top" font="SansSerifSmall" height="16"
 	    initial_value="false" label="Position" left="4" mouse_opaque="true"
-	    name="radio position" radio_style="true" width="114" />
+	    name="radio position" radio_style="true" width="114" >
+	    <check_box.commit_callback
+			function="BuildTool.commitRadioEdit"/>
+	</check_box>
 	<check_box bottom_delta="-15" follows="left|top" font="SansSerifSmall" height="16"
 	    initial_value="false" label="Rotate (Ctrl)" left="4" mouse_opaque="true"
-	    name="radio rotate" radio_style="true" width="114" />
+	    name="radio rotate" radio_style="true" width="114" >
+	    <check_box.commit_callback
+			function="BuildTool.commitRadioEdit"/>
+	</check_box>
 	<check_box bottom_delta="-15" follows="left|top" font="SansSerifSmall" height="16"
 	    initial_value="false" label="Stretch (Ctrl-Shift)" left="4"
-	    mouse_opaque="true" name="radio stretch" radio_style="true" width="123" />
+	    mouse_opaque="true" name="radio stretch" radio_style="true" width="123" >
+	    <check_box.commit_callback
+			function="BuildTool.commitRadioEdit"/>
+	</check_box>
 	<check_box bottom_delta="-15" follows="left|top" font="SansSerifSmall" height="16"
 	    initial_value="false" label="Select Texture" left="4" mouse_opaque="true"
-	    name="radio select face" radio_style="true" width="114" />
+	    name="radio select face" radio_style="true" width="114" >
+	    <check_box.commit_callback
+			function="BuildTool.commitRadioEdit"/>
+	</check_box>
 	<check_box bottom_delta="-15" follows="left|top" font="SansSerifSmall" height="16"
 	    initial_value="false" label="Align (Ctrl-A)" left="4" mouse_opaque="true"
-	    name="radio align" radio_style="true" width="114" />
+	    name="radio align" radio_style="true" width="114" >
+	    <check_box.commit_callback
+			function="BuildTool.commitRadioEdit"/>
+	</check_box>
 	<check_box bottom_delta="-15" control_name="EditLinkedParts" follows="left|top"
 	    font="SansSerifSmall" height="16" initial_value="false"
 	    label="Edit linked parts" left="4" mouse_opaque="true"
-	    name="checkbox edit linked parts" width="114" />
+	    name="checkbox edit linked parts" width="114">
+	    <check_box.commit_callback
+			function="BuildTool.selectComponent"/>
+	</check_box>
 	<text bg_visible="false" border_drop_shadow_visible="false" border_visible="false"
 	    bottom_delta="-17" drop_shadow_visible="true" follows="left|top"
 	    font="SansSerifSmall" h_pad="0" halign="left" height="14" left="6"
@@ -98,10 +158,12 @@
 		<combo_item name="Reference" value="Reference">
 			Reference
 		</combo_item>
+	    	<combo_box.commit_callback
+			function="BuildTool.gridMode"/>
 	</combo_box>
-	<check_box bottom="-70" control_name="ScaleUniform" follows="left|top"
+	<check_box bottom="-67" control_name="ScaleUniform" follows="left|top"
 	    font="SansSerifSmall" height="15" initial_value="false"
-	    label="Stretch Both Sides" left="143" mouse_opaque="true"
+	    label="Stretch Both Sides" left="128" mouse_opaque="true"
 	    name="checkbox uniform" width="134" />
 	<check_box bottom_delta="-16" control_name="ScaleStretchTextures" follows="left|top"
 	    font="SansSerifSmall" height="15" initial_value="true"
@@ -111,12 +173,19 @@
 	    font="SansSerifSmall" height="15" initial_value="true"
 	    label="Limit drag distance" left_delta="0" mouse_opaque="true"
 	    name="checkbox limit drag distance" width="134" />
+	<check_box bottom_delta="-15" control_name="AscentBuildPrefs_ActualRoot" follows="left|top"
+		height="16" label="Edit Axis at Root" name="checkbox actual root" width="134"/>
+	<check_box bottom_delta="-16" control_name="RenderHighlightSelections" follows="left|top"
+		height="15" label="Show Highlight" name="checkbox show highlight"/>
 	<check_box bottom_delta="-16" control_name="SnapEnabled" follows="left|top"
 	    font="SansSerifSmall" height="15" initial_value="true" label="Use Grid"
 	    left_delta="0" mouse_opaque="true" name="checkbox snap to grid" width="134" />
-	<button bottom_delta="-17" follows="left|top" font="SansSerifSmall" halign="center" 
-		valign="center" height="20" label="Options..." label_selected="Options..." 
-		left_delta="20" mouse_opaque="true" name="Options..." scale_image="TRUE" width="80" />
+	<button bottom_delta="0" follows="left|top" font="SansSerifSmall" halign="center"
+		valign="center" height="18" label="Options..." label_selected="Options..."
+		left_delta="64" mouse_opaque="true" name="Options..." scale_image="TRUE" width="75" >
+	 	<button.commit_callback
+	     		function="BuildTool.gridOptions"/>
+	</button>
 
 <!-- Help text -->
 
@@ -225,6 +294,9 @@
 	     image_unselected="object_grass.tga" label="" label_selected=""
 	     left_delta="23" mouse_opaque="true" name="ToolGrass" scale_image="TRUE"
 	     tool_tip="Grass" width="24" />
+	<text name="tree_grass_label" bottom="-106" follows="left|top" height="16" width="135" right="-5"/>
+	<combo_box name="trees_grass" bottom="-120" follows="left|top" height="18" width="135" right="-5"/>
+	<string name="Random">Random</string>
 	<check_box bottom="-117" control_name="CreateToolKeepSelected" follows="left|top"
 	     font="SansSerifSmall" height="16" initial_value="false"
 	     label="Keep selected" left="4" mouse_opaque="true"
@@ -245,29 +317,53 @@
 
 	<check_box bottom="-69" follows="left|top" font="SansSerifSmall" height="16"
 	     initial_value="false" label="Select Land" left="4" mouse_opaque="true"
-	     name="radio select land" radio_style="true" width="114" />
+	     name="radio select land" radio_style="true" width="114" >
+	     <check_box.commit_callback
+	     	function="BuildTool.commitRadioLand"/>
+	</check_box>
 	<check_box bottom_delta="-15" follows="left|top" font="SansSerifSmall" height="16"
 	     initial_value="false" label="Flatten" left="4" mouse_opaque="true"
-	     name="radio flatten" radio_style="true" width="114" />
+	     name="radio flatten" radio_style="true" width="114" >
+	     <check_box.commit_callback
+	     	function="BuildTool.commitRadioLand"/>
+	</check_box>
 	<check_box bottom_delta="-15" follows="left|top" font="SansSerifSmall" height="16"
 	     initial_value="false" label="Raise" left="4" mouse_opaque="true"
-	     name="radio raise" radio_style="true" width="114" />
+	     name="radio raise" radio_style="true" width="114" >
+	     <check_box.commit_callback
+	     	function="BuildTool.commitRadioLand"/>
+	</check_box>
 	<check_box bottom_delta="-15" follows="left|top" font="SansSerifSmall" height="16"
 	     initial_value="false" label="Lower" left="4" mouse_opaque="true"
-	     name="radio lower" radio_style="true" width="114" />
+	     name="radio lower" radio_style="true" width="114" >
+	     <check_box.commit_callback
+	     	function="BuildTool.commitRadioLand"/>
+	</check_box>
 	<check_box bottom_delta="-15" follows="left|top" font="SansSerifSmall" height="16"
 	     initial_value="false" label="Smooth" left="4" mouse_opaque="true"
-	     name="radio smooth" radio_style="true" width="114" />
+	     name="radio smooth" radio_style="true" width="114" >
+	     <check_box.commit_callback
+	     	function="BuildTool.commitRadioLand"/>
+	</check_box>
 	<check_box bottom_delta="-15" follows="left|top" font="SansSerifSmall" height="16"
 	     initial_value="false" label="Roughen" left="4" mouse_opaque="true"
-	     name="radio noise" radio_style="true" width="114" />
+	     name="radio noise" radio_style="true" width="114" >
+	     <check_box.commit_callback
+	     	function="BuildTool.commitRadioLand"/>
+	</check_box>
 	<check_box bottom_delta="-15" follows="left|top" font="SansSerifSmall" height="16"
 	     initial_value="false" label="Revert" left="4" mouse_opaque="true"
-	     name="radio revert" radio_style="true" width="114" />
+	     name="radio revert" radio_style="true" width="114" >
+	     <check_box.commit_callback
+	     	function="BuildTool.commitRadioLand"/>
+	</check_box>
 	<button bottom="-72" follows="left|top" font="SansSerifSmall" halign="center"
 	     height="20" label="Apply" label_selected="Apply"
 	     left="116" mouse_opaque="true" name="button apply to selection"
-	     scale_image="TRUE" tool_tip="Modify Selected Land" width="78" />
+	     scale_image="TRUE" tool_tip="Modify Selected Land" width="78" >
+	     <button.commit_callback
+	     	function="BuildTool.applyToSelection"/>
+    	</button>
 	<text type="string" length="1" bg_visible="false" border_drop_shadow_visible="false"
 	     border_visible="false" bottom_delta="-16" drop_shadow_visible="true" enabled="true"
 	     follows="left|top" font="SansSerifSmall" h_pad="0" halign="left" height="12" left="118"
@@ -282,7 +378,10 @@
 	</text>
 	<volume_slider bottom_delta="-4" follows="left|top" height="16" hidden="false"
          increment="0.1" initial_val="2.0" left="178" max_val="11.0" min_val="1.0"
-	     mouse_opaque="true" name="slider brush size" width="80" />	
+	     mouse_opaque="true" name="slider brush size" width="80" >
+	     <volume_slider.commit_callback
+	     	function="BuildTool.commitDozerSize"/>
+    	</volume_slider>
 	<text type="string" length="1" bg_visible="false" border_drop_shadow_visible="false"
 	     border_visible="false" bottom_delta="-18" drop_shadow_visible="true" enabled="true"
 	     follows="left|top" font="SansSerifSmall" h_pad="0" halign="left" height="12" left="132"
@@ -291,15 +390,18 @@
 	</text>
 	<volume_slider bottom_delta="-4" follows="left|top" height="16" hidden="false"
 	     increment="0.1" initial_val="0.00" left="178" max_val="2.0" min_val="-1.0"
-	     mouse_opaque="true" name="slider force" width="80" />
+	     mouse_opaque="true" name="slider force" width="80" >
+	     <volume_slider.commit_callback
+	     	function="BuildTool.LandBrushForce"/>
+    	</volume_slider>
 	<text bg_visible="false" border_drop_shadow_visible="false" border_visible="false"
-         bottom="-151" left="118" drop_shadow_visible="true" follows="left|top"
+         bottom="-160" left="118" drop_shadow_visible="true" follows="left|top"
          font="SansSerifSmall" h_pad="0" halign="right" height="16" visible="false" 
          mouse_opaque="true" name="link_num_obj_count" v_pad="0" width="143">
 		[DESC] [NUM]
 	</text>
 	<text bg_visible="false" border_drop_shadow_visible="false" border_visible="false"
-       bottom="-163" left="118" drop_shadow_visible="true" follows="left|top"
+       bottom="-170" left="118" drop_shadow_visible="true" follows="left|top"
        font="SansSerifSmall" h_pad="0" halign="right" height="16"
        mouse_opaque="true" name="prim_count" v_pad="0" width="143"/>
 
@@ -384,13 +486,14 @@
 				mouse_opaque="true" name="Group:" v_pad="0" width="78">
 				Group:
 			</text>
-			<text bg_visible="false" border_drop_shadow_visible="false" border_visible="false"
-			    bottom="-126" drop_shadow_visible="true" follows="left|top"
-			    font="SansSerifSmall" h_pad="0" halign="left" height="16" left_delta="78"
-			    mouse_opaque="true" name="Group Name Proxy" v_pad="0" visible="false"
-			    width="88">
-				The Lindens
-			</text>
+			<name_box
+			    follows="left|top"
+			    height="16" 
+			    initial_value="Loading..."
+			    bottom="-126" 
+			    left_delta="78"
+			    name="Group Name Proxy"
+			    width="142"/>
 			<button bottom="-126" follows="top|right" font="SansSerifSmall" halign="center"
 			    height="16" label="Set" label_selected="Set..." left_delta="94"
 			    mouse_opaque="true" name="button set group" scale_image="TRUE" width="30" />
@@ -409,7 +512,7 @@
 			    mouse_opaque="true" name="perm_modify" v_pad="0" width="250">
 				You can modify this object.
 			</text>
-			<check_box bottom_delta="-20" follows="left|top" font="SansSerifSmall" height="16"
+			<check_box bottom_delta="-16" follows="left|top" font="SansSerifSmall" height="16"
 			    initial_value="false" label="Share with group" left="10"
 			    mouse_opaque="true" name="checkbox share with group"
 			    tool_tip="Allow all members of the set group to share and use your permissions for this object. You must Deed to enable role restrictions."
@@ -420,21 +523,23 @@
 			<string name="text deed">
 				Deed
 			</string>
-			<button bottom="-186" follows="top|right" font="SansSerifSmall" halign="center"
+			<button bottom_delta="0" follows="top|right" font="SansSerifSmall" halign="center"
 			     height="20" label="Deed..." label_selected="Deed..." left_delta="172"
 			     mouse_opaque="true" name="button deed" scale_image="TRUE"
 			     tool_tip="Group shared objects can be deeded by a group officer."
 			     width="78" />
-			<check_box bottom="-206" follows="left|top" font="SansSerifSmall" height="16"
-			     initial_value="false" label="Allow anyone to move" left="10"
+			<text name="text anyone can" bottom_delta="-12" left="10" follows="left|top">Anyone can:</text>
+			<check_box bottom_delta="-24" follows="left|top" font="SansSerifSmall" height="16"
+			     initial_value="false" label="Move"
 			     mouse_opaque="true" name="checkbox allow everyone move" width="142" />
-			<check_box bottom_delta="-20" follows="left|top" font="SansSerifSmall" height="16"
-			     initial_value="false" label="Allow anyone to copy" left="10"
+			<check_box bottom_delta="0" follows="left|top" font="SansSerifSmall" height="16"
+			     initial_value="false" label="Copy" left_delta="60"
 			     mouse_opaque="true" name="checkbox allow everyone copy" width="141" />
-			<check_box bottom_delta="-20" follows="left|top" font="SansSerifSmall" height="16"
+			<check_box name="checkbox allow export" label="Export" bottom_delta="0" left_delta="60" follows="left|top"/>
+			<check_box bottom_delta="-18" follows="left|top" font="SansSerifSmall" height="16"
 			     initial_value="false" label="Show in search" left="10" name="search_check"
 			     tool_tip="Let people see this object in search results" width="78" />
-			<check_box bottom_delta="-20" follows="left|top" font="SansSerifSmall" height="16"
+			<check_box bottom_delta="-18" follows="left|top" font="SansSerifSmall" height="16"
 			     initial_value="false" label="For Sale" left="10" mouse_opaque="true"
 			     name="checkbox for sale" width="78" />
 			<text bg_visible="false" border_drop_shadow_visible="false" border_visible="false"
@@ -446,7 +551,7 @@
 			<line_editor bevel_style="in" border_style="line" border_thickness="1" bottom_delta="0"
 			     follows="left|top|right" font="SansSerifSmall" height="16" left_delta="80"
 			     max_length="25" mouse_opaque="true" name="Edit Cost" width="75" />
-			<radio_group bottom="-286" draw_border="false" follows="left|top|right" height="16"
+			<radio_group bottom_delta="-18" draw_border="false" follows="left|top|right" height="16"
 			     left="42" mouse_opaque="true" name="sale type" width="218">
 				<radio_item bottom="-16" follows="left|top" height="16" left="0" mouse_opaque="true"
 				     name="Original" width="70">
@@ -462,7 +567,7 @@
 				</radio_item>
 			</radio_group>
 			<text bg_visible="false" border_drop_shadow_visible="false" border_visible="false"
-			     bottom="-298" drop_shadow_visible="true" follows="left|top|right"
+			     bottom_delta="-5" drop_shadow_visible="true" follows="left|top|right"
 			     font="SansSerifSmall" h_pad="0" halign="left" height="10" left="10"
 			     mouse_opaque="true" name="Next owner can:" v_pad="0" width="250">
 				Next owner can:
@@ -477,12 +582,12 @@
 			     initial_value="false" label="Resell/Give away" left_delta="60"
 			     mouse_opaque="true" name="checkbox next owner can transfer" width="130" />
 			<text bg_visible="false" border_drop_shadow_visible="false" border_visible="false"
-			     bottom="-332" drop_shadow_visible="true" follows="left|top"
+			     bottom="-334" drop_shadow_visible="true" follows="left|top"
 			     font="SansSerifSmall" h_pad="0" halign="left" height="10" left="10"
 			     mouse_opaque="true" name="label click action" v_pad="0" width="150">
 				When Left-Clicked:
 			</text>
-			<combo_box allow_text_entry="false" bottom_delta="-25" follows="left|top" height="18"
+			<combo_box bottom_delta="-24" allow_text_entry="false" follows="left|top" height="20"
 			     left="10" max_chars="20" mouse_opaque="true" name="clickaction" width="150">
 			     <!-- Do not reorder these items, the index numbers are
 					used internally. JC -->
@@ -514,41 +619,69 @@
 				tool_tip="Copies the object key to the clipboard."
 				width="78" />
       		<text bg_visible="false" border_drop_shadow_visible="false" border_visible="false"
-			     bottom="-135" drop_shadow_visible="true" follows="left|top"
-			     font="SansSerifSmall" h_pad="0" halign="left" height="10" left="88"
+			     bottom="-160" drop_shadow_visible="true" follows="left|top"
+			     font="SansSerifSmall" h_pad="0" halign="left" height="10" left="10"
 			     mouse_opaque="true" name="B:" v_pad="0" width="174">
 				B:
 			</text>
 			<text bg_visible="false" border_drop_shadow_visible="false" border_visible="false"
-			     bottom="-115" drop_shadow_visible="true" follows="left|top"
-			     font="SansSerifSmall" h_pad="0" halign="left" height="10" left_delta="50"
-			     mouse_opaque="true" name="O:" v_pad="0" width="124">
-				O;
-			</text>
-			<text bg_visible="false" border_drop_shadow_visible="false" border_visible="false"
-			     bottom="-115" drop_shadow_visible="true" follows="left|top"
+			     bottom="-160" drop_shadow_visible="true" follows="left|top"
 			     font="SansSerifSmall" h_pad="0" halign="left" height="10" left_delta="50"
 			     mouse_opaque="true" name="G:" v_pad="0" width="74">
 				G:
 			</text>
 			<text bg_visible="false" border_drop_shadow_visible="false" border_visible="false"
-			     bottom="-127" drop_shadow_visible="true" follows="left|top"
-			     font="SansSerifSmall" h_pad="0" halign="left" height="10" left="88"
+			     bottom="-160" drop_shadow_visible="true" follows="left|top"
+			     font="SansSerifSmall" h_pad="0" halign="left" height="10" left_delta="50"
 			     mouse_opaque="true" name="E:" v_pad="0" width="174">
 				E:
 			</text>
 			<text bg_visible="false" border_drop_shadow_visible="false" border_visible="false"
-			     bottom="-127" drop_shadow_visible="true" follows="left|top"
+			     bottom="-160" drop_shadow_visible="true" follows="left|top"
 			     font="SansSerifSmall" h_pad="0" halign="left" height="10" left_delta="50"
 			     mouse_opaque="true" name="N:" v_pad="0" width="124">
 				N:
 			</text>
 			<text bg_visible="false" border_drop_shadow_visible="false" border_visible="false"
-			     bottom="-127" drop_shadow_visible="true" follows="left|top"
+			     bottom="-160" drop_shadow_visible="true" follows="left|top"
 			     font="SansSerifSmall" h_pad="0" halign="left" height="10" left_delta="50"
 			     mouse_opaque="true" name="F:" v_pad="0" width="74">
 				F:
 			</text>
+      <panel mouse_opaque="false" bottom="-302" border="true" height="155" left="5" width="260"/>
+      <panel
+     bottom="-328"
+     border="false"
+     follows="left|top"
+     layout="topleft"
+     mouse_opaque="false"
+     name="pathfinding_attrs_panel"
+     left="0"
+     top_pad="0"
+     height="25"
+     width="290">
+        <text
+           type="string"
+           follows="left|top"
+           name="pathfinding_attributes_label"
+           top_pad="4"
+           width="150"
+           left="10">
+          Pathfinding attributes:
+        </text>
+        <text
+           bottom_delta="0"
+           left_delta="120"
+           type="string"
+           text_color="TextLinkColor"
+           follows="left|top"
+           name="pathfinding_attributes_value"
+           width="130"
+           word_wrap="false"
+           left_pad="0">
+          Test
+        </text>
+      </panel>
 			<string name="text modify info 1">
 				You can modify this object.
 			</string>
@@ -561,6 +694,12 @@
 			<string name="text modify info 4">
 				You cannot modify these objects.
 			</string>
+      <string name="text modify info 5">
+        You can't modify this object across a region boundary
+      </string>
+      <string name="text modify info 6">
+        You can't modify these objects across a region boundary
+      </string>
 			<string name="text modify warning">
 				Must select entire object to set permissions.
 			</string>
@@ -630,7 +769,7 @@
 			     text_enabled_color="0, 100, 40, 255" width="87" />
 			<spinner bottom_delta="-18" decimal_digits="4" follows="left|top" height="16"
 			     increment="0.01" initial_val="0" label="Z" label_width="10" left_delta="0"
-			     max_val="4096" min_val="-3.5" mouse_opaque="true" name="Pos Z"
+			     min_val="-3.5" mouse_opaque="true" name="Pos Z"
 			     text_enabled_color="0, 67, 132, 255" width="87" />
 			<button bottom_delta="35" follows="top|right" font="SansSerifSmall" halign="center"
 				 height="18" label="C" left_delta="90" mouse_opaque="true" name="copypos" enabled="true"
@@ -735,7 +874,7 @@
 			</text>
 			<button bottom="-24" follows="top|right" font="SansSerifSmall" halign="center"
 			    height="16" label="Copy" left="178" mouse_opaque="true" name="copyparams"  enabled="true"
-			    tool_tip="Copy Parameters from Clipboard"  width="42" />
+			    tool_tip="Copy Parameters to Clipboard"  width="42" />
 			<button bottom_delta="0" follows="top|right" font="SansSerifSmall" halign="center"
 			     height="16" label="Paste" left_delta="42" mouse_opaque="true" name="pasteparams"  enabled="true"
      			 tool_tip="Paste Parameters from Clipboard"  width="42" />
@@ -1216,214 +1355,13 @@
 	     bottom_delta="-20"
              width="118" />
 		</panel>
-
-<!-- Texture sub-tab -->
-
-		<panel border="true" bottom="-383" follows="left|top|right|bottom" height="367"
-		     label="Texture" left="1" mouse_opaque="false" name="Texture" width="270">
-			<texture_picker allow_no_texture="false" allow_invisible_texture="true" bottom="-90" can_apply_immediately="true"
-			     default_image_name="Default" follows="left|top" height="80" label="Texture"
-			     left="10" mouse_opaque="true" name="texture control"
-			     tool_tip="Click to choose a picture" width="64" />
-			<color_swatch border_color="0.45098, 0.517647, 0.607843, 1" bottom="-90"
-			     can_apply_immediately="true" color="1, 1, 1, 1" follows="left|top"
-			     height="80" label="Color" left_delta="90" mouse_opaque="true"
-			     name="colorswatch" tool_tip="Click to open Color Picker" width="64" />
-			<text bg_visible="false" border_drop_shadow_visible="false" border_visible="false"
-			     bottom="-11" drop_shadow_visible="true" follows="left|top"
-			     font="SansSerifSmall" h_pad="0" halign="left" height="10" left="180"
-			     mouse_opaque="true" name="color trans" v_pad="0" width="80">
-				Transparency %
-			</text>
-			<spinner bottom_delta="-20" decimal_digits="0" follows="left|top" height="16"
-			     increment="2" initial_val="0" left="180" max_val="100" min_val="0"
-			     mouse_opaque="true" name="ColorTrans" width="80" />
-			<text bg_visible="false" border_drop_shadow_visible="false" border_visible="false"
-			     bottom_delta="-12" drop_shadow_visible="true" follows="left|top"
-			     font="SansSerifSmall" h_pad="0" halign="left" height="10"
-			     left="180" mouse_opaque="true" name="glow label" v_pad="0" width="80">
-				Glow
-			</text>
-			<spinner bottom_delta="-20" decimal_digits="2" follows="left|top" height="16"
-			     increment="0.1" initial_val="0" left="180" max_val="1"
-			     min_val="0" mouse_opaque="true" name="glow" width="80" />
-			<check_box bottom_delta="-23" follows="left|top" font="SansSerifSmall" height="16"
-			     initial_value="false" label="Full Bright" left="180" mouse_opaque="true"
-			     name="checkbox fullbright" width="81" />
-			<text bg_visible="false" border_drop_shadow_visible="false" border_visible="false"
-			     bottom="-104" drop_shadow_visible="true" follows="left|top"
-			     font="SansSerifSmall" h_pad="0" halign="left" height="10" left="10"
-			     mouse_opaque="true" name="tex gen" v_pad="0" width="90">
-				Mapping
-			</text>
-			<combo_box allow_text_entry="false" bottom_delta="-22" follows="left|top" height="18"
-			     left="10" max_chars="20" mouse_opaque="true" name="combobox texgen"
-			     width="80">
-				<combo_item name="Default" value="Default">
-					Default
-				</combo_item>
-				<combo_item name="Planar" value="Planar">
-					Planar
-				</combo_item>
-			</combo_box>
-			<text bg_visible="false" border_drop_shadow_visible="false" border_visible="false"
-			     bottom="-104" drop_shadow_visible="true" follows="left|top"
-			     font="SansSerifSmall" h_pad="0" halign="left" height="10" left="100"
-			     mouse_opaque="true" name="label shininess" v_pad="0" width="70">
-				Shininess
-			</text>
-			<combo_box allow_text_entry="false" bottom_delta="-22" follows="left|top" height="18"
-			     left="100" max_chars="20" mouse_opaque="true" name="combobox shininess"
-			     width="70">
-				<combo_item name="None" value="None">
-					None
-				</combo_item>
-				<combo_item name="Low" value="Low">
-					Low
-				</combo_item>
-				<combo_item name="Medium" value="Medium">
-					Medium
-				</combo_item>
-				<combo_item name="High" value="High">
-					High
-				</combo_item>
-			</combo_box>
-			<text bg_visible="false" border_drop_shadow_visible="false" border_visible="false"
-			     bottom="-104" drop_shadow_visible="true" follows="left|top"
-			     font="SansSerifSmall" h_pad="0" halign="left" height="10" left="180"
-			     mouse_opaque="true" name="label bumpiness" v_pad="0" width="80">
-				Bumpiness
-			</text>
-			<combo_box allow_text_entry="false" bottom_delta="-22" follows="left|top" height="18"
-			     left="180" max_chars="20" mouse_opaque="true" name="combobox bumpiness"
-			     width="80">
-				<combo_item name="None" value="None">
-					None
-				</combo_item>
-				<combo_item name="Brightness" value="Brightness">
-					Brightness
-				</combo_item>
-				<combo_item name="Darkness" value="Darkness">
-					Darkness
-				</combo_item>
-				<combo_item name="woodgrain" value="woodgrain">
-					woodgrain
-				</combo_item>
-				<combo_item name="bark" value="bark">
-					bark
-				</combo_item>
-				<combo_item name="bricks" value="bricks">
-					bricks
-				</combo_item>
-				<combo_item name="checker" value="checker">
-					checker
-				</combo_item>
-				<combo_item name="concrete" value="concrete">
-					concrete
-				</combo_item>
-				<combo_item name="crustytile" value="crustytile">
-					crustytile
-				</combo_item>
-				<combo_item name="cutstone" value="cutstone">
-					cutstone
-				</combo_item>
-				<combo_item name="discs" value="discs">
-					discs
-				</combo_item>
-				<combo_item name="gravel" value="gravel">
-					gravel
-				</combo_item>
-				<combo_item name="petridish" value="petridish">
-					petridish
-				</combo_item>
-				<combo_item name="siding" value="siding">
-					siding
-				</combo_item>
-				<combo_item name="stonetile" value="stonetile">
-					stonetile
-				</combo_item>
-				<combo_item name="stucco" value="stucco">
-					stucco
-				</combo_item>
-				<combo_item name="suction" value="suction">
-					suction
-				</combo_item>
-				<combo_item name="weave" value="weave">
-					weave
-				</combo_item>
-			</combo_box>
-			<check_box bottom="-148" follows="left|top" font="SansSerifSmall" height="16"
-				initial_value="false" enabled="false" label="Align planar textures"
-				left="8" mouse_opaque="true" name="checkbox planar align" width="160"
-				tool_tip="Aligns textures on all selected faces to the last selected face. Requires Planar texture mapping." />
-			<text bg_visible="false" border_drop_shadow_visible="false" border_visible="false"
-			     bottom="-158" drop_shadow_visible="true" follows="left|top"
-			     font="SansSerifSmall" h_pad="0" halign="left" height="10" left="10"
-			     mouse_opaque="true" name="tex scale" v_pad="0" width="160">
-				Repeats per Face
-			</text>
-			<spinner bottom="-178" decimal_digits="5" follows="left|top" height="16" increment="0.1"
-			     initial_val="0" label="Horizontal (U)" label_width="90" left="20"
-			     max_val="1000" min_val="0" mouse_opaque="true" name="TexScaleU" width="160" />
-			<check_box bottom="-179" follows="left|top" font="SansSerifSmall" height="16"
-			     initial_value="false" label="Flip" left_delta="170" mouse_opaque="true"
-			     name="checkbox flip s" width="70" />
-			<spinner bottom="-196" decimal_digits="5" follows="left|top" height="16" increment="0.1"
-			     initial_val="0" label="Vertical (V)" label_width="90" left="20"
-			     max_val="1000" min_val="0" mouse_opaque="true" name="TexScaleV" width="160" />
-			<check_box bottom="-197" follows="left|top" font="SansSerifSmall" height="16"
-			     initial_value="false" label="Flip" left_delta="170" mouse_opaque="true"
-			     name="checkbox flip t" width="70" />
-			<text bg_visible="false" border_drop_shadow_visible="false" border_visible="false"
-			     bottom="-228" drop_shadow_visible="true" follows="left|top"
-			     font="SansSerifSmall" h_pad="0" halign="left" height="10" left="10"
-			     mouse_opaque="true" name="tex rotate" v_pad="0" width="102">
-				Rotation (degrees)
-			</text>
-			<spinner bottom="-234" decimal_digits="2" follows="left|top" height="16" increment="1"
-			     initial_val="0" left="112" max_val="9999" min_val="-9999"
-			     mouse_opaque="true" name="TexRot" width="68" />
-			<string name="string repeats per meter">
-				Repeats Per Meter
-			</string>
-			<string name="string repeats per face">
-				Repeats Per Face
-			</string>
-			<text bg_visible="false" border_drop_shadow_visible="false" border_visible="false"
-			     bottom="-250" drop_shadow_visible="true" follows="left|top"
-			     font="SansSerifSmall" h_pad="0" halign="left" height="10" left="10"
-			     mouse_opaque="true" name="rpt" v_pad="0" width="160">
-				Repeats Per Meter
-			</text>
-			<spinner bottom="-256" decimal_digits="1" follows="left|top" height="16" increment="0.1"
-			     initial_val="1" left="112" max_val="10" min_val="0.1" mouse_opaque="true"
-			     name="rptctrl" width="68" />
-			<button bottom="-256" follows="left|top" font="SansSerifSmall" halign="center"
-			     height="20" label="Apply" label_selected="Apply" left_delta="78"
-			     mouse_opaque="true" name="button apply" scale_image="TRUE" width="75" />
-			<text bg_visible="false" border_drop_shadow_visible="false" border_visible="false"
-			     bottom="-288" drop_shadow_visible="true" follows="left|top"
-			     font="SansSerifSmall" h_pad="0" halign="left" height="10" left="10"
-			     mouse_opaque="true" name="tex offset" v_pad="0" width="160">
-				Offset
-			</text>
-			<spinner bottom="-308" decimal_digits="4" follows="top" height="16" increment="0.01" initial_val="0" label="Horizontal (U)" label_width="90" left="20"
-			     max_val="1" min_val="-1" mouse_opaque="true" name="TexOffsetU" width="160"/>
-			<spinner bottom_delta="-18" decimal_digits="4" follows="top" height="16" increment="0.01" initial_val="0" label="Vertical (V)" label_width="90"
-			     left="20" max_val="1" min_val="-1" name="TexOffsetV"
-			     width="160"/>
-			<text bottom="-352" height="20" left="10" name="textbox autofix" v_pad="0" width="160">Align media texture
-(must load first)</text>
-			<button bottom="-360" follows="left|top" font="SansSerifSmall" halign="center"
-			     height="20" label="Align" label_selected="Align" left="112"
-			     mouse_opaque="true" name="button align" scale_image="TRUE" width="68" />
-			<text bottom="-322" drop_shadow_visible="true" follows="left|top" height="20" left="185" name="textbox params">Texture Params</text>
-			<button bottom_delta="-18" follows="top|right" font="SansSerifSmall" halign="center"
-			     height="20" label="Copy" left_delta="5" mouse_opaque="true" name="copytextures"  enabled="true"
-			     tool_tip="Copy Testure Params from Clipboard"  width="68" />
-	  		<button bottom_delta="-20" follows="top" height="20" label="Paste" name="pastetextures" tool_tip="Paste Texture Params from Clipboard"  width="68" />
-    	</panel>
-    	<panel border="true" bottom="-383" follows="left|top|right|bottom" height="367"
+        <panel
+         label="Texture"
+         help_topic="toolbox_texture_tab"
+         name="Texture"
+         filename="panel_tools_texture.xml">
+	   </panel>
+       <panel border="true" bottom="-383" follows="left|top|right|bottom" height="367"
 		     label="Content" left="1" mouse_opaque="false" name="Contents" width="270">
       		<button bottom="-30" follows="left|top" font="SansSerif" halign="center" height="20" label="New Script" label_selected="New Script" left="10" name="button new script" scale_image="TRUE" width="100"/>
       <button bottom_delta="0" left_delta="110" width="100" height="20" follows="left|top"

@@ -28,18 +28,23 @@
 
 #include "llmodel.h"
 #include "llmemory.h"
-#if MESH_IMPORT
-#include "llconvexdecomposition.h"
-#endif //MESH_IMPORT
+#include "LLConvexDecomposition.h"
 #include "llsdserialize.h"
 #include "llvector4a.h"
-
-#if MESH_IMPORT
+#if LL_MSVC
+#pragma warning (push)
+#pragma warning (disable : 4068)
+#pragma warning (disable : 4263)
+#pragma warning (disable : 4264)
+#endif
+#pragma GCC diagnostic ignored "-Woverloaded-virtual"
 #include "dae.h"
 #include "dae/daeErrorHandler.h"
 #include "dom/domConstants.h"
 #include "dom/domMesh.h"
-#endif //MESH_IMPORT
+#if LL_MSVC
+#pragma warning (pop)
+#endif
 
 #ifdef LL_STANDALONE
 # include <zlib.h>
@@ -72,18 +77,14 @@ LLModel::~LLModel()
 {
 	if (mDecompID >= 0)
 	{
-#if	MESH_IMPORT
 		LLConvexDecomposition::getInstance()->deleteDecomposition(mDecompID);
-#endif //MESH_IMPORT
 	}
 }
 
-#if	MESH_IMPORT
 
 bool get_dom_sources(const domInputLocalOffset_Array& inputs, S32& pos_offset, S32& tc_offset, S32& norm_offset, S32 &idx_stride,
 					 domSource* &pos_source, domSource* &tc_source, domSource* &norm_source)
 {
-	
 	idx_stride = 0;
 
 	for (U32 j = 0; j < inputs.getCount(); ++j)
@@ -209,7 +210,6 @@ LLModel::EModelStatus load_face_from_dom_triangles(std::vector<LLVolumeFace>& fa
 								n[idx[i+norm_offset]*3+1],
 								n[idx[i+norm_offset]*3+2]));
 		}
-
 		
 		BOOL found = FALSE;
 			
@@ -263,20 +263,19 @@ LLModel::EModelStatus load_face_from_dom_triangles(std::vector<LLVolumeFace>& fa
 			LLVolumeFace& new_face = *face_list.rbegin();
 			if (!norm_source)
 			{
-				ll_aligned_free_16(new_face.mNormals);
+				//l_aligned_free_16(new_face.mNormals);
 				new_face.mNormals = NULL;
 			}
 
 			if (!tc_source)
 			{
-				ll_aligned_free_16(new_face.mTexCoords);
+				//ll_aligned_free_16(new_face.mTexCoords);
 				new_face.mTexCoords = NULL;
 			}
 
 			face = LLVolumeFace();
 			point_map.clear();
 		}
-
 	}
 
 	if (!verts.empty())
@@ -295,13 +294,13 @@ LLModel::EModelStatus load_face_from_dom_triangles(std::vector<LLVolumeFace>& fa
 		LLVolumeFace& new_face = *face_list.rbegin();
 		if (!norm_source)
 		{
-			ll_aligned_free_16(new_face.mNormals);
+			//ll_aligned_free_16(new_face.mNormals);
 			new_face.mNormals = NULL;
 		}
 
 		if (!tc_source)
 		{
-			ll_aligned_free_16(new_face.mTexCoords);
+			//ll_aligned_free_16(new_face.mTexCoords);
 			new_face.mTexCoords = NULL;
 		}
 	}
@@ -483,13 +482,13 @@ LLModel::EModelStatus load_face_from_dom_polylist(std::vector<LLVolumeFace>& fac
 				LLVolumeFace& new_face = *face_list.rbegin();
 				if (!norm_source)
 				{
-					ll_aligned_free_16(new_face.mNormals);
+					//ll_aligned_free_16(new_face.mNormals);
 					new_face.mNormals = NULL;
 				}
 
 				if (!tc_source)
 				{
-					ll_aligned_free_16(new_face.mTexCoords);
+					//ll_aligned_free_16(new_face.mTexCoords);
 					new_face.mTexCoords = NULL;
 				}
 
@@ -509,7 +508,7 @@ LLModel::EModelStatus load_face_from_dom_polylist(std::vector<LLVolumeFace>& fac
 		{
 			material = std::string(poly->getMaterial());
 		}
-		
+	
 		materials.push_back(material);
 		face_list.push_back(face);
 		face_list.rbegin()->fillFromLegacyData(verts, indices);
@@ -517,13 +516,13 @@ LLModel::EModelStatus load_face_from_dom_polylist(std::vector<LLVolumeFace>& fac
 		LLVolumeFace& new_face = *face_list.rbegin();
 		if (!norm_source)
 		{
-			ll_aligned_free_16(new_face.mNormals);
+			//ll_aligned_free_16(new_face.mNormals);
 			new_face.mNormals = NULL;
 		}
 
 		if (!tc_source)
 		{
-			ll_aligned_free_16(new_face.mTexCoords);
+			//ll_aligned_free_16(new_face.mTexCoords);
 			new_face.mTexCoords = NULL;
 		}
 	}
@@ -538,7 +537,6 @@ LLModel::EModelStatus load_face_from_dom_polygons(std::vector<LLVolumeFace>& fac
 	std::vector<LLVolumeFace::VertexData> verts;
 
 	const domInputLocalOffset_Array& inputs = poly->getInput_array();
-
 
 	S32 v_offset = -1;
 	S32 n_offset = -1;
@@ -632,27 +630,42 @@ LLModel::EModelStatus load_face_from_dom_polygons(std::vector<LLVolumeFace>& fac
 			if (v)
 			{
 				U32 v_idx = idx[j*stride+v_offset]*3;
+				v_idx = llclamp(v_idx, (U32) 0, (U32) v->getCount());
 				vert.getPosition().set(v->get(v_idx),
 								v->get(v_idx+1),
 								v->get(v_idx+2));
 			}
 			
-			if (n)
+			//bounds check n and t lookups because some FBX to DAE converters
+			//use negative indices and empty arrays to indicate data does not exist
+			//for a particular channel
+			if (n && n->getCount() > 0)
 			{
 				U32 n_idx = idx[j*stride+n_offset]*3;
+				n_idx = llclamp(n_idx, (U32) 0, (U32) n->getCount());
 				vert.getNormal().set(n->get(n_idx),
 								n->get(n_idx+1),
 								n->get(n_idx+2));
 			}
+			else
+			{
+				vert.getNormal().clear();
+			}
 
-			if (t)
+			
+			if (t && t->getCount() > 0)
 			{
 				U32 t_idx = idx[j*stride+t_offset]*2;
+				t_idx = llclamp(t_idx, (U32) 0, (U32) t->getCount());
 				vert.mTexCoord.setVec(t->get(t_idx),
 								t->get(t_idx+1));								
 			}
-		
-			
+			else
+			{
+				vert.mTexCoord.clear();
+			}
+
+						
 			verts.push_back(vert);
 		}
 	}
@@ -719,13 +732,13 @@ LLModel::EModelStatus load_face_from_dom_polygons(std::vector<LLVolumeFace>& fac
 		LLVolumeFace& new_face = *face_list.rbegin();
 		if (!n)
 		{
-			ll_aligned_free_16(new_face.mNormals);
+			//ll_aligned_free_16(new_face.mNormals);
 			new_face.mNormals = NULL;
 		}
 
 		if (!t)
 		{
-			ll_aligned_free_16(new_face.mTexCoords);
+			//ll_aligned_free_16(new_face.mTexCoords);
 			new_face.mTexCoords = NULL;
 		}
 	}
@@ -828,7 +841,6 @@ BOOL LLModel::createVolumeFacesFromDomMesh(domMesh* mesh)
 	
 	return FALSE;
 }
-#endif //MESH_IMPORT
 
 void LLModel::offsetMesh( const LLVector3& pivotPoint )
 {
@@ -1000,6 +1012,43 @@ void LLModel::getNormalizedScaleTranslation(LLVector3& scale_out, LLVector3& tra
 	translation_out = mNormalizedTranslation;
 }
 
+LLVector3 LLModel::getTransformedCenter(const LLMatrix4& mat)
+{
+	LLVector3 ret;
+
+	if (!mVolumeFaces.empty())
+	{
+		LLMatrix4a m;
+		m.loadu(mat);
+
+		LLVector4a minv,maxv;
+
+		LLVector4a t;
+		m.affineTransform(mVolumeFaces[0].mPositions[0], t);
+		minv = maxv = t;
+
+		for (S32 i = 0; i < (S32)mVolumeFaces.size(); ++i)
+		{
+			LLVolumeFace& face = mVolumeFaces[i];
+
+			for (U32 j = 0; j < (U32)face.mNumVertices; ++j)
+			{
+				m.affineTransform(face.mPositions[j],t);
+				update_min_max(minv, maxv, t);
+			}
+		}
+
+		minv.add(maxv);
+		minv.mul(0.5f);
+
+		ret.set(minv.getF32ptr());
+	}
+
+	return ret;
+}
+
+
+
 void LLModel::setNumVolumeFaces(S32 count)
 {
 	mVolumeFaces.resize(count);
@@ -1026,17 +1075,18 @@ void LLModel::setVolumeFaceData(
 	}
 	else
 	{
-		ll_aligned_free_16(face.mNormals);
+		//ll_aligned_free_16(face.mNormals);
 		face.mNormals = NULL;
 	}
 
 	if (tc.get())
 	{
-		LLVector4a::memcpyNonAliased16((F32*) face.mTexCoords, (F32*) tc.get(), num_verts*2*sizeof(F32));
+		U32 tex_size = (num_verts*2*sizeof(F32)+0xF)&~0xF;
+		LLVector4a::memcpyNonAliased16((F32*) face.mTexCoords, (F32*) tc.get(), tex_size);
 	}
 	else
 	{
-		ll_aligned_free_16(face.mTexCoords);
+		//ll_aligned_free_16(face.mTexCoords);
 		face.mTexCoords = NULL;
 	}
 
@@ -1235,7 +1285,7 @@ void LLModel::generateNormals(F32 angle_cutoff)
 		}
 		else
 		{
-			ll_aligned_free_16(new_face.mTexCoords);
+			//ll_aligned_free_16(new_face.mTexCoords);
 			new_face.mTexCoords = NULL;
 		}
 
@@ -1298,8 +1348,6 @@ void LLModel::generateNormals(F32 angle_cutoff)
 	}
 }
 
-#if MESH_IMPORT
-
 //static
 std::string LLModel::getElementLabel(daeElement *element)
 { // try to get a decent label for this element
@@ -1355,7 +1403,6 @@ LLModel* LLModel::loadModelFromDomMesh(domMesh *mesh)
 	ret->mLabel = getElementLabel(mesh);
 	return ret;
 }
-#endif //MESH_IMPORT
 
 std::string LLModel::getName() const
 {
@@ -1466,7 +1513,6 @@ LLSD LLModel::writeModel(
 						update_min_max(min_tc, max_tc, ftc[j]);
 					}
 				}
-
 
 				LLVector2 tc_range = max_tc - min_tc;
 
@@ -1983,6 +2029,7 @@ bool LLModel::matchMaterialOrder(LLModel* ref, int& refFaceCnt, int& modelFaceCn
 	
 	//build a map of material slot names to face indexes
 	bool reorder = false;
+
 	std::set<std::string> base_mat;
 	std::set<std::string> cur_mat;
 
@@ -2080,7 +2127,8 @@ void LLMeshSkinInfo::fromLLSD(LLSD& skin)
 {
 	if (skin.has("joint_names"))
 	{
-		for (U32 i = 0; i < (U32)skin["joint_names"].size(); ++i)
+		const U32 joint_count = llmin((U32)skin["joint_names"].size(),(U32)64);
+		for (U32 i = 0; i < joint_count; ++i)
 		{
 			mJointNames.push_back(skin["joint_names"][i]);
 		}

@@ -46,15 +46,14 @@ class LLParcel;
 class LLViewerTexture;
 class LLViewerRegion;
 
+const F32 DWELL_NAN = -1.0f;	// A dwell having this value will be displayed as Loading...
+
 // Constants for sendLandOwner
 //const U32 NO_NEIGHBOR_JOIN = 0x0;
 //const U32 ALL_NEIGHBOR_JOIN = U32(  NORTH_MASK 
 //							  | SOUTH_MASK 
 //							  | EAST_MASK 
 //							  | WEST_MASK);
-
-const F32 PARCEL_POST_HEIGHT = 0.666f;
-//const F32 PARCEL_POST_HEIGHT = 20.f;
 
 // Specify the type of land transfer taking place
 //enum ELandTransferType
@@ -90,6 +89,9 @@ public:
 	LLViewerParcelMgr();
 	~LLViewerParcelMgr();
 
+// <FS:CR> Aurora Sim
+	void init(F32 region_size);
+// </FS:CR> Aurora Sim
 	static void cleanupGlobals();
 
 	BOOL	selectionEmpty() const;

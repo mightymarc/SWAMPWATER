@@ -51,7 +51,7 @@ const S32 PARCEL_UNIT_AREA			= 16;
 const F32 PARCEL_HEIGHT = 50.f;
 
 //Height above ground which parcel boundries exist for explicitly banned avatars
-const F32 BAN_HEIGHT = 768.f;
+const F32 BAN_HEIGHT = 5000.f;
 
 // Maximum number of entries in an access list
 const S32 PARCEL_MAX_ACCESS_LIST = 300;
@@ -103,6 +103,7 @@ const U32 RT_OTHER	= 0x1 << 3;
 const U32 RT_LIST	= 0x1 << 4;
 const U32 RT_SELL	= 0x1 << 5;
 
+const S32 INVALID_PARCEL_ID = -1;
 
 // Timeouts for parcels
 // default is 21 days * 24h/d * 60m/h * 60s/m *1000000 usec/s = 1814400000000
@@ -260,7 +261,7 @@ public:
 	void setMediaURLResetTimer(F32 time);
 	virtual void	setLocalID(S32 local_id);
 
-	// blow away all the extra crap lurking in parcels, including urls, access lists, etc
+	// blow away all the extra stuff lurking in parcels, including urls, access lists, etc
 	void clearParcel();
 
 	// This value is not persisted out to the parcel file, it is only
@@ -686,6 +687,7 @@ public:
 	std::map<LLUUID,LLAccessEntry>	mBanList;
 	std::map<LLUUID,LLAccessEntry>	mTempBanList;
 	std::map<LLUUID,LLAccessEntry>	mTempAccessList;
+
 };
 
 

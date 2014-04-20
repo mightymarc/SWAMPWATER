@@ -54,6 +54,7 @@
 #include "llaudioengine.h"
 #include "lloverlaybar.h"
 #include "slfloatermediafilter.h"
+#include "llstreamingaudio.h"
 
 // Static Variables
 
@@ -105,7 +106,6 @@ void LLViewerParcelMedia::update(LLParcel* parcel)
 			}
 
 			// we're in a parcel
-			bool new_parcel = false;
 			S32 parcelid = parcel->getLocalID();						
 
 			LLUUID regionid = gAgent.getRegion()->getRegionID();
@@ -114,7 +114,6 @@ void LLViewerParcelMedia::update(LLParcel* parcel)
 				LL_DEBUGS("Media") << "New parcel, parcel id = " << parcelid << ", region id = " << regionid << LL_ENDL;
 				sMediaParcelLocalID = parcelid;
 				sMediaRegionID = regionid;
-				new_parcel = true;
 			}
 
 			std::string mediaUrl = std::string ( parcel->getMediaURL () );
@@ -124,7 +123,7 @@ void LLViewerParcelMedia::update(LLParcel* parcel)
 			if(	! mediaUrl.empty() && gSavedSettings.getWarning("FirstStreamingVideo") )
 			{
 				LLNotificationsUtil::add("ParcelCanPlayMedia", LLSD(), LLSD(),
-					boost::bind(callback_play_media, _1, _2, parcel));
+					boost::bind(&callback_play_media, _1, _2, parcel));
 				return;
 
 			}
@@ -194,7 +193,7 @@ void LLViewerParcelMedia::play(LLParcel* parcel, bool filter)
 
 	if (!parcel) return;
 
-	if (!gSavedSettings.getBOOL("AudioStreamingVideo"))
+	if (!gSavedSettings.getBOOL("AudioStreamingMedia"))
 		return;
 
 	std::string media_url = parcel->getMediaURL();
@@ -216,41 +215,57 @@ void LLViewerParcelMedia::play(LLParcel* parcel, bool filter)
 	S32 media_width = parcel->getMediaWidth();
 	S32 media_height = parcel->getMediaHeight();
 
-	// Debug print
-	// LL_DEBUGS("Media") << "Play media type : " << mime_type << ", url : " << media_url << LL_ENDL;
-
-	if (!sMediaImpl || (sMediaImpl &&
-						(sMediaImpl->getMediaURL() != media_url ||
-						 sMediaImpl->getMimeType() != mime_type ||
-						 sMediaImpl->getMediaTextureID() != placeholder_texture_id)))
+	if(sMediaImpl)
 	{
-		if (sMediaImpl)
+		// If the url and mime type are the same, call play again
+		if(sMediaImpl->getMediaURL() == media_url 
+			&& sMediaImpl->getMimeType() == mime_type
+			&& sMediaImpl->getMediaTextureID() == placeholder_texture_id)
 		{
-			// Delete the old media impl first so they don't fight over the texture.
-			sMediaImpl->stop();
+			LL_DEBUGS("Media") << "playing with existing url " << media_url << LL_ENDL;
+
+			sMediaImpl->play();
 		}
+		// Else if the texture id's are the same, navigate and rediscover type
+		// MBW -- This causes other state from the previous parcel (texture size, autoscale, and looping) to get re-used incorrectly.
+		// It's also not really necessary -- just creating a new instance is fine.
+//		else if(sMediaImpl->getMediaTextureID() == placeholder_texture_id)
+//		{
+//			sMediaImpl->navigateTo(media_url, mime_type, true);
+//		}
+		else
+		{
+			// Since the texture id is different, we need to generate a new impl
 
-		LL_DEBUGS("Media") << "new media impl with mime type " << mime_type << ", url " << media_url << LL_ENDL;
-
-		// There is no media impl, or it has just been deprecated, make a new one
-			sMediaImpl = LLViewerMedia::newMediaImpl(media_url, placeholder_texture_id,
-				media_width, media_height, media_auto_scale,
-				media_loop, mime_type);
+			// Delete the old one first so they don't fight over the texture.
+			sMediaImpl = NULL;
+			
+			// A new impl will be created below.
 		}
-
-	// The url, mime type and texture are now the same, call play again
-	if (sMediaImpl->getMediaURL() == media_url 
-		&& sMediaImpl->getMimeType() == mime_type
-		&& sMediaImpl->getMediaTextureID() == placeholder_texture_id)
-	{
-		LL_DEBUGS("Media") << "playing with existing url " << media_url << LL_ENDL;
-
-		sMediaImpl->play();
 	}
 	
-	LLFirstUse::useMedia();
+	// Don't ever try to play if the media type is set to "none/none"
+	if(stricmp(mime_type.c_str(), LLMIMETypes::getDefaultMimeType().c_str()) != 0)
+	{
+		if(!sMediaImpl)
+		{
+			LL_DEBUGS("Media") << "new media impl with mime type " << mime_type << ", url " << media_url << LL_ENDL;
 
-	LLViewerParcelMediaAutoPlay::playStarted();
+			// There is no media impl, make a new one
+			sMediaImpl = LLViewerMedia::newMediaImpl(
+				placeholder_texture_id,
+				media_width, 
+				media_height, 
+				media_auto_scale,
+				media_loop);
+			sMediaImpl->setIsParcelMedia(true);
+			sMediaImpl->navigateTo(media_url, mime_type, true);
+		}
+
+		LLFirstUse::useMedia();
+
+		LLViewerParcelMediaAutoPlay::playStarted();
+	}
 }
 
 // static
@@ -326,6 +341,33 @@ LLViewerMediaImpl::EMediaStatus LLViewerParcelMedia::getStatus()
 std::string LLViewerParcelMedia::getMimeType()
 {
 	return sMediaImpl.notNull() ? sMediaImpl->getMimeType() : LLMIMETypes::getDefaultMimeType();
+}
+
+//static 
+std::string LLViewerParcelMedia::getURL()
+{
+	std::string url;
+	if(sMediaImpl.notNull())
+		url = sMediaImpl->getMediaURL();
+	
+	if(stricmp(LLViewerParcelMgr::getInstance()->getAgentParcel()->getMediaType().c_str(), LLMIMETypes::getDefaultMimeType().c_str()) != 0)
+	{
+		if (url.empty())
+			url = LLViewerParcelMgr::getInstance()->getAgentParcel()->getMediaCurrentURL();
+		
+		if (url.empty())
+			url = LLViewerParcelMgr::getInstance()->getAgentParcel()->getMediaURL();
+	}
+	
+	return url;
+}
+
+//static 
+std::string LLViewerParcelMedia::getName()
+{
+	if(sMediaImpl.notNull())
+		return sMediaImpl->getName();
+	return "";
 }
 
 viewer_media_t LLViewerParcelMedia::getParcelMedia()
@@ -466,7 +508,7 @@ void LLViewerParcelMedia::sendMediaNavigateMessage(const std::string& url)
 		body["agent-id"] = gAgent.getID();
 		body["local-id"] = LLViewerParcelMgr::getInstance()->getAgentParcel()->getLocalID();
 		body["url"] = url;
-		LLHTTPClient::post(region_url, body, new LLHTTPClient::Responder);
+		LLHTTPClient::post(region_url, body, new LLHTTPClient::ResponderIgnore);
 	}
 	else
 	{
@@ -620,12 +662,12 @@ bool callback_play_media(const LLSD& notification, const LLSD& response, LLParce
 	S32 option = LLNotification::getSelectedOption(notification, response);
 	if (option == 0)
 	{
-		gSavedSettings.setBOOL("AudioStreamingVideo", TRUE);
+		gSavedSettings.setBOOL("AudioStreamingMedia", TRUE);
 		LLViewerParcelMedia::play(parcel);
 	}
 	else
 	{
-		gSavedSettings.setBOOL("AudioStreamingVideo", FALSE);
+		gSavedSettings.setBOOL("AudioStreamingMedia", FALSE);
 	}
 	gSavedSettings.setWarning("FirstStreamingVideo", FALSE);
 	return false;
@@ -661,6 +703,9 @@ void LLViewerParcelMedia::playStreamingMusic(LLParcel* parcel, bool filter)
 	else if (gAudiop)
 	{
 		LLStringUtil::trim(music_url);
+		LLStreamingAudioInterface *stream = gAudiop->getStreamingAudioImpl();
+		if(stream && stream->supportsAdjustableBufferSizes())
+			stream->setBufferSizes(gSavedSettings.getU32("SHFMODExStreamBufferSize"),gSavedSettings.getU32("SHFMODExDecodeBufferSize"));
 		gAudiop->startInternetStream(music_url);
 		if (music_url.empty())
 		{
@@ -764,9 +809,9 @@ void LLViewerParcelMedia::filterMedia(LLParcel* parcel, U32 type)
 			sDeniedMedia.erase(ip);
 			dirty = true;
 		}
-		if (dirty)
+		if (dirty && SLFloaterMediaFilter::findInstance())
 		{
-			SLFloaterMediaFilter::setDirty();
+			SLFloaterMediaFilter::getInstance()->setDirty();
 		}
 	}
 
@@ -901,40 +946,48 @@ void callback_media_alert(const LLSD &notification, const LLSD &response, LLParc
 			LLViewerParcelMedia::playStreamingMusic(parcel, false);
 		}
 	}
-	else if (option == 1 || option == 2) // Deny or Blacklist
+	else 
 	{
-		LLViewerParcelMedia::sDeniedMedia.insert(domain);
-		if (ip != domain && domain.find('/') == std::string::npos)
-		{
-			LLViewerParcelMedia::sDeniedMedia.insert(ip);
-		}
 		if (type == 1)
 		{
 			LLViewerParcelMedia::stopStreamingMusic();
 		}
-		if (option == 1) // Deny
+		else
 		{
-			LLNotificationsUtil::add("MediaBlocked", args);
+			LLViewerParcelMedia::stopStreamingMusic();
 		}
-		else // Blacklist
+		if (option == 1 || option == 2) // Deny or Blacklist
 		{
-			LLSD newmedia;
-			newmedia["domain"] = domain;
-			newmedia["action"] = "deny";
-			LLViewerParcelMedia::sMediaFilterList.append(newmedia);
+			LLViewerParcelMedia::sDeniedMedia.insert(domain);
 			if (ip != domain && domain.find('/') == std::string::npos)
 			{
-				newmedia["domain"] = ip;
-				LLViewerParcelMedia::sMediaFilterList.append(newmedia);
+				LLViewerParcelMedia::sDeniedMedia.insert(ip);
 			}
-			LLViewerParcelMedia::saveDomainFilterList();
-			args["LISTED"] = "blacklisted";
-			LLNotificationsUtil::add("MediaListed", args);
+			
+			if (option == 1) // Deny
+			{
+				LLNotificationsUtil::add("MediaBlocked", args);
+			}
+			else // Blacklist
+			{
+				LLSD newmedia;
+				newmedia["domain"] = domain;
+				newmedia["action"] = "deny";
+				LLViewerParcelMedia::sMediaFilterList.append(newmedia);
+				if (ip != domain && domain.find('/') == std::string::npos)
+				{
+					newmedia["domain"] = ip;
+					LLViewerParcelMedia::sMediaFilterList.append(newmedia);
+				}
+				LLViewerParcelMedia::saveDomainFilterList();
+				args["LISTED"] = "blacklisted";
+				LLNotificationsUtil::add("MediaListed", args);
+			}
 		}
 	}
 
 	LLViewerParcelMedia::sMediaQueries.erase(domain);
-	SLFloaterMediaFilter::setDirty();
+	if (SLFloaterMediaFilter::findInstance()) SLFloaterMediaFilter::getInstance()->setDirty();
 }
 
 void LLViewerParcelMedia::saveDomainFilterList()
@@ -965,7 +1018,7 @@ bool LLViewerParcelMedia::loadDomainFilterList()
 		llifstream medialistFile(medialist_filename);
 		LLSDSerialize::fromXML(sMediaFilterList, medialistFile);
 		medialistFile.close();
-		SLFloaterMediaFilter::setDirty();
+		if (SLFloaterMediaFilter::findInstance()) SLFloaterMediaFilter::getInstance()->setDirty();
 		return true;
 	}
 	else
@@ -981,7 +1034,7 @@ void LLViewerParcelMedia::clearDomainFilterList()
 	sDeniedMedia.clear();
 	saveDomainFilterList();
 	LLNotificationsUtil::add("MediaFiltersCleared");
-	SLFloaterMediaFilter::setDirty();
+	if (SLFloaterMediaFilter::findInstance()) SLFloaterMediaFilter::getInstance()->setDirty();
 }
 
 std::string LLViewerParcelMedia::extractDomain(std::string url)
@@ -1018,7 +1071,11 @@ std::string LLViewerParcelMedia::extractDomain(std::string url)
 		url = url.substr(pos + 1, count);
 	}
 
-	if (url.find(gAgent.getRegion()->getHost().getHostName()) == 0 || url.find(last_region) == 0)
+	//Singu note: The call to getHostName() freezes the viewer for a few seconds if the region has no reverse DNS...
+	// Avoid calling it three times therefore -- not to mention that if it fails, it returns an empty string which
+	// does NOT mean that it should match the current url as if the current url contains the current regions hostname!
+	std::string const hostname = gAgent.getRegion()->getHost().getHostName();
+	if ((!hostname.empty() && url.find(hostname) == 0) || url.find(last_region) == 0)
 	{
 		// This must be a scripted object rezzed in the region:
 		// extend the concept of "domain" to encompass the
@@ -1027,7 +1084,7 @@ std::string LLViewerParcelMedia::extractDomain(std::string url)
 
 		// Get rid of any port number
 		pos = url.find('/');		// We earlier made sure that there's one
-		url = gAgent.getRegion()->getHost().getHostName() + url.substr(pos);
+		url = hostname + url.substr(pos);
 
 		pos = url.find('?');
 		if (pos != std::string::npos)
@@ -1058,10 +1115,12 @@ std::string LLViewerParcelMedia::extractDomain(std::string url)
 		}
 	}
 
-		
 	// Remember this region, so to cope with requests occuring just after a
 	// TP out of it.
-	last_region = gAgent.getRegion()->getHost().getHostName();
+	if (!hostname.empty())	// Singu note: also make sure that last_region doesn't become empty.
+	{
+		last_region = hostname;
+	}
 
 	return url;
 }

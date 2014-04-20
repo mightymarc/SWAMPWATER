@@ -23,7 +23,7 @@
  * $/LicenseInfo$
  */
 
-#extension GL_ARB_texture_rectangle : enable
+//#extension GL_ARB_texture_rectangle : enable
 
 #ifdef DEFINE_GL_FRAGCOLOR
 out vec4 frag_color;
@@ -64,32 +64,49 @@ vec4 getPosition(vec2 pos_screen)
 	return pos;
 }
 
+vec2 encode_normal(vec3 n)
+{
+	float f = sqrt(8 * n.z + 8);
+	return n.xy / f + 0.5;
+}
+
+vec3 decode_normal (vec2 enc)
+{
+    vec2 fenc = enc*4-2;
+    float f = dot(fenc,fenc);
+    float g = sqrt(1-f/4);
+    vec3 n;
+    n.xy = fenc*g;
+    n.z = 1-f/2;
+    return n;
+}
+
 void main() 
 {
     vec2 tc = vary_fragcoord.xy;
 	vec3 norm = texture2DRect(normalMap, tc).xyz;
-	norm = vec3((norm.xy-0.5)*2.0,norm.z); // unpack norm
+	norm = decode_normal(norm.xy); // unpack norm
+
 	vec3 pos = getPosition(tc).xyz;
 	vec4 ccol = texture2DRect(lightMap, tc).rgba;
 	
-	vec2 dlt = kern_scale * delta / (1.0+norm.xy*norm.xy);
+	vec2 dlt = kern_scale * delta / (vec2(1.0)+norm.xy*norm.xy);
 	dlt /= max(-pos.z*dist_factor, 1.0);
 	
 	vec2 defined_weight = getKern(0).xy; // special case the first (centre) sample's weight in the blur; we have to sample it anyway so we get it for 'free'
 	vec4 col = defined_weight.xyxx * ccol;
 
 	// relax tolerance according to distance to avoid speckling artifacts, as angles and distances are a lot more abrupt within a small screen area at larger distances
-	float pointplanedist_tolerance_pow2 = pos.z*pos.z*0.00005;
+	float pointplanedist_tolerance_pow2 = pos.z*-0.001;
 
 	// perturb sampling origin slightly in screen-space to hide edge-ghosting artifacts where smoothing radius is quite large
-	float tc_mod = 0.5*(tc.x + tc.y); // mod(tc.x+tc.y,2)
-	tc_mod -= floor(tc_mod);
-	tc_mod *= 2.0;
+	vec2 tc_v = fract(0.5 * tc.xy); // we now have floor(mod(tc,2.0))*0.5
+	float tc_mod = 2.0 * abs(tc_v.x - tc_v.y); // diff of x,y makes checkerboard
 	tc += ( (tc_mod - 0.5) * getKern(1).z * dlt * 0.5 );
 
 	for (int i = 1; i < 4; i++)
 	{
-		vec2 samptc = tc + getKern(i).z*dlt;
+		vec2 samptc = (tc + getKern(i).z * dlt);
 	        vec3 samppos = getPosition(samptc).xyz; 
 		float d = dot(norm.xyz, samppos.xyz-pos.xyz);// dist from plane
 		if (d*d <= pointplanedist_tolerance_pow2)
@@ -100,7 +117,7 @@ void main()
 	}
 	for (int i = 1; i < 4; i++)
 	{
-		vec2 samptc = tc - getKern(i).z*dlt;
+		vec2 samptc = (tc - getKern(i).z * dlt);
 	        vec3 samppos = getPosition(samptc).xyz; 
 		float d = dot(norm.xyz, samppos.xyz-pos.xyz);// dist from plane
 		if (d*d <= pointplanedist_tolerance_pow2)
@@ -111,7 +128,7 @@ void main()
 	}
 
 	col /= defined_weight.xyxx;
-	col.y *= col.y;
+	col.y *= col.y; // delinearize SSAO effect post-blur
 	
 	frag_color = col;
 }

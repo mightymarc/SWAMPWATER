@@ -43,6 +43,7 @@
 #include "llviewershadermgr.h"
 #include "llrender.h"
 #include "llviewercontrol.h"
+#include "llviewerregion.h"
 
 S32 LLDrawPoolTree::sDiffTex = 0;
 static LLGLSLShader* shader = NULL;
@@ -103,12 +104,12 @@ void LLDrawPoolTree::render(S32 pass)
 	LLGLState test(GL_ALPHA_TEST, LLGLSLShader::sNoFixedFunction ? 0 : 1);
 	LLOverrideFaceColor color(this, 1.f, 1.f, 1.f, 1.f);
 
-	/*static const LLCachedControl<bool> render_animate_trees("RenderAnimateTrees",false); 
-	if (render_animate_trees)
+	static LLCachedControl<bool> sRenderAnimateTrees("RenderAnimateTrees", false);
+	if (sRenderAnimateTrees)
 	{
 		renderTree();
 	}
-	else*/
+	else
 	gGL.getTexUnit(sDiffTex)->bind(mTexturep);
 					
 	for (std::vector<LLFace*>::iterator iter = mDrawFace.begin();
@@ -116,8 +117,23 @@ void LLDrawPoolTree::render(S32 pass)
 	{
 		LLFace *face = *iter;
 		LLVertexBuffer* buff = face->getVertexBuffer();
+
 		if(buff)
 		{
+			LLMatrix4* model_matrix = &(face->getDrawable()->getRegion()->mRenderMatrix);
+
+			if (model_matrix != gGLLastMatrix)
+			{
+				gGLLastMatrix = model_matrix;
+				gGL.loadMatrix(gGLModelView);
+				if (model_matrix)
+				{
+					llassert(gGL.getMatrixMode() == LLRender::MM_MODELVIEW);
+					gGL.multMatrix((GLfloat*) model_matrix->mMatrix);
+				}
+				gPipeline.mMatrixOpCount++;
+			}
+
 			buff->setBuffer(LLDrawPoolTree::VERTEX_DATA_MASK);
 			buff->drawRange(LLRender::TRIANGLES, 0, buff->getNumVerts()-1, buff->getNumIndices(), 0); 
 			gPipeline.addTrianglesDrawn(buff->getNumIndices());
@@ -193,7 +209,7 @@ void LLDrawPoolTree::endShadowPass(S32 pass)
 	gDeferredTreeShadowProgram.unbind();
 }
 
-/*
+//
 void LLDrawPoolTree::renderTree(BOOL selecting)
 {
 	LLGLState normalize(GL_NORMALIZE, TRUE);
@@ -315,7 +331,7 @@ void LLDrawPoolTree::renderTree(BOOL selecting)
 			//gGL.popMatrix();
 		}
 	}
-}*/
+}//
 
 BOOL LLDrawPoolTree::verify() const
 {

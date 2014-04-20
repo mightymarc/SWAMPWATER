@@ -2076,7 +2076,7 @@ void LLAgentCamera::handleScrollWheel(S32 clicks)
 			if (MASK mask = gKeyboard->currentMask(true)) // Singu Note: Conveniently set view offsets while modifier keys are held during scroll
 			{
 				static const LLCachedControl<bool> enableCameraOffsetScroll("SinguOffsetScrollKeys");
-				if (mask & MASK_CONTROL|MASK_SHIFT && enableCameraOffsetScroll)
+				if (mask & (MASK_CONTROL|MASK_SHIFT) && enableCameraOffsetScroll)
 				{
 					const F32 change(static_cast<F32>(clicks) * 0.1f);
 					if (mask & MASK_SHIFT)
@@ -2104,6 +2104,15 @@ void LLAgentCamera::handleScrollWheel(S32 clicks)
 			cameraOrbitIn(current_zoom_fraction * (1.f - pow(ROOT_ROOT_TWO, clicks)));
 		}
 	}
+}
+
+//-----------------------------------------------------------------------------
+// resetPresetOffsets() - Sets the current preset back to its default state
+//-----------------------------------------------------------------------------
+void LLAgentCamera::resetPresetOffsets()
+{
+	mFocusOffsetInitial[mCameraPreset]->resetToDefault();
+	mCameraOffsetInitial[mCameraPreset]->resetToDefault();
 }
 
 
@@ -2182,8 +2191,8 @@ void LLAgentCamera::changeCameraToMouselook(BOOL animate)
 
 	//gViewerWindow->stopGrab();
 	LLSelectMgr::getInstance()->deselectAll();
-	gViewerWindow->hideCursor();
-	gViewerWindow->moveCursorToCenter();
+//	gViewerWindow->hideCursor();
+//	gViewerWindow->moveCursorToCenter();
 
 	if (mCameraMode != CAMERA_MODE_MOUSELOOK)
 	{

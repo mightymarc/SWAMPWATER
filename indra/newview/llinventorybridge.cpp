@@ -1766,7 +1766,8 @@ BOOL LLItemBridge::removeItem()
 											cat_array,
 											item_array,
 											LLInventoryModel::INCLUDE_TRASH,
-											is_linked_item_match);
+											is_linked_item_match,
+											true);
 
 			const U32 num_links = cat_array.size() + item_array.size();
 			if (num_links > 0)
@@ -3254,7 +3255,8 @@ BOOL LLFolderBridge::checkFolderForContentsOfType(LLInventoryModel* model, LLInv
 								cat_array,
 								item_array,
 								LLInventoryModel::EXCLUDE_TRASH,
-								is_type);
+								is_type,
+								true);
 	return ((item_array.count() > 0) ? TRUE : FALSE );
 }
 
@@ -3337,7 +3339,7 @@ void LLFolderBridge::buildContextMenuBaseOptions(U32 flags)
 			}
 		}
 
-		//Added by spatters to force inventory pull on right-click to display folder options correctly. 07-17-06
+		//Added by aura to force inventory pull on right-click to display folder options correctly. 07-17-06
 		mCallingCards = mWearables = FALSE;
 
 		LLIsType is_callingcard(LLAssetType::AT_CALLINGCARD);
@@ -3542,6 +3544,7 @@ BOOL LLFolderBridge::dragOrDrop(MASK mask, BOOL drop,
 			// DAD_LINK type might mean one of two asset types: AT_LINK or AT_LINK_FOLDER.
 			// If we have an item of AT_LINK_FOLDER type we should process the linked
 			// category being dragged or dropped into folder.
+			/* <Singu> Note: No, we shouldn't, this behavior is misleading, just copy the link as usual.
 			if (inv_item && LLAssetType::AT_LINK_FOLDER == inv_item->getActualType())
 			{
 				LLInventoryCategory* linked_category = gInventory.getCategory(inv_item->getLinkedUUID());
@@ -3551,6 +3554,7 @@ BOOL LLFolderBridge::dragOrDrop(MASK mask, BOOL drop,
 				}
 			}
 			else
+			</Singu> */
 			{
 				accept = dragItemIntoFolder(inv_item, drop);
 			}
@@ -5595,7 +5599,8 @@ void remove_inventory_category_from_avatar_step2( BOOL proceed, LLUUID category_
 										cat_array,
 										item_array,
 										LLInventoryModel::EXCLUDE_TRASH,
-										is_wearable);
+										is_wearable,
+										true);
 		S32 i;
 		S32 wearable_count = item_array.count();
 
@@ -5606,7 +5611,8 @@ void remove_inventory_category_from_avatar_step2( BOOL proceed, LLUUID category_
 										obj_cat_array,
 										obj_item_array,
 										LLInventoryModel::EXCLUDE_TRASH,
-										is_object);
+										is_object,
+										true);
 		S32 obj_count = obj_item_array.count();
 
 		// Find all gestures in this folder
@@ -5617,7 +5623,8 @@ void remove_inventory_category_from_avatar_step2( BOOL proceed, LLUUID category_
 										gest_cat_array,
 										gest_item_array,
 										LLInventoryModel::EXCLUDE_TRASH,
-										is_gesture);
+										is_gesture,
+										true);
 		S32 gest_count = gest_item_array.count();
 
 		if (wearable_count > 0)	//Loop through wearables.  If worn, remove.
@@ -5949,6 +5956,20 @@ void LLWearableBridge::onWearOnAvatar(void* user_data)
 
 void LLWearableBridge::wearOnAvatar()
 {
+    // Note: This test is not in any other viewer and it seriously harms Singularity:
+    // On many opensim grids people start without a base outfit: they are not wearing
+    // anything (no shape, skin, eyes or hair). Even if one of those is missing, which
+    // ALSO happens due to (another) bug specific to Singularity (namely wearing a
+    // pre-multiwear wearable that is erroneously marked as 'shape' and causes the
+    // current shape to be removed), the user is eternally stuck as cloud since they
+    // are not ALLOWED to add the body parts that are missing BECAUSE they are missing?!
+    // The only way to recover from that is then to install another viewer and log in
+    // with that - go figure.
+    //
+    // Nevertheless, I won't break this test without good reason (although, again, no
+    // other viewer has it - so it can't be that serious) and therefore will only
+    // change it that users CAN wear body parts if those are missing :p (see below).
+#if 0
 	// TODO: investigate wearables may not be loaded at this point EXT-8231
 	// Don't wear anything until initial wearables are loaded, can
 	// destroy clothing items.
@@ -5957,10 +5978,20 @@ void LLWearableBridge::wearOnAvatar()
 		LLNotificationsUtil::add("CanNotChangeAppearanceUntilLoaded");
 		return;
 	}
+#endif
 
 	LLViewerInventoryItem* item = getItem();
-	if(item)
+	if (item)
 	{
+        //<singu>
+        // Don't wear anything until initial wearables are loaded unless the user tries to replace
+        // a body part, which might be missing and be the REASON that areWearablesLoaded() returns false.
+        if ((item->getType() != LLAssetType::AT_BODYPART && !gAgentWearables.areWearablesLoaded()))
+        {
+          LLNotificationsUtil::add("CanNotChangeAppearanceUntilLoaded");
+          return;
+        }
+        //</singu>
 		LLAppearanceMgr::instance().wearItemOnAvatar(item->getUUID(), true, true);
 	}
 }

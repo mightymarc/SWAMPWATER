@@ -316,10 +316,13 @@ class WindowsManifest(ViewerManifest):
         # Vivox runtimes
         if self.prefix(src="vivox-runtime/i686-win32", dst=""):
             self.path("SLVoice.exe")
-            self.path("alut.dll")
-            self.path("vivoxsdk.dll")
+            self.path("ca-bundle.crt")
+            self.path("libsndfile-1.dll")
             self.path("ortp.dll")
-            self.path("wrap_oal.dll")
+            self.path("vivoxoal.dll")
+            self.path("vivoxplatform.dll")
+            self.path("vivoxsdk.dll")
+            self.path("zlib1.dll")
             self.end_prefix()
 
         if 'extra_libraries' in self.args:
@@ -403,6 +406,8 @@ class WindowsManifest(ViewerManifest):
             'inst_name':self.channel_oneword() + ' (64 bit)' if self.is_win64() else self.channel_oneword(),
             'installer_file':self.installer_file(),
             'viewer_name': "%s%s" % (self.channel(), " (64 bit)" if self.is_win64() else "" ),
+            'install_icon': "install_icon_%s.ico" % self.viewer_branding_id(),
+            'uninstall_icon': "uninstall_icon_%s.ico" % self.viewer_branding_id(),
             }
 
         version_vars = """
@@ -419,8 +424,9 @@ class WindowsManifest(ViewerManifest):
         !define INSTNAME   "%(inst_name)s"
         !define SHORTCUT   "%(viewer_name)s Viewer"
         !define URLNAME   "secondlife"
-        !define INSTALL_ICON "install_icon_singularity.ico"
-        !define UNINSTALL_ICON "install_icon_singularity.ico"
+        !define INSTALL_ICON   "%(install_icon)s"
+        !define UNINSTALL_ICON   "%(uninstall_icon)s"
+        !define AUTHOR "Linden Research, Inc."  #TODO: Hook this up to cmake et al for easier branding.
         Caption "${VIEWERNAME} ${VERSION_LONG}"
         """
         if 'installer_name' in self.args:
@@ -490,8 +496,7 @@ class DarwinManifest(ViewerManifest):
                 self.path("featuretable_mac.txt")
                 self.path("SecondLife.nib")
 
-                          # SG:TODO
-                self.path("../newview/res/singularity.icns", dst="singularity.icns")
+                self.path(("../newview/res/%s_icon.icns" % self.viewer_branding_id()), dst=("%s_icon.icns" % self.viewer_branding_id()))
 
                 # Translations
                 self.path("English.lproj")
@@ -512,11 +517,13 @@ class DarwinManifest(ViewerManifest):
                 self.path("zh-Hans.lproj")
 
                 # SLVoice and vivox lols
-                self.path("vivox-runtime/universal-darwin/libalut.dylib", "libalut.dylib")
-                self.path("vivox-runtime/universal-darwin/libopenal.dylib", "libopenal.dylib")
-                self.path("vivox-runtime/universal-darwin/libortp.dylib", "libortp.dylib")
-                self.path("vivox-runtime/universal-darwin/libvivoxsdk.dylib", "libvivoxsdk.dylib")
                 self.path("vivox-runtime/universal-darwin/SLVoice", "SLVoice")
+                self.path("vivox-runtime/universal-darwin/ca-bundle.crt", "ca-bundle.crt")
+                self.path("vivox-runtime/universal-darwin/libortp.dylib", "libortp.dylib")
+                self.path("vivox-runtime/universal-darwin/libsndfile.dylib", "libsndfile.dylib")
+                self.path("vivox-runtime/universal-darwin/libvivoxoal.dylib", "libvivoxoal.dylib")
+                self.path("vivox-runtime/universal-darwin/libvivoxplatform.dylib", "libvivoxplatform.dylib")
+                self.path("vivox-runtime/universal-darwin/libvivoxsdk.dylib", "libvivoxsdk.dylib")
 
                 self.path("../llcommon/" + self.args['configuration'] + "/libllcommon.dylib", "libllcommon.dylib")
 
@@ -765,9 +772,9 @@ class LinuxManifest(ViewerManifest):
         self.run_command("""
                 find '%(dst)s' -type d -print0 | xargs -0 --no-run-if-empty chmod 755;
                 find '%(dst)s' -type f -perm 0700 -print0 | xargs -0 --no-run-if-empty chmod 0755;
-                find '%(dst)s' -type f -perm 0500 -print0 | xargs -0 --no-run-if-empty chmod 0555;
+                find '%(dst)s' -type f -perm 0500 -print0 | xargs -0 --no-run-if-empty chmod 0755;
                 find '%(dst)s' -type f -perm 0600 -print0 | xargs -0 --no-run-if-empty chmod 0644;
-                find '%(dst)s' -type f -perm 0400 -print0 | xargs -0 --no-run-if-empty chmod 0444;
+                find '%(dst)s' -type f -perm 0400 -print0 | xargs -0 --no-run-if-empty chmod 0644;
                 true""" %  {'dst':self.get_dst_prefix() })
         self.package_file = installer_name + '.tar.bz2'
 
@@ -827,6 +834,15 @@ class Linux_i686Manifest(LinuxManifest):
             self.path("libtcmalloc_minimal.so.0")
             self.path("libtcmalloc_minimal.so.0.2.2")
 
+            # Boost
+            self.path("libboost_context-mt.so.*")
+            self.path("libboost_filesystem-mt.so.*")
+            self.path("libboost_program_options-mt.so.*")
+            self.path("libboost_regex-mt.so.*")
+            self.path("libboost_signals-mt.so.*")
+            self.path("libboost_system-mt.so.*")
+            self.path("libboost_thread-mt.so.*")
+
             if 'extra_libraries' in self.args:
                 path_list = self.args['extra_libraries'].split('|')
                 for path in path_list:
@@ -869,6 +885,15 @@ class Linux_x86_64Manifest(LinuxManifest):
             self.path("libjpeg.so*")
             self.path("libpng*.so*")
             self.path("libz.so*")
+
+            # Boost
+            self.path("libboost_context-mt.so.*")
+            self.path("libboost_filesystem-mt.so.*")
+            self.path("libboost_program_options-mt.so.*")
+            self.path("libboost_regex-mt.so.*")
+            self.path("libboost_signals-mt.so.*")
+            self.path("libboost_system-mt.so.*")
+            self.path("libboost_thread-mt.so.*")
 
             # OpenAL
             self.path("libopenal.so*")

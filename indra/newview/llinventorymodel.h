@@ -275,6 +275,11 @@ public:
 	LLViewerInventoryItem* getLinkedItem(const LLUUID& object_id) const;
 	
 	LLUUID findCategoryByName(std::string name);
+
+	// Copy content of all folders of type "type" into folder "id" and delete/purge the empty folders
+	// Note : This method has been designed for FT_OUTBOX (aka Merchant Outbox) but can be used for other categories
+	void consolidateForType(const LLUUID& id, LLFolderType::EType type);
+
 private:
 	mutable LLPointer<LLViewerInventoryItem> mLastItem; // cache recent lookups	
 
@@ -404,14 +409,6 @@ public:
 	void addCategory(LLViewerInventoryCategory* category);
 	void addItem(LLViewerInventoryItem* item);
 
-	// methods to load up inventory skeleton & meat. These are used
-	// during authentication. return true if everything parsed.
-	typedef std::map<std::string, std::string> response_t;
-	typedef std::vector<response_t> options_t;
-
-
-	//OGPX really screwed with the login process. This is needed until it's all sorted out.
-	bool loadSkeleton(const options_t& options, const LLUUID& owner_id);
 /**                    Mutators
  **                                                                            **
  *******************************************************************************/

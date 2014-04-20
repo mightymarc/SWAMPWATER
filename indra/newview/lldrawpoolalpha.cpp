@@ -112,7 +112,7 @@ void LLDrawPoolAlpha::beginPostDeferredPass(S32 pass)
 		}
 		else
 		{
-		simple_shader = &gDeferredAlphaProgram;
+			simple_shader = &gDeferredAlphaProgram;
 			fullbright_shader = &gDeferredFullbrightProgram;
 		}
 		
@@ -158,11 +158,12 @@ void LLDrawPoolAlpha::beginPostDeferredPass(S32 pass)
     }
 
 	deferred_render = TRUE;
-	if (mVertexShaderLevel > 0)
-	{
-		// Start out with no shaders.
-		current_shader = target_shader = NULL;
-	}
+
+	// Start out with no shaders.
+	current_shader = target_shader = NULL;
+
+	LLGLSLShader::bindNoShader();
+
 	gPipeline.enableLightsDynamic();
 }
 
@@ -207,12 +208,14 @@ void LLDrawPoolAlpha::beginRenderPass(S32 pass)
 		emissive_shader = &gObjectEmissiveProgram;
 	}
 
+	// Start out with no shaders.
+	current_shader = target_shader = NULL;
+
 	if (mVertexShaderLevel > 0)
 	{
-		// Start out with no shaders.
-		current_shader = target_shader = NULL;
 		LLGLSLShader::bindNoShader();
 	}
+
 	gPipeline.enableLightsDynamic();
 }
 
@@ -221,7 +224,7 @@ void LLDrawPoolAlpha::endRenderPass( S32 pass )
 	LLFastTimer t(FTM_RENDER_ALPHA);
 	LLRenderPass::endRenderPass(pass);
 
-	if(gPipeline.canUseWindLightShaders()) 
+	if(mVertexShaderLevel > 0)	//Singu Note: Unbind if shaders are enabled at all, not just windlight atmospherics..
 	{
 		LLGLSLShader::bindNoShader();
 	}
@@ -292,14 +295,7 @@ void LLDrawPoolAlpha::render(S32 pass)
 		}
 	}
 
-	if (mVertexShaderLevel > 0)
-	{
-		renderAlpha(getVertexDataMask() | LLVertexBuffer::MAP_TEXTURE_INDEX | LLVertexBuffer::MAP_TANGENT | LLVertexBuffer::MAP_TEXCOORD1 | LLVertexBuffer::MAP_TEXCOORD2, pass);
-	}
-	else
-	{
-		renderAlpha(getVertexDataMask(), pass);
-	}
+	renderAlpha(getVertexDataMask(), pass);	//getVertexDataMask base mask if fixed-function.
 
 	gGL.setColorMask(true, false);
 
@@ -377,6 +373,8 @@ void LLDrawPoolAlpha::renderAlpha(U32 mask, S32 pass)
 	BOOL light_enabled = TRUE;
 	
 	BOOL use_shaders = gPipeline.canUseVertexShaders();
+
+	BOOL depth_only = (pass == 1 && !LLPipeline::sImpostorRender);
 		
 	for (LLCullResult::sg_iterator i = gPipeline.beginAlphaGroups(); i != gPipeline.endAlphaGroups(); ++i)
 	{
@@ -391,7 +389,7 @@ void LLDrawPoolAlpha::renderAlpha(U32 mask, S32 pass)
 													  || group->mSpatialPartition->mPartitionType == LLViewerRegion::PARTITION_CLOUD
 													  || group->mSpatialPartition->mPartitionType == LLViewerRegion::PARTITION_HUD_PARTICLE;
 
-			bool draw_glow_for_this_partition = mVertexShaderLevel > 0; // no shaders = no glow.
+			bool draw_glow_for_this_partition = !depth_only && mVertexShaderLevel > 0; // no shaders = no glow.
 
 			static LLFastTimer::DeclareTimer FTM_RENDER_ALPHA_GROUP_LOOP("Alpha Group");
 			LLFastTimer t(FTM_RENDER_ALPHA_GROUP_LOOP);
@@ -405,16 +403,16 @@ void LLDrawPoolAlpha::renderAlpha(U32 mask, S32 pass)
 			{
 				LLDrawInfo& params = **k;
 
-				if ((params.mVertexBuffer->getTypeMask() & mask) != mask)
+				/*if ((params.mVertexBuffer->getTypeMask() & mask) != mask)
 				{ //FIXME!
 					llwarns << "Missing required components, skipping render batch." << llendl;
 					continue;
-				}
+				}*/
 
 				// Fix for bug - NORSPEC-271
 				// If the face is more than 90% transparent, then don't update the Depth buffer for Dof
 				// We don't want the nearly invisible objects to cause of DoF effects
-				if(pass == 1 && !LLPipeline::sImpostorRender)
+				if(depth_only)
 				{
 					LLFace*	face = params.mFace;
 					if(face)
@@ -429,88 +427,70 @@ void LLDrawPoolAlpha::renderAlpha(U32 mask, S32 pass)
 				}
 
 				LLRenderPass::applyModelMatrix(params);
+
+				// Singu Note: Logic reordered here. Removed a fair bit of unneeded condition checks (mostly related to deferred mode), and made
+				// shader selection more explicit.
 				
-				LLMaterial* mat = NULL;
-
-				if (deferred_render)
+				if (params.mGroup)
 				{
-					mat = params.mMaterial;
+					params.mGroup->rebuildMesh();
 				}
+				
+				LLMaterial* mat = deferred_render ? params.mMaterial.get() : NULL;
 
-				if (params.mFullbright)
+				if (!use_shaders)
 				{
-					// Turn off lighting if it hasn't already been so.
-					if (light_enabled || !initialized_lighting)
+					llassert_always(!target_shader);
+					llassert_always(!current_shader);
+					llassert_always(!LLGLSLShader::sNoFixedFunction);
+					llassert_always(!LLGLSLShader::sCurBoundShaderPtr);
+
+					bool fullbright = depth_only || params.mFullbright;
+					if(fullbright == !!light_enabled || !initialized_lighting)
 					{
-							initialized_lighting = TRUE;
-							if (use_shaders) 
-							{
-								target_shader = fullbright_shader;
-							}
-							else
-							{
-								gPipeline.enableLightsFullbright(LLColor4(1,1,1,1));
-							}
-							light_enabled = FALSE;
-						}
-					}
-					// Turn on lighting if it isn't already.
-					else if (!light_enabled || !initialized_lighting)
-					{
-						initialized_lighting = TRUE;
-						if (use_shaders) 
-						{
-							target_shader = simple_shader;
-						}
-						else
+						light_enabled = !fullbright;
+						initialized_lighting = true;
+
+						if (light_enabled)	// Turn off lighting if it hasn't already been so.
 						{
 							gPipeline.enableLightsDynamic();
 						}
-						light_enabled = TRUE;
-				}
-
-				if (deferred_render && mat)
-				{
-					U32 mask = params.mShaderMask;
-
-					llassert(mask < LLMaterial::SHADER_COUNT);
-					target_shader = &(gDeferredMaterialProgram[mask]);
-
-					if (LLPipeline::sUnderWaterRender)
-					{
-						target_shader = &(gDeferredMaterialWaterProgram[mask]);
+						else	// Turn on lighting if it isn't already.
+						{
+							gPipeline.enableLightsFullbright(LLColor4(1,1,1,1));
+						}
 					}
-
-					if (current_shader != target_shader)
-					{
-						gPipeline.bindDeferredShader(*target_shader);
-					}
-				}
-				else if (!params.mFullbright)
-				{
-					target_shader = simple_shader;
 				}
 				else
 				{
-					target_shader = fullbright_shader;
-				}
-				
-				if(use_shaders && (current_shader != target_shader))
-				{// If we need shaders, and we're not ALREADY using the proper shader, then bind it
-				// (this way we won't rebind shaders unnecessarily).
+					if (mat)
+					{
+						U32 mask = params.mShaderMask;
+
+						llassert(mask < LLMaterial::SHADER_COUNT);
+						target_shader = LLPipeline::sUnderWaterRender ? &(gDeferredMaterialWaterProgram[mask]) : &(gDeferredMaterialProgram[mask]);
+
+						// If we need shaders, and we're not ALREADY using the proper shader, then bind it
+						// (this way we won't rebind shaders unnecessarily).
+						if (current_shader != target_shader)
+						{
+							gPipeline.bindDeferredShader(*target_shader);
+						}
+					}
+					else
+					{
+						target_shader = params.mFullbright ? fullbright_shader : simple_shader;
+
+						// If we need shaders, and we're not ALREADY using the proper shader, then bind it
+						// (this way we won't rebind shaders unnecessarily).
+						if(current_shader != target_shader)
+						{
+							target_shader->bind();
+						}
+					}
 					current_shader = target_shader;
-					current_shader->bind();
-				}
-				else if (!use_shaders && current_shader != NULL)
-				{
-					LLGLSLShader::bindNoShader();
-					current_shader = NULL;
-				}
-				
-				if (use_shaders && mat)
-				{
-					// We have a material.  Supply the appropriate data here.
-					if (LLPipeline::sRenderDeferred)
+
+					if(mat)
 					{
 						current_shader->uniform4f(LLShaderMgr::SPECULAR_COLOR, params.mSpecColor.mV[0], params.mSpecColor.mV[1], params.mSpecColor.mV[2], params.mSpecColor.mV[3]);						
 						current_shader->uniform1f(LLShaderMgr::ENVIRONMENT_INTENSITY, params.mEnvIntensity);
@@ -526,42 +506,37 @@ void LLDrawPoolAlpha::renderAlpha(U32 mask, S32 pass)
 						{
 							params.mSpecularMap->addTextureStats(params.mVSize);
 							current_shader->bindTexture(LLShaderMgr::SPECULAR_MAP, params.mSpecularMap);
-						} 
+						}
 					}
-
-				} else if (LLPipeline::sRenderDeferred && current_shader && (current_shader == simple_shader))
-				{
-					current_shader->uniform4f(LLShaderMgr::SPECULAR_COLOR, 1.0f, 1.0f, 1.0f, 1.0f);						
-					current_shader->uniform1f(LLShaderMgr::ENVIRONMENT_INTENSITY, 0.0f);			
-					LLViewerFetchedTexture::sFlatNormalImagep->addTextureStats(params.mVSize);
-					current_shader->bindTexture(LLShaderMgr::BUMP_MAP, LLViewerFetchedTexture::sFlatNormalImagep);						
-					LLViewerFetchedTexture::sWhiteImagep->addTextureStats(params.mVSize);
-					current_shader->bindTexture(LLShaderMgr::SPECULAR_MAP, LLViewerFetchedTexture::sWhiteImagep);
-				}
-
-					if (params.mGroup)
+					/*else if(deferred_render && current_shader == simple_shader)
 					{
-						params.mGroup->rebuildMesh();
-					}
+						current_shader->uniform4f(LLShaderMgr::SPECULAR_COLOR, 1.0f, 1.0f, 1.0f, 1.0f);						
+						current_shader->uniform1f(LLShaderMgr::ENVIRONMENT_INTENSITY, 0.0f);			
+						LLViewerFetchedTexture::sFlatNormalImagep->addTextureStats(params.mVSize);
+						current_shader->bindTexture(LLShaderMgr::BUMP_MAP, LLViewerFetchedTexture::sFlatNormalImagep);						
+						LLViewerFetchedTexture::sWhiteImagep->addTextureStats(params.mVSize);
+						current_shader->bindTexture(LLShaderMgr::SPECULAR_MAP, LLViewerFetchedTexture::sWhiteImagep);
+					}*/
 
-					bool tex_setup = false;
-
-				if (use_shaders && params.mTextureList.size() > 1)
-				{
-					for (U32 i = 0; i < params.mTextureList.size(); ++i)
+					if (params.mTextureList.size() > 1)
 					{
-						if (params.mTextureList[i].notNull())
+						for (U32 i = 0; i < params.mTextureList.size(); ++i)
 						{
-							gGL.getTexUnit(i)->bind(params.mTextureList[i], TRUE);
+							if (params.mTextureList[i].notNull())
+							{
+								gGL.getTexUnit(i)->bind(params.mTextureList[i], TRUE);
+							}
 						}
 					}
 				}
-				else
+
+				bool tex_setup = false;
+				if(!use_shaders || params.mTextureList.size() <= 1)
 				{ //not batching textures or batch has only 1 texture -- might need a texture matrix
 					if (params.mTexture.notNull())
 					{
 						params.mTexture->addTextureStats(params.mVSize);
-						if (use_shaders && mat)
+						if (mat)
 						{
 							current_shader->bindTexture(LLShaderMgr::DIFFUSE_MAP, params.mTexture);
 						}
@@ -588,11 +563,13 @@ void LLDrawPoolAlpha::renderAlpha(U32 mask, S32 pass)
 				static LLFastTimer::DeclareTimer FTM_RENDER_ALPHA_PUSH("Alpha Push Verts");
 				{
 					LLFastTimer t(FTM_RENDER_ALPHA_PUSH);
-    gGL.blendFunc((LLRender::eBlendFactor) params.mBlendFuncSrc, (LLRender::eBlendFactor) params.mBlendFuncDst, mAlphaSFactor, mAlphaDFactor);					
-				params.mVertexBuffer->setBuffer(mask & ~(params.mFullbright ? (LLVertexBuffer::MAP_TANGENT | LLVertexBuffer::MAP_TEXCOORD1 | LLVertexBuffer::MAP_TEXCOORD2) : 0));
+
+					gGL.blendFunc((LLRender::eBlendFactor) params.mBlendFuncSrc, (LLRender::eBlendFactor) params.mBlendFuncDst, mAlphaSFactor, mAlphaDFactor);
+					// Singu Note: If using shaders, pull the attribute mask from it, else used passed base mask.
+					params.mVertexBuffer->setBuffer(current_shader ? current_shader->mAttributeMask : mask);
                 
-				params.mVertexBuffer->drawRange(params.mDrawMode, params.mStart, params.mEnd, params.mCount, params.mOffset);
-				gPipeline.addTrianglesDrawn(params.mCount, params.mDrawMode);
+					params.mVertexBuffer->drawRange(params.mDrawMode, params.mStart, params.mEnd, params.mCount, params.mOffset);
+					gPipeline.addTrianglesDrawn(params.mCount, params.mDrawMode);
 				}
 				
 				// If this alpha mesh has glow, then draw it a second time to add the destination-alpha (=glow).  Interleaving these state-changing calls could be expensive, but glow must be drawn Z-sorted with alpha.
@@ -608,7 +585,8 @@ void LLDrawPoolAlpha::renderAlpha(U32 mask, S32 pass)
 					emissive_shader->bind();
 					
 					// glow doesn't use vertex colors from the mesh data
-					params.mVertexBuffer->setBuffer((mask & ~LLVertexBuffer::MAP_COLOR) | LLVertexBuffer::MAP_EMISSIVE);
+					// Singu Note: Pull attribs from shader, since we always have one here.
+					params.mVertexBuffer->setBuffer(emissive_shader->mAttributeMask);
 					
 					// do the actual drawing, again
 					params.mVertexBuffer->drawRange(params.mDrawMode, params.mStart, params.mEnd, params.mCount, params.mOffset);

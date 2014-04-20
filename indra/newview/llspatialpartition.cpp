@@ -45,6 +45,7 @@
 #include "llvolumeoctree.h"
 #include "llviewercamera.h"
 #include "llface.h"
+#include "llfloaterinspect.h"
 #include "llfloatertools.h"
 #include "llviewercontrol.h"
 #include "llviewerregion.h"
@@ -1528,6 +1529,7 @@ static LLFastTimer::DeclareTimer FTM_OCCLUSION_DRAW("Draw");
 
 void LLSpatialGroup::doOcclusion(LLCamera* camera)
 {
+	LLGLDisable stencil(GL_STENCIL_TEST);
 	if (mSpatialPartition->isOcclusionEnabled() && LLPipeline::sUseOcclusion > 1)
 	{
 		//static const LLCachedControl<BOOL> render_water_void_culling("RenderWaterVoidCulling", TRUE);
@@ -3312,16 +3314,12 @@ void renderPhysicsShape(LLDrawable* drawable, LLVOVolume* volume)
 		if (phys_volume->mHullPoints && phys_volume->mHullIndices)
 		{
 			glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
-			llassert(!LLGLSLShader::sNoFixedFunction || LLGLSLShader::sCurBoundShader != 0);
-			LLVertexBuffer::unbind();
-			glVertexPointer(3, GL_FLOAT, 16, phys_volume->mHullPoints);
 			gGL.diffuseColor4fv(line_color.mV);
-			gGL.syncMatrices();
-			glDrawElements(GL_TRIANGLES, phys_volume->mNumHullIndices, GL_UNSIGNED_SHORT, phys_volume->mHullIndices);
-			
-			gGL.diffuseColor4fv(color.mV);
+			LLVertexBuffer::drawElements(LLRender::TRIANGLES, phys_volume->mHullPoints, NULL, phys_volume->mNumHullIndices, phys_volume->mHullIndices);
+
 			glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
-			glDrawElements(GL_TRIANGLES, phys_volume->mNumHullIndices, GL_UNSIGNED_SHORT, phys_volume->mHullIndices);			
+			gGL.diffuseColor4fv(color.mV);
+			LLVertexBuffer::drawElements(LLRender::TRIANGLES, phys_volume->mHullPoints, NULL, phys_volume->mNumHullIndices, phys_volume->mHullIndices);
 		}
 		else
 		{
@@ -3713,11 +3711,8 @@ void renderRaycast(LLDrawable* drawablep)
 
 					{
 						//render face positions
-						LLVertexBuffer::unbind();
 						gGL.diffuseColor4f(0,1,1,0.5f);
-						glVertexPointer(3, GL_FLOAT, sizeof(LLVector4a), face.mPositions);
-						gGL.syncMatrices();
-						glDrawElements(GL_TRIANGLES, face.mNumIndices, GL_UNSIGNED_SHORT, face.mIndices);
+						LLVertexBuffer::drawElements(LLRender::TRIANGLES, face.mPositions, NULL, face.mNumIndices, face.mIndices);
 					}
 					
 					if (!volume->isUnique())
@@ -3874,6 +3869,8 @@ public:
 			return;
 		}
 
+		LLGLDisable stencil(GL_STENCIL_TEST);
+
 		group->rebuildGeom();
 		group->rebuildMesh();
 
@@ -3953,11 +3950,16 @@ public:
 				renderAvatarCollisionVolumes(avatar);
 			}
 
+			if (avatar && gPipeline.hasRenderDebugMask(LLPipeline::RENDER_DEBUG_AVATAR_JOINTS))
+			{
+				avatar->renderJoints();
+			}
+
 			if (avatar && gPipeline.hasRenderDebugMask(LLPipeline::RENDER_DEBUG_AGENT_TARGET))
 			{
 				renderAgentTarget(avatar);
 			}
-			
+
 			if (gDebugGL)
 			{
 				for (U32 i = 0; i < (U32)drawable->getNumFaces(); ++i)
@@ -4195,6 +4197,7 @@ void LLSpatialPartition::renderDebug()
 									  LLPipeline::RENDER_DEBUG_TEXTURE_ANIM |
 									  LLPipeline::RENDER_DEBUG_RAYCAST |
 									  LLPipeline::RENDER_DEBUG_AVATAR_VOLUME |
+									  LLPipeline::RENDER_DEBUG_AVATAR_JOINTS |
 									  LLPipeline::RENDER_DEBUG_AGENT_TARGET |
 									  //LLPipeline::RENDER_DEBUG_BUILD_QUEUE |
 									  LLPipeline::RENDER_DEBUG_SHADOW_FRUSTA |
@@ -4373,7 +4376,7 @@ public:
 				if (vobj->isAvatar())
 				{
 					LLVOAvatar* avatar = (LLVOAvatar*) vobj;
-					if (avatar->isSelf() && gFloaterTools->getVisible())
+					if (gFloaterTools->getVisible() || LLFloaterInspect::instanceExists())
 					{
 						LLViewerObject* hit = avatar->lineSegmentIntersectRiggedAttachments(mStart, mEnd, -1, mPickTransparent, mFaceHit, &intersection, mTexCoord, mNormal, mTangent);
 						if (hit)

@@ -1503,7 +1503,7 @@ LLNotificationPtr LLNotifications::add(AIAlert::Error const& error, int type, un
 }
 
 //--------------------------------------------------------------------------------
-// class UpdateItem
+// struct UpdateItem
 //
 // Allow LLNotifications::add, LLNotifications::cancel and LLNotifications::update
 // to be called from any thread.

@@ -202,9 +202,9 @@
           <key>darwin</key>
           <map>
             <key>md5sum</key>
-            <string>b31c495d5e77daa09394b370fc228312</string>
+            <string>6564a085a5a353a531908d2e6fcafd64</string>
             <key>url</key>
-            <uri>https://bitbucket.org/SingularityViewer/libraries/downloads/boost-1.52.0-darwin-20130221.tar.bz2</uri>
+            <uri>https://bitbucket.org/SingularityViewer/libraries/downloads/boost-1.52.0-darwin-20140202.tar.bz2</uri>
           </map>
           <key>linux</key>
           <map>
@@ -256,16 +256,16 @@
           <key>linux</key>
           <map>
             <key>md5sum</key>
-            <string>8817faad001cea8f92546f30b5fcbbfa</string>
+            <string>8a1017e1935ae3c88dea7f4552573f53</string>
             <key>url</key>
-            <uri>https://bitbucket.org/SingularityViewer/libraries/downloads/colladadom-2.2-linux-20131007.tar.bz2</uri>
+            <uri>https://bitbucket.org/SingularityViewer/libraries/downloads/colladadom-2.2-linux-20131219.tar.bz2</uri>
           </map>
           <key>linux64</key>
           <map>
             <key>md5sum</key>
-            <string>1d23d74f2f475945ec4d24f70a27561d</string>
+            <string>446dbefb0d3dd0bd93f30b4ef1eaa67b</string>
             <key>url</key>
-            <uri>https://bitbucket.org/SingularityViewer/libraries/downloads/colladadom-2.2-linux64-20131007.tar.bz2</uri>
+            <uri>https://bitbucket.org/SingularityViewer/libraries/downloads/colladadom-2.2-linux64-20131219.tar.bz2</uri>
           </map>
           <key>windows</key>
           <map>
@@ -526,9 +526,9 @@
           <key>linux64</key>
           <map>
             <key>md5sum</key>
-            <string>9513c22a343369043536514bc87e5801</string>
+            <string>63f940c765875ee0b2fc2ed68019a602</string>
             <key>url</key>
-            <uri>https://bitbucket.org/SingularityViewer/libraries/downloads/freetype-2.3.11-linux-x86_64-20120616.tar.bz2</uri>
+            <uri>https://bitbucket.org/SingularityViewer/libraries/downloads/freetype-2.3.11-linux-x86_64-20131230.tar.bz2</uri>
           </map>
           <key>windows</key>
           <map>
@@ -1353,9 +1353,9 @@
           <key>darwin</key>
           <map>
             <key>md5sum</key>
-            <string>8675b5eedef038b514338b17f0e55961</string>
+            <string>917a60e1b18dd0f5e6afb555623339a4</string>
             <key>url</key>
-            <uri>https://bitbucket.org/SingularityViewer/libraries/downloads/vivox-2.1.3010.6270-darwin-20090309.tar.bz2</uri>
+            <uri>https://bitbucket.org/SingularityViewer/libraries/downloads/slvoice-4.6.0009.20030-darwin-20140312.tar.bz2</uri>
           </map>
           <key>linux</key>
           <map>
@@ -1374,16 +1374,16 @@
           <key>windows</key>
           <map>
             <key>md5sum</key>
-            <string>752daa90e07c05202d1f76980cb955eb</string>
+            <string>d0befc33613c980a5a3580b8e2b02d11</string>
             <key>url</key>
-            <uri>https://bitbucket.org/SingularityViewer/libraries/downloads/vivox-2.1.3010.6270-windows-20090309.tar.bz2</uri>
+            <uri>https://bitbucket.org/SingularityViewer/libraries/downloads/slvoice-4.6.0009.20030-windows-20140312.tar.bz2</uri>
           </map>
           <key>windows64</key>
           <map>
             <key>md5sum</key>
-            <string>752daa90e07c05202d1f76980cb955eb</string>
+            <string>d0befc33613c980a5a3580b8e2b02d11</string>
             <key>url</key>
-            <uri>https://bitbucket.org/SingularityViewer/libraries/downloads/vivox-2.1.3010.6270-windows-20090309.tar.bz2</uri>
+            <uri>https://bitbucket.org/SingularityViewer/libraries/downloads/slvoice-4.6.0009.20030-windows-20140312.tar.bz2</uri>
           </map>
         </map>
       </map>

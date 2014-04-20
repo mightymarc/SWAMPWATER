@@ -27,6 +27,7 @@ Make sure you entered the correct Login URI. An example of a Login URI is: \"htt
 	<string name="SECOND_LIFE">Second Life</string>
 	<string name="APP_NAME">Singularity Viewer</string>
 	<string name="CAPITALIZED_APP_NAME">SINGULARITY VIEWER</string>
+	<string name="SHORT_APP_NAME">Singularity</string>
 	<string name="SECOND_LIFE_GRID">Second Life Grid</string>
 	<string name="SUPPORT_SITE">Second Life Support Portal</string>
 
@@ -66,7 +67,7 @@ Make sure you entered the correct Login URI. An example of a Login URI is: \"htt
 	<string name="LoginRetrySeedCapGrant">Requesting region capabilities, attempt [NUMBER]...</string>
 	<string name="LoginWaitingForRegionHandshake">Waiting for region handshake...</string>
 	<string name="LoginConnectingToRegion">Connecting to region...</string>
-	<string name="LoginDownloadingClothing">Downloading clothing...</string>
+	<string name="LoginDownloadingClothing">Dry cleaning clothing...</string>
 
 	<string name="LoginFailed">Login failed.</string>
 	<string name="Quit">Quit</string>
@@ -2095,6 +2096,21 @@ Returns all objects of a particular owner in the given scope or an ERR_* flag.
 string llXorBase64(string str1, string str2)
 Returns a string that is a Base64 XOR of Base64-formatted input strings.
   </string>
+  <string name="LSLTipText_llScaleByFactor" translate="false">
+integer llScaleByFactor(float scaling_factor)
+Returns a string that is a Base64 XOR of Base64-formatted input strings.
+Uniformly resizes the linkset by the given multiplicative scale factor (e.g. 2.0 to double the scale in all dimensions)
+Returns TRUE if rescaling was successful or FALSE otherwise
+This function only succeeds in non-physical objects
+  </string>
+  <string name="LSLTipText_llGetMinScaleFactor" translate="false">
+float llGetMinScaleFactor()
+Returns the minimum multiplicative scale factor which can be used by llScaleByFactor(); i.e. such that every prim in the linkset is &gt;=1cm in scale
+  </string>
+  <string name="LSLTipText_llGetMaxScaleFactor" translate="false">
+float llGetMaxScaleFactor()
+Returns the maximum multiplicative scale factor which can be used by llScaleByFactor(); i.e. such that every prim in the linkset is &lt;=64m and the resulting linkset meets the linkability requirements
+  </string>
 <!-- GOD FUNCTIONS -->
 	<string name="LSLTipText_llGodLikeRezObject">
 llGodLikeRezObject( key inventory, vector pos )
@@ -3216,7 +3232,7 @@ The
 	<string name="Left Pec">Left Pec</string>
 	<string name="Right Pec">Right Pec</string>
   <string name="Neck">Neck</string>
-  <string name="Root">Root</string>
+  <string name="Avatar Center">Root</string>
   <string name="Invalid Attachment">Invalid Attachment Point</string>
 
   <!-- Account types, see LLAvatarPropertiesProcessor -->

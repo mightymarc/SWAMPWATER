@@ -388,11 +388,11 @@ void LLVOAvatarSelf::buildContextMenus()
 					LLMenuItemCallGL* item;
 // [RLVa:KB] - Checked: 2009-07-06 (RLVa-1.0.0c)
 					// We need the userdata param to disable options in this pie menu later on (Left Hand / Right Hand option)
-					item = new LLMenuItemCallGL(attachment->getName(), 
+					item = new LLMenuItemCallGL(LLTrans::getString(attachment->getName()),
 												NULL, 
 												object_selected_and_point_valid, attachment);
 // [/RLVa:KB]
-//						item = new LLMenuItemCallGL(attachment->getName(), 
+//						item = new LLMenuItemCallGL(LLTrans::getString(attachment->getName()),
 //													NULL, 
 //													object_selected_and_point_valid);
 					item->addListener(gMenuHolder->getListenerByName("Object.AttachToAvatar"), "on_click", iter->first);
@@ -425,7 +425,7 @@ void LLVOAvatarSelf::buildContextMenus()
 				LLViewerJointAttachment* attachment = iter->second;
 				if (attachment->getGroup() == i)
 				{
-					gDetachPieMenu->addChild(new LLMenuItemCallGL(attachment->getName(),
+					gDetachPieMenu->addChild(new LLMenuItemCallGL(LLTrans::getString(attachment->getName()),
 						&handle_detach_from_avatar, object_attached, attachment));
 
 					attachment_found = TRUE;
@@ -451,16 +451,16 @@ void LLVOAvatarSelf::buildContextMenus()
 			LLMenuItemCallGL* item;
 // [RLVa:KB] - Checked: 2009-07-06 (RLVa-1.0.0c)
 			// We need the userdata param to disable options in this pie menu later on
-			item = new LLMenuItemCallGL(attachment->getName(), 
+			item = new LLMenuItemCallGL(LLTrans::getString(attachment->getName()),
 										NULL, 
 										object_selected_and_point_valid, attachment);
 // [/RLVa:KB]
-//				item = new LLMenuItemCallGL(attachment->getName(), 
+//				item = new LLMenuItemCallGL(LLTrans::getString(attachment->getName()),
 //											NULL, 
 //											object_selected_and_point_valid);
 			item->addListener(gMenuHolder->getListenerByName("Object.AttachToAvatar"), "on_click", iter->first);
 			gAttachScreenPieMenu->addChild(item);
-			gDetachScreenPieMenu->addChild(new LLMenuItemCallGL(attachment->getName(), 
+			gDetachScreenPieMenu->addChild(new LLMenuItemCallGL(LLTrans::getString(attachment->getName()),
 						&handle_detach_from_avatar, object_attached, attachment));
 		}
 	}
@@ -482,13 +482,13 @@ void LLVOAvatarSelf::buildContextMenus()
 				continue;
 			}
 			// RELEASE-RLVa: random comment because we want know if LL ever changes this to not include "attachment" as userdata
-			LLMenuItemCallGL* item = new LLMenuItemCallGL(attachment->getName(), 
+			LLMenuItemCallGL* item = new LLMenuItemCallGL(LLTrans::getString(attachment->getName()),
 														  NULL, &object_selected_and_point_valid,
 														  &attach_label, attachment);
 			item->addListener(gMenuHolder->getListenerByName("Object.AttachToAvatar"), "on_click", iter->first);
 			gAttachSubMenu->addChild(item);
 
-			gDetachSubMenu->addChild(new LLMenuItemCallGL(attachment->getName(), 
+			gDetachSubMenu->addChild(new LLMenuItemCallGL(LLTrans::getString(attachment->getName()),
 				&handle_detach_from_avatar, object_attached, &detach_label, attachment));
 			
 		}
@@ -546,14 +546,14 @@ void LLVOAvatarSelf::buildContextMenus()
 			{
 // [RLVa:KB] - Checked: 2009-07-06 (RLVa-1.0.0c)
 				// We need the userdata param to disable options in this pie menu later on
-				LLMenuItemCallGL* item = new LLMenuItemCallGL(attachment->getName(), 
+				LLMenuItemCallGL* item = new LLMenuItemCallGL(LLTrans::getString(attachment->getName()),
 															  NULL, object_selected_and_point_valid, attachment);
 // [/RLVa:KB]
-//					LLMenuItemCallGL* item = new LLMenuItemCallGL(attachment->getName(), 
+//					LLMenuItemCallGL* item = new LLMenuItemCallGL(LLTrans::getString(attachment->getName()),
 //																  NULL, object_selected_and_point_valid);
 				gAttachBodyPartPieMenus[group]->addChild(item);
 				item->addListener(gMenuHolder->getListenerByName("Object.AttachToAvatar"), "on_click", attach_index);
-				gDetachBodyPartPieMenus[group]->addChild(new LLMenuItemCallGL(attachment->getName(), 
+				gDetachBodyPartPieMenus[group]->addChild(new LLMenuItemCallGL(LLTrans::getString(attachment->getName()),
 																			&handle_detach_from_avatar,
 																			object_attached, attachment));
 				if (!context) cur_pie_slice++;
@@ -897,9 +897,9 @@ void LLVOAvatarSelf::updateRegion(LLViewerRegion *regionp)
 //virtual
 void LLVOAvatarSelf::idleUpdateTractorBeam()
 {
-
-
-	if(gSavedSettings.getBOOL("DisablePointAtAndBeam"))
+	// <edit>
+	static LLCachedControl<bool> disable_pointat_effect("DisablePointAtAndBeam");
+	if (disable_pointat_effect)
 	{
 		return;
 	}
@@ -978,6 +978,7 @@ void LLVOAvatarSelf::idleUpdateTractorBeam()
 		}
 	}
 }
+
 //-----------------------------------------------------------------------------
 // restoreMeshData()
 //-----------------------------------------------------------------------------
@@ -1226,7 +1227,6 @@ const LLViewerJointAttachment *LLVOAvatarSelf::attachObject(LLViewerObject *view
 				gRlvAttachmentLocks.updateLockedHUD();
 		}
 // [/RLVa:KB]
-
 	}
 
 	return attachment;
@@ -1239,24 +1239,20 @@ BOOL LLVOAvatarSelf::detachObject(LLViewerObject *viewer_object)
 
 // [RLVa:KB] - Checked: 2010-03-05 (RLVa-1.2.0a) | Added: RLVa-1.2.0a
 	// NOTE: RLVa event handlers should be invoked *before* LLVOAvatar::detachObject() calls LLViewerJointAttachment::removeObject()
-	
+	if (rlv_handler_t::isEnabled())
 	{
 		for (attachment_map_t::const_iterator itAttachPt = mAttachmentPoints.begin(); itAttachPt != mAttachmentPoints.end(); ++itAttachPt)
 		{
 			const LLViewerJointAttachment* pAttachPt = itAttachPt->second;
 			if (pAttachPt->isObjectAttached(viewer_object))
 			{
-				if (rlv_handler_t::isEnabled())
-				{
-					RlvAttachmentLockWatchdog::instance().onDetach(viewer_object, pAttachPt);
-					gRlvHandler.onDetach(viewer_object, pAttachPt);
-				}
-				if (mAttachmentSignal)
-				{
-					(*mAttachmentSignal)(viewer_object, pAttachPt, ACTION_DETACH);
-				}
+				RlvAttachmentLockWatchdog::instance().onDetach(viewer_object, pAttachPt);
+				gRlvHandler.onDetach(viewer_object, pAttachPt);
 			}
-			break;
+			if (mAttachmentSignal)
+			{
+				(*mAttachmentSignal)(viewer_object, pAttachPt, ACTION_DETACH);
+			}
 		}
 	}
 // [/RLVa:KB]
@@ -1524,6 +1520,7 @@ BOOL LLVOAvatarSelf::isLocalTextureDataFinal(const LLViewerTexLayerSet* layerset
 	llassert(0);
 	return FALSE;
 }
+
 
 BOOL LLVOAvatarSelf::isAllLocalTextureDataFinal() const
 {
@@ -3122,6 +3119,7 @@ bool LLVOAvatarSelf::sendAppearanceMessage(LLMessageSystem *mesgsys) const
 	return success;
 }
 
+
 //------------------------------------------------------------------------
 // needsRenderBeam()
 //------------------------------------------------------------------------
@@ -3257,14 +3255,6 @@ LLVector3 LLVOAvatarSelf::getLegacyAvatarOffset() const
 	static LLCachedControl<F32> z_off("AscentAvatarZModifier");
 	LLVector3 offset(x_off,y_off,z_off);
 
-// [RLVa:KB] Custom blah blah
-	if(rlv_handler_t::isEnabled())
-	{
-		F32 rlva_z_offs = RlvSettings::getAvatarOffsetZ();
-		if(fabs(rlva_z_offs) > F_APPROXIMATELY_ZERO)
-			offset.mV[VZ] = rlva_z_offs;
-	}
-// [/RLVa:KB]
 	if(on_pose_stand)
 		offset.mV[VZ] += 7.5f;
 

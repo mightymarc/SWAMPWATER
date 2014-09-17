@@ -50,7 +50,6 @@
 #include "llagent.h"
 #include "llagentcamera.h"
 #include "llfloatertools.h"
-#include "qtoolalign.h"
 #include "llviewercontrol.h"
 
 
@@ -278,20 +277,13 @@ BOOL LLToolCompTranslate::handleMouseUp(S32 x, S32 y, MASK mask)
 
 LLTool* LLToolCompTranslate::getOverrideTool(MASK mask)
 {
-	if (gKeyboard->getKeyDown('A') && mask & MASK_CONTROL)
+	if (mask == MASK_CONTROL)
 	{
-		return QToolAlign::getInstance();
+		return LLToolCompRotate::getInstance();
 	}
-	else 
+	else if (mask == (MASK_CONTROL | MASK_SHIFT))
 	{
-		if (mask == MASK_CONTROL)
-		{
-			return LLToolCompRotate::getInstance();
-		}
-		else if (mask == (MASK_CONTROL | MASK_SHIFT))
-		{
-			return LLToolCompScale::getInstance();
-		}
+		return LLToolCompScale::getInstance();
 	}
 	return LLToolComposite::getOverrideTool(mask);
 }
@@ -404,11 +396,7 @@ BOOL LLToolCompScale::handleMouseUp(S32 x, S32 y, MASK mask)
 
 LLTool* LLToolCompScale::getOverrideTool(MASK mask)
 {
-	if (gKeyboard->getKeyDown('A') && mask & MASK_CONTROL)
-	{
-		return QToolAlign::getInstance();
-	}
-	else if (mask == MASK_CONTROL)
+	if (mask == MASK_CONTROL)
 	{
 		return LLToolCompRotate::getInstance();
 	}
@@ -607,11 +595,7 @@ BOOL LLToolCompRotate::handleMouseUp(S32 x, S32 y, MASK mask)
 
 LLTool* LLToolCompRotate::getOverrideTool(MASK mask)
 {
-	if (gKeyboard->getKeyDown('A') && mask & MASK_CONTROL)
-	{
-		return QToolAlign::getInstance();
-	}
-	else if (mask == (MASK_CONTROL | MASK_SHIFT))
+	if (mask == (MASK_CONTROL | MASK_SHIFT))
 	{
 		return LLToolCompScale::getInstance();
 	}
@@ -780,6 +764,11 @@ void	LLToolCompGun::handleSelect()
 void	LLToolCompGun::handleDeselect()
 {
 	LLToolComposite::handleDeselect();
+	if (mRightMouseButton || mTimerFOV.getStarted()) // Singu Note: Load Default FOV if we were zoomed in
+	{
+		LLViewerCamera::getInstance()->loadDefaultFOV();
+		mRightMouseButton = false;
+	}
 	setMouseCapture(FALSE);
 }
 
@@ -824,7 +813,7 @@ BOOL LLToolCompGun::handleRightMouseDown(S32 x, S32 y, MASK mask)
 	}
 	else mStartFOV = LLViewerCamera::getInstance()->getDefaultFOV();
 
-	mTargetFOV = gSavedSettings.getF32("zmm_mlfov");
+	mTargetFOV = gSavedSettings.getF32("ExodusAlternativeFOV");
 	mTimerFOV.start();
 
 	return TRUE;
@@ -837,7 +826,7 @@ BOOL LLToolCompGun::handleScrollWheel(S32 x, S32 y, S32 clicks)
 		mStartFOV = LLViewerCamera::getInstance()->getDefaultFOV();
 
 		gSavedSettings.setF32(
-			"zmm_mlfov",
+			"ExodusAlternativeFOV",
 			mTargetFOV = clicks > 0 ?
 				llclamp(mTargetFOV += (0.05f * clicks), 0.1f, 3.0f) :
 				llclamp(mTargetFOV -= (0.05f * -clicks), 0.1f, 3.0f)

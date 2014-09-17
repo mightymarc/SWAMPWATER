@@ -527,8 +527,6 @@ void LLFace::renderSelected(LLViewerTexture *imagep, const LLColor4& color)
 		{
 			gGL.multMatrix((GLfloat*)mDrawablep->getRegion()->mRenderMatrix.mMatrix);
 		}
-
-		gGL.diffuseColor4fv(color.mV);
 	
 		if (mDrawablep->isState(LLDrawable::RIGGED))
 		{
@@ -542,6 +540,9 @@ void LLFace::renderSelected(LLViewerTexture *imagep, const LLColor4& color)
 					glPolygonOffset(-1.f, -1.f);
 					gGL.multMatrix((F32*) volume->getRelativeXform().mMatrix);
 					const LLVolumeFace& vol_face = rigged->getVolumeFace(getTEOffset());
+
+					// Singu Note: Implementation changed to utilize a VBO, avoiding fixed functions unless required
+#if 0
 					LLVertexBuffer::unbind();
 					glVertexPointer(3, GL_FLOAT, 16, vol_face.mPositions);
 					if (vol_face.mTexCoords)
@@ -552,14 +553,37 @@ void LLFace::renderSelected(LLViewerTexture *imagep, const LLColor4& color)
 					gGL.syncMatrices();
 					glDrawElements(GL_TRIANGLES, vol_face.mNumIndices, GL_UNSIGNED_SHORT, vol_face.mIndices);
 					glDisableClientState(GL_TEXTURE_COORD_ARRAY);
+#else
+					LLGLSLShader* prev_shader = NULL;
+
+					if(LLViewerShaderMgr::instance()->getVertexShaderLevel(LLViewerShaderMgr::SHADER_INTERFACE))
+					{
+						if(LLGLSLShader::sCurBoundShaderPtr != &gHighlightProgram)
+						{
+							prev_shader = LLGLSLShader::sCurBoundShaderPtr;
+							gHighlightProgram.bind();
+						}
+					}
+
+					gGL.diffuseColor4fv(color.mV);
+
+					LLVertexBuffer::drawElements(LLRender::TRIANGLES, vol_face.mPositions, vol_face.mTexCoords, vol_face.mNumIndices, vol_face.mIndices);
+					
+					if(prev_shader)
+					{
+						prev_shader->bind();
+					}
+#endif
 				}
 			}
 		}
 		else
 		{
+			gGL.diffuseColor4fv(color.mV);
 			LLGLEnable poly_offset(GL_POLYGON_OFFSET_FILL);
 			glPolygonOffset(-1.f,-1.f);
-			mVertexBuffer->setBuffer(mVertexBuffer->getTypeMask());
+			// Singu Note: Disable per-vertex color to prevent fixed-function pipeline from using it. We want glColor color, not vertex color!
+			mVertexBuffer->setBuffer(mVertexBuffer->getTypeMask() & ~(LLVertexBuffer::MAP_COLOR));
 			mVertexBuffer->draw(LLRender::TRIANGLES, mIndicesCount, mIndicesIndex);
 		}
 
@@ -1273,15 +1297,33 @@ BOOL LLFace::getGeometryVolume(const LLVolume& volume,
 
 	if (rebuild_color)	// FALSE if tep == NULL
 	{ //decide if shiny goes in alpha channel of color
+
+		static const LLCachedControl<bool> alt_batching("SHAltBatching",true);
 		if (tep && 
-			getPoolType() != LLDrawPool::POOL_ALPHA)  // <--- alpha channel MUST contain transparency, not shiny
+			((!alt_batching && getPoolType() != LLDrawPool::POOL_ALPHA) ||
+			(alt_batching && getPoolType() != LLDrawPool::POOL_ALPHA &&
+			getPoolType() != LLDrawPool::POOL_ALPHA_MASK &&
+			getPoolType() != LLDrawPool::POOL_FULLBRIGHT_ALPHA_MASK &&					// <--- alpha channel MUST contain transparency, not shiny
+			(getPoolType() != LLDrawPool::POOL_SIMPLE || LLPipeline::sRenderDeferred))))	// Impostor pass for simple uses alpha masking. Need to be opaque.
 		{
 			LLMaterial* mat = tep->getMaterialParams().get();
 						
-			bool shiny_in_alpha = false;
+			bool shiny_in_alpha = alt_batching ? true : false;
 			
+			if(alt_batching)
+			{
 			if (LLPipeline::sRenderDeferred)
 			{ //store shiny in alpha if we don't have a specular map
+				if  (getPoolType() == LLDrawPool::POOL_MATERIALS && mat->getSpecularID().notNull())
+				{
+					shiny_in_alpha = false;
+				}
+			}
+			}
+			else
+			{
+			if (LLPipeline::sRenderDeferred)
+			{
 				if  (!mat || mat->getSpecularID().isNull())
 				{
 					shiny_in_alpha = true;
@@ -1294,10 +1336,14 @@ BOOL LLFace::getGeometryVolume(const LLVolume& volume,
 					shiny_in_alpha = true;
 				}
 			}
+			}
 
-			if (shiny_in_alpha)
+			if(getPoolType() == LLDrawPool::POOL_FULLBRIGHT)
 			{
-
+				color.mV[3] = 1.f; //Simple fullbright reads alpha for fog contrib, not shiny/transparency, so since opaque, force to 1.
+			}
+			else if (shiny_in_alpha)
+			{
 				GLfloat alpha[4] =
 				{
 					0.00f,

@@ -229,5 +229,38 @@
       <key>Value</key>
       <real>1</real>
     </map>
+    <key>SHRenderSSAOResolutionScale</key>
+    <map>
+      <key>Comment</key>
+      <string>SSAO resolution scale. Valid values: 0.01-1.0</string>
+      <key>Persist</key>
+      <integer>1</integer>
+      <key>Type</key>
+      <string>F32</string>
+      <key>Value</key>
+      <real>.5</real>
+    </map>
+    <key>SHAltBatching</key>
+    <map>
+      <key>Comment</key>
+      <string>Experimental retooling of face batching.</string>
+      <key>Persist</key>
+      <integer>1</integer>
+      <key>Type</key>
+      <string>Boolean</string>
+      <key>Value</key>
+      <real>1</real>
+    </map>
+    <key>SHRenderVsyncMode</key>
+    <map>
+      <key>Comment</key>
+      <string>Desired vertical sychronization method. (0 = Disabled, 1 = Standard [Double-buffered], -1 = Adaptive [if supported])</string>
+      <key>Persist</key>
+      <integer>1</integer>
+      <key>Type</key>
+      <string>S32</string>
+      <key>Value</key>
+      <real>0</real>
+    </map>
   </map>
 </llsd>

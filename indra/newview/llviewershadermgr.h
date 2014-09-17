@@ -300,7 +300,7 @@ extern LLGLSLShader			gDeferredDiffuseProgram;
 extern LLGLSLShader			gDeferredDiffuseAlphaMaskProgram;
 extern LLGLSLShader			gDeferredNonIndexedDiffuseAlphaMaskProgram;
 extern LLGLSLShader			gDeferredNonIndexedDiffuseAlphaMaskNoColorProgram;
-extern LLGLSLShader			gDeferredNonIndexedDiffuseProgram;
+//extern LLGLSLShader			gDeferredNonIndexedDiffuseProgram;
 extern LLGLSLShader			gDeferredSkinnedDiffuseProgram;
 extern LLGLSLShader			gDeferredSkinnedBumpProgram;
 extern LLGLSLShader			gDeferredSkinnedAlphaProgram;
@@ -313,6 +313,8 @@ extern LLGLSLShaderArray<LLViewerShaderMgr::SHADER_DEFERRED>			gDeferredMultiLig
 extern LLGLSLShader			gDeferredSpotLightProgram;
 extern LLGLSLShader			gDeferredMultiSpotLightProgram;
 extern LLGLSLShader			gDeferredSunProgram;
+extern LLGLSLShader			gDeferredSSAOProgram;
+extern LLGLSLShader			gDeferredDownsampleDepthNearestProgram;
 extern LLGLSLShader			gDeferredBlurLightProgram;
 extern LLGLSLShader			gDeferredAvatarProgram;
 extern LLGLSLShader			gDeferredSoftenProgram;

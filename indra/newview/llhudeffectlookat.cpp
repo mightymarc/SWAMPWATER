@@ -611,18 +611,23 @@ void LLHUDEffectLookAt::update()
 	{
 		if (calcTargetPosition())
 		{
-			LLMotion* head_motion = ((LLVOAvatar*)(LLViewerObject*)mSourceObject)->findMotion(ANIM_AGENT_HEAD_ROT);
-			if (!head_motion || head_motion->isStopped())
+			//LLMotion* head_motion = ((LLVOAvatar*)(LLViewerObject*)mSourceObject)->findMotion(ANIM_AGENT_HEAD_ROT);
+			//if (!head_motion || head_motion->isStopped())
+			// singu: startMotion does basically the same as the above two lines... it starts it, unless it was already started.
 			{
 				((LLVOAvatar*)(LLViewerObject*)mSourceObject)->startMotion(ANIM_AGENT_HEAD_ROT);
 			}
 		}
 	}
 
+	// Singu note: this displays extra information for look at targets. Due to the bug in llvoavatar.cpp
+	// it was never displayed before and is not something users exect: turning it off for now
+#if 0
 	if (show_look_at)
 	{
 		((LLVOAvatar*)(LLViewerObject*)mSourceObject)->addDebugText((*mAttentions)[mTargetType].mName);
 	}
+#endif
 }
 
 /**

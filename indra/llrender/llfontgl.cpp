@@ -1112,6 +1112,13 @@ std::string LLFontGL::nameFromFont(const LLFontGL* fontp)
 	return fontp->mFontDescriptor.getName();
 }
 
+
+// static
+std::string LLFontGL::sizeFromFont(const LLFontGL* fontp)
+{
+	return fontp->getFontDesc().getSize();
+}
+
 // static
 std::string LLFontGL::nameFromHAlign(LLFontGL::HAlign align)
 {
@@ -1228,6 +1235,41 @@ LLFontGL* LLFontGL::getFont(const LLFontDescriptor& desc)
 	return sFontRegistry->getFont(desc);
 }
 
+// static
+LLFontGL* LLFontGL::getFontByName(const std::string& name)
+{
+	// check for most common fonts first
+	if (name == "SANSSERIF")
+	{
+		return getFontSansSerif();
+	}
+	else if (name == "SANSSERIF_SMALL")
+	{
+		return getFontSansSerifSmall();
+	}
+	else if (name == "SANSSERIF_BIG")
+	{
+		return getFontSansSerifBig();
+	}
+	else if (name == "SMALL" || name == "OCRA")
+	{
+		// *BUG: Should this be "MONOSPACE"?  Do we use "OCRA" anymore?
+		// Does "SMALL" mean "SERIF"?
+		return getFontMonospace();
+	}
+	else
+	{
+		return NULL;
+	}
+}
+
+//static
+LLFontGL* LLFontGL::getFontDefault()
+{
+	return getFontSansSerif(); // Fallback to sans serif as default font
+}
+
+
 // static 
 std::string LLFontGL::getFontPathSystem()
 {
@@ -1307,12 +1349,12 @@ void LLFontGL::renderQuad(LLVector4a* vertex_out, LLVector2* uv_out, LLColor4U* 
 	colors_out[index] = color;
 	index++;
 
-	vertex_out[index].set(screen_rect.mLeft, screen_rect.mBottom, 0.f);
+	vertex_out[index].set(screen_rect.mLeft + slant_amt, screen_rect.mBottom, 0.f);
 	uv_out[index] = LLVector2(uv_rect.mLeft, uv_rect.mBottom);
 	colors_out[index] = color;
 	index++;
 
-	vertex_out[index].set(screen_rect.mRight, screen_rect.mBottom, 0.f);
+	vertex_out[index].set(screen_rect.mRight + slant_amt, screen_rect.mBottom, 0.f);
 	uv_out[index] = LLVector2(uv_rect.mRight, uv_rect.mBottom);
 	colors_out[index] = color;
 }
